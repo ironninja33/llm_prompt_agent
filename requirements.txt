@@ -1,0 +1,6 @@
+flask>=3.0
+google-genai>=1.0
+chromadb>=0.4
+Pillow>=10.0
+gunicorn>=21.0
+scikit-learn>=1.3

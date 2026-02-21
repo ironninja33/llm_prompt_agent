@@ -1,0 +1,44 @@
+/* ── CSS Variables & Theme ────────────────────────────────────── */
+:root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-tertiary: #0f3460;
+    --bg-surface: #1e2746;
+    --bg-input: #233054;
+
+    --text-primary: #e8e8e8;
+    --text-secondary: #a0a8c0;
+    --text-muted: #6b7394;
+    --text-accent: #64b5f6;
+
+    --accent: #4fc3f7;
+    --accent-hover: #29b6f6;
+    --accent-dim: rgba(79, 195, 247, 0.15);
+
+    --border: #2a3558;
+    --border-light: #354170;
+
+    --msg-user-bg: #1b5e20;
+    --msg-user-text: #e8f5e9;
+    --msg-assistant-bg: #263238;
+    --msg-assistant-text: #eceff1;
+    --msg-error-bg: #4a1010;
+    --msg-error-text: #ffcdd2;
+    --msg-status-bg: rgba(79, 195, 247, 0.08);
+    --msg-status-text: #80cbc4;
+
+    --danger: #ef5350;
+    --danger-hover: #e53935;
+    --success: #66bb6a;
+
+    --sidebar-width: 260px;
+    --header-height: 52px;
+    --radius: 8px;
+    --radius-lg: 12px;
+
+    --font-mono: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+}

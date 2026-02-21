@@ -1,0 +1,341 @@
+/* ── Chat Pane & Messages ────────────────────────────────────── */
+.chat-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-primary);
+}
+
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    color: var(--text-secondary);
+    gap: 8px;
+}
+
+.empty-state h2 {
+    color: var(--text-primary);
+    font-size: 1.3rem;
+}
+
+.empty-state p {
+    max-width: 400px;
+}
+
+/* ── Message Bubbles ─────────────────────────────────────────── */
+.message {
+    max-width: 80%;
+    padding: 12px 16px;
+    border-radius: var(--radius-lg);
+    line-height: 1.55;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    position: relative;
+}
+
+.message.user {
+    align-self: flex-end;
+    background: var(--msg-user-bg);
+    color: var(--msg-user-text);
+    border-bottom-right-radius: 4px;
+}
+
+.message.assistant {
+    align-self: flex-start;
+    background: var(--msg-assistant-bg);
+    color: var(--msg-assistant-text);
+    border-bottom-left-radius: 4px;
+}
+
+.message.error {
+    align-self: flex-start;
+    background: var(--msg-error-bg);
+    color: var(--msg-error-text);
+    border-left: 3px solid var(--danger);
+}
+
+.message.status {
+    align-self: center;
+    background: var(--msg-status-bg);
+    color: var(--msg-status-text);
+    font-size: 0.85rem;
+    padding: 8px 16px;
+    border-radius: 20px;
+    max-width: 90%;
+}
+
+.message .edit-btn {
+    position: absolute;
+    top: 4px;
+    right: -28px;
+    opacity: 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: opacity 0.15s;
+}
+
+.message:hover .edit-btn {
+    opacity: 1;
+}
+
+.message .edit-btn:hover {
+    color: var(--accent);
+}
+
+/* Streaming cursor indicator */
+.message.streaming::after {
+    content: '▊';
+    animation: blink 0.7s infinite;
+    color: var(--accent);
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* Tool call status indicator */
+.tool-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: var(--msg-status-bg);
+    color: var(--msg-status-text);
+    font-size: 0.82rem;
+    border-radius: 16px;
+    align-self: center;
+}
+
+.tool-status .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Markdown inside messages ────────────────────────────────── */
+.message code {
+    background: rgba(0, 0, 0, 0.25);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+}
+
+.message pre {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 12px;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: 0.84em;
+}
+
+.message pre code {
+    background: none;
+    padding: 0;
+}
+
+.message strong { font-weight: 600; }
+.message em { font-style: italic; }
+
+.message ul, .message ol {
+    padding-left: 20px;
+    margin: 4px 0;
+}
+
+.message p { margin-bottom: 6px; }
+.message p:last-child { margin-bottom: 0; }
+
+/* ── Tool Calls Introspection ────────────────────────────────── */
+.tool-calls-section {
+    margin-bottom: 10px;
+    border-radius: var(--radius);
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    white-space: normal;
+}
+
+.tool-calls-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    user-select: none;
+    list-style: none;
+    transition: color 0.15s;
+}
+
+.tool-calls-toggle::-webkit-details-marker {
+    display: none;
+}
+
+.tool-calls-toggle:hover {
+    color: var(--text-secondary);
+}
+
+.tool-calls-icon {
+    font-size: 0.85rem;
+}
+
+.tool-calls-chevron {
+    margin-left: auto;
+    font-size: 0.65rem;
+    transition: transform 0.2s ease;
+}
+
+.tool-calls-section[open] .tool-calls-chevron {
+    transform: rotate(90deg);
+}
+
+.tool-calls-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 10px 10px;
+}
+
+.tool-call-item {
+    background: rgba(0, 0, 0, 0.12);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.tool-call-header {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.tool-call-name {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+}
+
+.tool-call-details {
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tool-call-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.tool-call-args pre,
+.tool-call-result pre {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    max-height: 200px;
+    overflow: auto;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* ── Prompt Blocks (```prompt ... ```) ───────────────────────── */
+.prompt-block {
+    position: relative;
+    background: rgba(79, 195, 247, 0.08);
+    border: 1px solid rgba(79, 195, 247, 0.25);
+    border-radius: var(--radius);
+    margin: 8px 0;
+    overflow: hidden;
+}
+
+.prompt-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(79, 195, 247, 0.12);
+    border-bottom: 1px solid rgba(79, 195, 247, 0.15);
+}
+
+.prompt-block-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    user-select: none;
+}
+
+.prompt-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+    line-height: 1;
+}
+
+.prompt-copy-btn:hover {
+    color: var(--accent);
+    background: rgba(79, 195, 247, 0.15);
+}
+
+.prompt-copy-btn.copied {
+    color: var(--success);
+}
+
+.prompt-block-content {
+    padding: 10px 14px;
+    font-size: 0.92em;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}

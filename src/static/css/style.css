@@ -1,0 +1,12 @@
+/* Main stylesheet — imports all partials */
+@import url('variables.css');
+@import url('base.css');
+@import url('layout.css');
+@import url('buttons.css');
+@import url('sidebar.css');
+@import url('messages.css');
+@import url('input.css');
+@import url('forms.css');
+@import url('modal.css');
+@import url('overlay.css');
+@import url('responsive.css');

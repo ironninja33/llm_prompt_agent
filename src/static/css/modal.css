@@ -1,0 +1,318 @@
+/* ── Modal & Settings Dialog ──────────────────────────────────── */
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.modal-dialog {
+    position: relative;
+    width: 600px;
+    max-width: 90vw;
+    max-height: 85vh;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.modal-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 8px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-secondary);
+}
+
+.tab {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s, border-color 0.12s;
+}
+
+.tab:hover { color: var(--text-primary); }
+.tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.modal-body {
+    padding: 16px 20px;
+    overflow-y: auto;
+    flex: 1;
+    position: relative;
+}
+
+.tab-pane { display: block; }
+.tab-pane.hidden { display: none; }
+
+/* ── Modal size variant ──────────────────────────────────────── */
+.modal-dialog.modal-lg {
+    width: 900px;
+}
+
+/* ── Dataset Map ─────────────────────────────────────────────── */
+.dataset-section {
+    margin-bottom: 1.5rem;
+}
+
+.dataset-section-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.folder-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 0.5rem;
+}
+
+.folder-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 0.8rem;
+    cursor: pointer;
+    list-style: none;
+    transition: background 0.12s;
+}
+
+.folder-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.folder-header::-webkit-details-marker {
+    display: none;
+}
+
+.folder-name {
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.folder-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.source-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.source-training {
+    background: var(--accent);
+    color: white;
+}
+
+.source-output {
+    background: #4caf50;
+    color: white;
+}
+
+.doc-count {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.folder-themes {
+    padding: 0.4rem 0.8rem 0.8rem;
+    display: none;
+}
+
+.folder-themes.visible {
+    display: block;
+}
+
+/* ── Global Cluster Toggle ───────────────────────────────────── */
+.global-cluster-toggle {
+    position: sticky;
+    top: -16px;
+    z-index: 5;
+    background: var(--bg-secondary);
+    padding: 16px 0 0.5rem 0;
+    margin-top: -16px;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.btn-toggle-all-clusters {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.btn-toggle-all-clusters:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+.btn-toggle-all-clusters.active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb, 100, 108, 255), 0.08);
+}
+
+/* ── Dataset Map Tabs ────────────────────────────────────────── */
+.dataset-map-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 8px;
+}
+
+.dataset-map-tab {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s, border-color 0.12s;
+}
+
+.dataset-map-tab:hover { color: var(--text-primary); }
+.dataset-map-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.dataset-map-pane {
+    display: none;
+}
+
+.dataset-map-pane.active {
+    display: block;
+}
+
+/* ── Infinite Scroll Sentinel ────────────────────────────────── */
+.scroll-sentinel {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 1rem;
+    font-size: 0.85rem;
+}
+
+.scroll-sentinel .spinner-small {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 0.4rem;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.theme-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.theme-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+}
+
+.theme-label {
+    color: var(--text-primary);
+}
+
+.theme-count {
+    background: var(--accent);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.1rem 0.35rem;
+    border-radius: 8px;
+    min-width: 1.2rem;
+    text-align: center;
+}
+
+.no-themes {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-style: italic;
+    margin: 0;
+}
+
+.empty-dataset {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 2rem;
+    font-size: 0.9rem;
+}
+
+.loading-text {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 2rem;
+}
+
+.error-text {
+    text-align: center;
+    color: #ef5350;
+    padding: 2rem;
+}

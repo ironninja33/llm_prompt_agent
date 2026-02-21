@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Prompt Agent</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- ── Ingestion overlay ─────────────────────────────────────── -->
+    <div id="ingestion-overlay" class="overlay hidden">
+        <div class="overlay-content">
+            <h2>Indexing Data</h2>
+            <div class="progress-bar-container">
+                <div id="ingestion-progress-bar" class="progress-bar"></div>
+            </div>
+            <p id="ingestion-status-message">Initializing...</p>
+            <p id="ingestion-detail" class="detail"></p>
+        </div>
+    </div>
+
+    <!-- ── Clustering overlay ─────────────────────────────────────── -->
+    <div id="clustering-overlay" class="overlay hidden">
+        <div class="overlay-content">
+            <h2>Clustering Dataset</h2>
+            <div class="progress-bar-container">
+                <div id="clustering-progress-bar" class="progress-bar"></div>
+            </div>
+            <p id="clustering-status-message">Starting...</p>
+            <p id="clustering-detail" class="detail-text"></p>
+        </div>
+    </div>
+
+    <!-- ── Settings modal ────────────────────────────────────────── -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeSettings()"></div>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="btn-icon" onclick="closeSettings()" title="Close">&times;</button>
+            </div>
+            <div class="modal-tabs">
+                <button class="tab active" data-tab="tab-api" onclick="switchTab(this)">API &amp; Models</button>
+                <button class="tab" data-tab="tab-prompt" onclick="switchTab(this)">System Prompt</button>
+                <button class="tab" data-tab="tab-dirs" onclick="switchTab(this)">Data Directories</button>
+                <button class="tab" data-tab="tab-params" onclick="switchTab(this)">Parameters</button>
+            </div>
+            <div class="modal-body">
+                <!-- API & Models tab -->
+                <div id="tab-api" class="tab-pane active">
+                    <label>Gemini API Key
+                        <div class="input-group">
+                            <input type="password" id="setting-api-key" placeholder="Enter your API key">
+                            <button class="btn-sm" onclick="toggleApiKeyVisibility()">Show</button>
+                        </div>
+                        <span id="api-key-status" class="hint"></span>
+                    </label>
+                    <label>Agent Model
+                        <input type="text" id="setting-model-agent" placeholder="gemini-3-pro-preview">
+                    </label>
+                    <label>Embedding Model
+                        <input type="text" id="setting-model-embedding" placeholder="gemini-embedding-001">
+                    </label>
+                    <label>Summary Model
+                        <input type="text" id="setting-model-summary" placeholder="gemini-2.5-flash-lite">
+                    </label>
+                    <label>Rate Limit (requests per minute)
+                        <input type="number" id="setting-rate-limit" placeholder="3000" min="0" step="1">
+                        <span class="hint">Max Gemini API requests per minute. Set to 0 to disable. Default: 3000.</span>
+                    </label>
+                    <div class="btn-row">
+                        <button class="btn-primary" onclick="saveApiSettings()">Save</button>
+                    </div>
+                </div>
+
+                <!-- System Prompt tab -->
+                <div id="tab-prompt" class="tab-pane hidden">
+                    <label>System Prompt
+                        <textarea id="setting-system-prompt" rows="16" placeholder="System prompt..."></textarea>
+                    </label>
+                    <div class="btn-row">
+                        <button class="btn-secondary" onclick="resetSystemPrompt()">Reset to Default</button>
+                        <button class="btn-primary" onclick="saveSystemPrompt()">Save</button>
+                    </div>
+                </div>
+
+                <!-- Data Directories tab -->
+                <div id="tab-dirs" class="tab-pane hidden">
+                    <div id="dir-list" class="dir-list"></div>
+                    <div class="add-dir-form">
+                        <h4>Add Directory</h4>
+                        <label>Path
+                            <input type="text" id="new-dir-path" placeholder="/path/to/data">
+                        </label>
+                        <label>Type
+                            <select id="new-dir-type">
+                                <option value="training">Training</option>
+                                <option value="output">Output</option>
+                            </select>
+                        </label>
+                        <div class="btn-row">
+                            <button class="btn-primary" onclick="addDirectory()">Add</button>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="btn-row">
+                        <button class="btn-secondary" onclick="triggerIngestion()">Re-index All</button>
+                        <button class="btn-primary" onclick="refreshOutput()">Refresh Output Folders</button>
+                    </div>
+                </div>
+
+                <!-- Parameters tab -->
+                <div id="tab-params" class="tab-pane hidden">
+                    <h3 class="settings-group-title">Query Parameters</h3>
+                    <p class="settings-group-desc">Controls how many results the agent retrieves when searching the dataset.</p>
+
+                    <label>Similar Search Results (k)
+                        <input type="number" id="setting-query-k-similar" min="1" max="50" step="1">
+                        <span class="setting-help">Number of results returned by search_similar and search_diverse tools</span>
+                    </label>
+
+                    <label>Themed Prompts — Intra-folder (k)
+                        <input type="number" id="setting-query-k-theme-intra" min="1" max="20" step="1">
+                        <span class="setting-help">Results per folder when querying themed prompts within folders</span>
+                    </label>
+
+                    <label>Themed Prompts — Cross-folder (k)
+                        <input type="number" id="setting-query-k-theme-cross" min="1" max="20" step="1">
+                        <span class="setting-help">Results for cross-folder themed prompt queries</span>
+                    </label>
+
+                    <label>Random Prompts (k)
+                        <input type="number" id="setting-query-k-random" min="1" max="20" step="1">
+                        <span class="setting-help">Number of random prompts returned by get_random tool</span>
+                    </label>
+
+                    <h3 class="settings-group-title">Clustering Parameters</h3>
+                    <p class="settings-group-desc">Controls how the dataset is organized into thematic clusters. Changes take effect on next clustering run.</p>
+
+                    <label>Clusters per Folder (k)
+                        <input type="number" id="setting-cluster-k-intra" min="2" max="30" step="1">
+                        <span class="setting-help">Number of theme clusters generated within each folder</span>
+                    </label>
+
+                    <label>Cross-folder Clusters (k)
+                        <input type="number" id="setting-cluster-k-cross" min="2" max="50" step="1">
+                        <span class="setting-help">Number of theme clusters generated across all folders</span>
+                    </label>
+
+                    <label>Minimum Folder Size
+                        <input type="number" id="setting-cluster-min-folder-size" min="5" max="100" step="1">
+                        <span class="setting-help">Folders with fewer documents than this won't be clustered</span>
+                    </label>
+
+                    <label>Cluster Label Terms
+                        <input type="number" id="setting-cluster-label-terms" min="1" max="10" step="1">
+                        <span class="setting-help">Number of TF-IDF terms used to generate cluster descriptions</span>
+                    </label>
+
+                    <div class="btn-row">
+                        <button class="btn-primary" onclick="saveParamSettings()">Save Parameters</button>
+                        <button class="btn-secondary" onclick="triggerClustering()">Re-cluster Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Dataset Map modal ─────────────────────────────────────── -->
+    <div id="dataset-map-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeDatasetMap()"></div>
+        <div class="modal-dialog modal-lg">
+            <div class="modal-header">
+                <h2>Dataset Map</h2>
+                <button class="btn-icon" onclick="closeDatasetMap()" title="Close">&times;</button>
+            </div>
+            <div class="dataset-map-tabs">
+                <button class="dataset-map-tab active" data-map-tab="map-themes" onclick="switchDatasetMapTab(this)">Cross-folder Themes</button>
+                <button class="dataset-map-tab" data-map-tab="map-folders" onclick="switchDatasetMapTab(this)">Folders</button>
+            </div>
+            <div class="modal-body" id="dataset-map-content">
+                <div class="loading-text">Loading dataset map...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Main layout ───────────────────────────────────────────── -->
+    <div class="app-layout">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <button class="btn-icon sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+                <h1>LLM Prompt Agent</h1>
+                <div id="header-stats" class="header-stats"></div>
+            </div>
+            <div class="header-right">
+                <span id="db-stats" class="stats"></span>
+                <button class="btn-icon" onclick="triggerClustering()" title="Re-cluster Dataset">🔄</button>
+                <button class="btn-icon" onclick="openDatasetMap()" title="Dataset Map">🗂️</button>
+                <button class="btn-icon" onclick="openSettings()" title="Settings">⚙</button>
+            </div>
+        </header>
+
+        <!-- Sidebar + Chat area -->
+        <div class="app-body">
+            <!-- Sidebar -->
+            <aside id="sidebar" class="sidebar">
+                <button class="btn-new-chat" onclick="createNewChat()">+ New Chat</button>
+                <div id="chat-list" class="chat-list"></div>
+            </aside>
+
+            <!-- Chat pane -->
+            <main class="chat-pane">
+                <div id="messages" class="messages">
+                    <div id="empty-state" class="empty-state">
+                        <h2>Welcome to LLM Prompt Agent</h2>
+                        <p>Start a conversation to generate creative image prompts.</p>
+                        <p class="hint">The agent can search your training data and generated outputs to create new, tailored prompts.</p>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <div class="input-row">
+                        <textarea id="message-input" placeholder="Describe the kind of prompt you want..."
+                                  rows="1" onkeydown="handleInputKeydown(event)"
+                                  oninput="autoResizeInput(this)"></textarea>
+                        <button id="send-btn" class="btn-send" onclick="sendMessage()" title="Send">
+                            <span class="send-icon">➤</span>
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/sse.js"></script>
+    <script src="/static/js/markdown.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

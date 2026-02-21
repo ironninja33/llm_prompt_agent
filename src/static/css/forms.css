@@ -1,0 +1,130 @@
+/* ── Form Elements ───────────────────────────────────────────── */
+label {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+label input, label textarea, label select {
+    display: block;
+    width: 100%;
+    margin-top: 4px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    font-family: var(--font-sans);
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+label input:focus, label textarea:focus, label select:focus {
+    border-color: var(--accent);
+}
+
+label textarea {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.input-group {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.input-group input { flex: 1; margin-top: 0; }
+
+select {
+    appearance: none;
+    cursor: pointer;
+}
+
+/* ── Data Directories List ───────────────────────────────────── */
+.dir-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+.dir-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+    margin-bottom: 4px;
+    font-size: 0.85rem;
+}
+
+.dir-item .dir-type {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.dir-item .dir-type.training {
+    background: rgba(102, 187, 106, 0.15);
+    color: var(--success);
+}
+
+.dir-item .dir-type.output {
+    background: rgba(79, 195, 247, 0.15);
+    color: var(--accent);
+}
+
+.dir-item .dir-path {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+}
+
+.add-dir-form {
+    padding: 12px;
+    background: var(--bg-surface);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+}
+
+.add-dir-form h4 {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+/* ── Settings Group Styles ───────────────────────────────────── */
+.settings-group-title {
+    margin: 1.2rem 0 0.3rem 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.settings-group-title:first-child {
+    margin-top: 0;
+}
+
+.settings-group-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0 0 0.8rem 0;
+}
+
+.setting-help {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+}

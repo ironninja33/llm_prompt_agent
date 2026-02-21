@@ -1,0 +1,6 @@
+chroma_db
+app.db
+data
+workflows
+plans
+__pycache__

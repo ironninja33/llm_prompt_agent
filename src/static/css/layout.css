@@ -1,0 +1,70 @@
+/* ── App Layout & Header ─────────────────────────────────────── */
+.app-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--header-height);
+    padding: 0 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-left h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.stats {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* ── Header Stats ────────────────────────────────────────────── */
+.header-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-left: 1rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.stat-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: default;
+    white-space: nowrap;
+}
+
+.stat-sep {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.app-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
