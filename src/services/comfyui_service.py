@@ -189,6 +189,38 @@ def get_output_subfolders() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Object info (node class definitions)
+# ---------------------------------------------------------------------------
+
+def get_object_info() -> dict:
+    """Fetch node class definitions from ComfyUI's ``GET /object_info`` endpoint.
+
+    Returns a dict mapping class_type strings to their input/output definitions.
+    Each entry contains ``input`` (with ``required`` and ``optional`` dicts),
+    ``output``, ``output_name``, etc.
+
+    Returns:
+        Dict of node definitions, or empty dict on error.
+    """
+    base = _get_base_url()
+    try:
+        resp = requests.get(f"{base}/object_info", timeout=30)
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning("ComfyUI /object_info returned HTTP %d", resp.status_code)
+        return {}
+    except requests.ConnectionError:
+        logger.warning("Cannot connect to ComfyUI at %s for /object_info", base)
+        return {}
+    except requests.Timeout:
+        logger.warning("Timeout fetching /object_info from ComfyUI")
+        return {}
+    except Exception as exc:
+        logger.warning("Error fetching /object_info: %s", exc)
+        return {}
+
+
+# ---------------------------------------------------------------------------
 # Job submission
 # ---------------------------------------------------------------------------
 

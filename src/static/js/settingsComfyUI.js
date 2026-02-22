@@ -2,7 +2,7 @@
  * ComfyUI settings tab logic.
  *
  * Manages the ComfyUI configuration pane inside the settings modal:
- * connection testing, model dropdown, workflow upload, and save.
+ * connection testing, model dropdown, dual workflow upload (API + UI), and save.
  *
  * Depends on: api.js (API), app.js ($, escapeHtml),
  *             searchableDropdown.js (createSearchableDropdown)
@@ -26,8 +26,8 @@ async function loadComfyUISettings() {
         // Load workflow info
         await _loadWorkflowInfo();
 
-        // Wire up file input change handler (once)
-        _initWorkflowFileInput();
+        // Wire up file input change handlers (once)
+        _initWorkflowFileInputs();
 
         // Check connection status
         await _checkConnectionStatus();
@@ -119,47 +119,45 @@ async function testComfyUIConnection() {
     }
 }
 
-// ── API Workflow file upload ────────────────────────────────────────────
+// ── Workflow file upload (dual: API + UI) ───────────────────────────────
 
-let _workflowFileInputWired = false;
-let _uiWorkflowFileInputWired = false;
+let _workflowFileInputsWired = false;
 
-function _initWorkflowFileInput() {
-    if (!_workflowFileInputWired) {
-        const input = $('#workflow-file-input');
-        if (input) {
-            input.addEventListener('change', _handleWorkflowFileChange);
-            _workflowFileInputWired = true;
-        }
+function _initWorkflowFileInputs() {
+    if (_workflowFileInputsWired) return;
+
+    const apiInput = $('#workflow-api-file-input');
+    const uiInput = $('#workflow-ui-file-input');
+
+    if (apiInput) {
+        apiInput.addEventListener('change', _handleAPIWorkflowFileChange);
     }
-    if (!_uiWorkflowFileInputWired) {
-        const uiInput = $('#ui-workflow-file-input');
-        if (uiInput) {
-            uiInput.addEventListener('change', _handleUIWorkflowFileChange);
-            _uiWorkflowFileInputWired = true;
-        }
+    if (uiInput) {
+        uiInput.addEventListener('change', _handleUIWorkflowFileChange);
     }
+
+    _workflowFileInputsWired = true;
 }
 
-async function _handleWorkflowFileChange(e) {
+async function _handleAPIWorkflowFileChange(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    const statusEl = $('#workflow-status');
+    const statusEl = $('#workflow-api-status');
     if (statusEl) {
         statusEl.textContent = 'Uploading…';
         statusEl.className = 'hint';
     }
 
     try {
-        const result = await API.uploadWorkflow(file);
-        if (result.error) {
+        const result = await API.uploadWorkflowAPI(file);
+        if (result.error || result.status === 'error') {
             if (statusEl) {
-                statusEl.textContent = `✗ ${result.error}`;
+                statusEl.textContent = `✗ ${result.error || result.message}`;
                 statusEl.className = 'hint hint-error';
             }
         } else {
-            _updateWorkflowDisplay(result.filename, result.workflow_name, true);
+            _updateAPIWorkflowDisplay(result.filename, result.workflow_name, true);
             if (statusEl) {
                 const msg = result.status === 'unchanged'
                     ? `✓ ${result.message}`
@@ -179,48 +177,30 @@ async function _handleWorkflowFileChange(e) {
     e.target.value = '';
 }
 
-async function deleteUploadedWorkflow() {
-    const statusEl = $('#workflow-status');
-
-    try {
-        await API.deleteWorkflow();
-        _updateWorkflowDisplay('', null, false);
-        _updateUIWorkflowDisplay('', false);
-        if (statusEl) {
-            statusEl.textContent = 'Workflows removed';
-            statusEl.className = 'hint';
-        }
-    } catch (err) {
-        if (statusEl) {
-            statusEl.textContent = '✗ Failed to remove: ' + err.message;
-            statusEl.className = 'hint hint-error';
-        }
-    }
-}
-
-// ── UI Workflow file upload ─────────────────────────────────────────────
-
 async function _handleUIWorkflowFileChange(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    const statusEl = $('#ui-workflow-status');
+    const statusEl = $('#workflow-ui-status');
     if (statusEl) {
         statusEl.textContent = 'Uploading…';
         statusEl.className = 'hint';
     }
 
     try {
-        const result = await API.uploadUIWorkflow(file);
-        if (result.error) {
+        const result = await API.uploadWorkflowUI(file);
+        if (result.error || result.status === 'error') {
             if (statusEl) {
-                statusEl.textContent = `✗ ${result.error}`;
+                statusEl.textContent = `✗ ${result.error || result.message}`;
                 statusEl.className = 'hint hint-error';
             }
         } else {
             _updateUIWorkflowDisplay(result.filename, true);
             if (statusEl) {
-                statusEl.textContent = `✓ ${result.message || result.filename}`;
+                const msg = result.status === 'unchanged'
+                    ? `✓ ${result.message}`
+                    : `✓ Uploaded: ${result.filename}`;
+                statusEl.textContent = msg;
                 statusEl.className = 'hint hint-success';
             }
         }
@@ -231,23 +211,30 @@ async function _handleUIWorkflowFileChange(e) {
         }
     }
 
+    // Reset the file input so the same file can be re-selected
     e.target.value = '';
 }
 
-async function deleteUploadedUIWorkflow() {
-    const statusEl = $('#ui-workflow-status');
+async function deleteUploadedWorkflow() {
+    const apiStatusEl = $('#workflow-api-status');
+    const uiStatusEl = $('#workflow-ui-status');
 
     try {
-        await API.deleteUIWorkflow();
+        await API.deleteWorkflow();
+        _updateAPIWorkflowDisplay('', null, false);
         _updateUIWorkflowDisplay('', false);
-        if (statusEl) {
-            statusEl.textContent = 'UI workflow removed';
-            statusEl.className = 'hint';
+        if (apiStatusEl) {
+            apiStatusEl.textContent = 'Workflows removed';
+            apiStatusEl.className = 'hint';
+        }
+        if (uiStatusEl) {
+            uiStatusEl.textContent = '';
+            uiStatusEl.className = 'hint';
         }
     } catch (err) {
-        if (statusEl) {
-            statusEl.textContent = '✗ Failed to remove: ' + err.message;
-            statusEl.className = 'hint hint-error';
+        if (apiStatusEl) {
+            apiStatusEl.textContent = '✗ Failed to remove: ' + err.message;
+            apiStatusEl.className = 'hint hint-error';
         }
     }
 }
@@ -258,43 +245,37 @@ async function _loadWorkflowInfo() {
     try {
         const info = await API.getWorkflowInfo();
 
-        // API workflow
-        _updateWorkflowDisplay(
-            info.filename || '',
+        // Update API workflow display
+        _updateAPIWorkflowDisplay(
+            info.api_filename || info.filename || '',
             info.workflow_name || null,
-            info.has_workflow || false,
+            info.has_api_workflow || info.has_workflow || false,
         );
 
-        const statusEl = $('#workflow-status');
-        if (statusEl && info.has_workflow) {
-            if (info.valid) {
-                statusEl.textContent = `✓ ${info.workflow_name || 'Valid API workflow'}`;
-                statusEl.className = 'hint hint-success';
-            } else {
-                statusEl.textContent = '✗ No matching workflow definition';
-                statusEl.className = 'hint hint-error';
-            }
-        }
-
-        // UI workflow
+        // Update UI workflow display
         _updateUIWorkflowDisplay(
             info.ui_filename || '',
             info.has_ui_workflow || false,
         );
 
-        const uiStatusEl = $('#ui-workflow-status');
-        if (uiStatusEl && info.has_ui_workflow) {
-            uiStatusEl.textContent = `✓ ${info.ui_filename}`;
-            uiStatusEl.className = 'hint hint-success';
+        const apiStatusEl = $('#workflow-api-status');
+        if (apiStatusEl && (info.has_api_workflow || info.has_workflow)) {
+            if (info.valid) {
+                apiStatusEl.textContent = `✓ ${info.workflow_name || 'Valid workflow'}`;
+                apiStatusEl.className = 'hint hint-success';
+            } else {
+                apiStatusEl.textContent = '✗ No matching workflow definition';
+                apiStatusEl.className = 'hint hint-error';
+            }
         }
     } catch (err) {
         console.warn('Failed to load workflow info:', err);
     }
 }
 
-function _updateWorkflowDisplay(filename, workflowName, hasWorkflow) {
-    const filenameEl = $('#workflow-filename');
-    const deleteBtn = $('#workflow-delete-btn');
+function _updateAPIWorkflowDisplay(filename, workflowName, hasWorkflow) {
+    const filenameEl = $('#workflow-api-filename');
+    const deleteBtn = $('#workflow-api-delete-btn');
 
     if (filenameEl) {
         filenameEl.textContent = hasWorkflow
@@ -309,8 +290,8 @@ function _updateWorkflowDisplay(filename, workflowName, hasWorkflow) {
 }
 
 function _updateUIWorkflowDisplay(filename, hasWorkflow) {
-    const filenameEl = $('#ui-workflow-filename');
-    const deleteBtn = $('#ui-workflow-delete-btn');
+    const filenameEl = $('#workflow-ui-filename');
+    const deleteBtn = $('#workflow-ui-delete-btn');
 
     if (filenameEl) {
         filenameEl.textContent = hasWorkflow

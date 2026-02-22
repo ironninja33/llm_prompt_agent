@@ -334,6 +334,31 @@ function _createFailedCard(job) {
     };
     actions.appendChild(regenBtn);
 
+    // Delete icon
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'gen-action-btn gen-delete-btn';
+    deleteBtn.title = 'Delete failed job';
+    deleteBtn.innerHTML = '✕';
+    deleteBtn.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+            await API.deleteGenerationJob(job.id);
+            const grid = item.closest('.gen-thumbnail-grid');
+            item.remove();
+            if (grid) {
+                _updateBubbleStatusFromGrid(grid);
+                // If grid is now empty, remove the entire bubble
+                if (grid.querySelectorAll('.gen-thumbnail-item').length === 0) {
+                    const bubble = grid.closest('.message.generation');
+                    if (bubble) bubble.remove();
+                }
+            }
+        } catch (err) {
+            console.error('Failed to delete job:', err);
+        }
+    };
+    actions.appendChild(deleteBtn);
+
     item.appendChild(actions);
     return item;
 }

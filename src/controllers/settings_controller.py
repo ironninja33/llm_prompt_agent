@@ -21,10 +21,15 @@ def get_all_settings() -> dict:
         all_settings["gemini_api_key_set"] = False
     # Don't send the raw key
     all_settings.pop("gemini_api_key", None)
-    # Don't send bulky workflow JSON/hash to the frontend
+    # Don't send bulky workflow/cache data to the frontend
     all_settings.pop("comfyui_workflow_api_json", None)
     all_settings.pop("comfyui_workflow_api_hash", None)
     all_settings.pop("comfyui_workflow_ui_json", None)
+    # Converter-era keys (may still be in DB from previous version)
+    all_settings.pop("comfyui_workflow_json", None)
+    all_settings.pop("comfyui_workflow_hash", None)
+    all_settings.pop("comfyui_workflow_api_cache", None)
+    all_settings.pop("comfyui_object_info_cache", None)
     return all_settings
 
 

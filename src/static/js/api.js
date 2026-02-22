@@ -147,20 +147,20 @@ const API = {
         return res.json();
     },
 
-    async uploadWorkflow(file) {
+    async uploadWorkflowAPI(file) {
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetch('/api/comfyui/workflow', {
+        const res = await fetch('/api/comfyui/workflow/api', {
             method: 'POST',
             body: formData,
         });
         return res.json();
     },
 
-    async uploadUIWorkflow(file) {
+    async uploadWorkflowUI(file) {
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetch('/api/comfyui/workflow-ui', {
+        const res = await fetch('/api/comfyui/workflow/ui', {
             method: 'POST',
             body: formData,
         });
@@ -169,11 +169,6 @@ const API = {
 
     async deleteWorkflow() {
         const res = await fetch('/api/comfyui/workflow', { method: 'DELETE' });
-        return res.json();
-    },
-
-    async deleteUIWorkflow() {
-        const res = await fetch('/api/comfyui/workflow-ui', { method: 'DELETE' });
         return res.json();
     },
 
@@ -193,6 +188,13 @@ const API = {
 
     async deleteGeneratedImage(jobId, imageId) {
         const res = await fetch(`/api/generate/image/${jobId}/${imageId}`, {
+            method: 'DELETE',
+        });
+        return res.json();
+    },
+
+    async deleteGenerationJob(jobId) {
+        const res = await fetch(`/api/generate/job/${jobId}`, {
             method: 'DELETE',
         });
         return res.json();

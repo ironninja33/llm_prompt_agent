@@ -456,18 +456,10 @@ def validate_workflow():
     return jsonify(result)
 
 
-@api_bp.route("/comfyui/workflow", methods=["POST"])
-def upload_workflow():
-    """Upload an API-format workflow JSON file and store it in the database.
-
-    Accepts multipart/form-data with a 'file' field containing the JSON file.
-    The uploaded file must be in **API format** (exported via "Save (API Format)"
-    in ComfyUI).  Stores the JSON content and filename in settings.
-    If the uploaded content is identical (by hash) to what's already stored,
-    it's treated as a no-op.
-    """
-    import hashlib
-    import json as json_mod
+@api_bp.route("/comfyui/workflow/api", methods=["POST"])
+def upload_api_workflow():
+    """Upload an API-format workflow JSON file."""
+    from src.controllers import workflow_controller
 
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -480,143 +472,53 @@ def upload_workflow():
 
     try:
         raw = f.read().decode("utf-8")
-        # Validate it's actually JSON
-        parsed = json_mod.loads(raw)
-    except (UnicodeDecodeError, json_mod.JSONDecodeError) as e:
-        return jsonify({"error": f"Invalid JSON: {e}"}), 400
+    except UnicodeDecodeError as e:
+        return jsonify({"error": f"Invalid file encoding: {e}"}), 400
 
-    # Verify it's API format (flat dict keyed by node-ID strings)
-    if not workflow_manager.is_api_format(parsed):
-        return jsonify({
-            "error": "This file appears to be in UI format. Please upload the API-format workflow here (exported via 'Save (API Format)' in ComfyUI). Use the separate UI Workflow upload for the UI-format file.",
-        }), 400
+    result = workflow_controller.upload_api_workflow(raw, f.filename)
+    status_code = 200 if result.get("status") != "error" else 400
+    return jsonify(result), status_code
 
-    content_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    # Check for duplicate
-    existing_hash = settings.get_setting("comfyui_workflow_api_hash")
-    if existing_hash == content_hash:
-        return jsonify({
-            "status": "unchanged",
-            "filename": settings.get_setting("comfyui_workflow_api_filename") or f.filename,
-            "message": "API workflow content is identical to current — no update needed",
-        })
+@api_bp.route("/comfyui/workflow/ui", methods=["POST"])
+def upload_ui_workflow():
+    """Upload a UI-format workflow JSON file (for extra_pnginfo metadata)."""
+    from src.controllers import workflow_controller
 
-    # Validate against workflow definitions
-    defn = workflow_manager.get_definition_for_workflow(f.filename)
-    if not defn:
-        return jsonify({
-            "error": "No matching workflow definition found for this file",
-        }), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
 
-    # Store in settings
-    settings.update_settings({
-        "comfyui_workflow_api_filename": f.filename,
-        "comfyui_workflow_api_json": raw,
-        "comfyui_workflow_api_hash": content_hash,
-    })
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"error": "No filename"}), 400
+    if not f.filename.lower().endswith(".json"):
+        return jsonify({"error": "File must be a .json file"}), 400
 
-    return jsonify({
-        "status": "uploaded",
-        "filename": f.filename,
-        "workflow_name": defn.name,
-        "message": f"API workflow '{f.filename}' uploaded successfully",
-    })
+    try:
+        raw = f.read().decode("utf-8")
+    except UnicodeDecodeError as e:
+        return jsonify({"error": f"Invalid file encoding: {e}"}), 400
+
+    result = workflow_controller.upload_ui_workflow(raw, f.filename)
+    status_code = 200 if result.get("status") != "error" else 400
+    return jsonify(result), status_code
 
 
 @api_bp.route("/comfyui/workflow", methods=["GET"])
 def get_workflow_info():
-    """Get info about the currently stored workflows (API and UI format)."""
-    api_filename = settings.get_setting("comfyui_workflow_api_filename") or ""
-    has_api = bool(settings.get_setting("comfyui_workflow_api_json")) and bool(api_filename)
-
-    ui_filename = settings.get_setting("comfyui_workflow_ui_filename") or ""
-    has_ui = bool(settings.get_setting("comfyui_workflow_ui_json")) and bool(ui_filename)
-
-    result = {
-        "filename": api_filename,
-        "has_workflow": has_api,
-        "ui_filename": ui_filename,
-        "has_ui_workflow": has_ui,
-    }
-
-    if api_filename:
-        defn = workflow_manager.get_definition_for_workflow(api_filename)
-        result["workflow_name"] = defn.name if defn else None
-        result["valid"] = defn is not None
-    else:
-        result["workflow_name"] = None
-        result["valid"] = False
-
-    return jsonify(result)
+    """Get info about the currently stored workflow."""
+    from src.controllers import workflow_controller
+    return jsonify(workflow_controller.get_workflow_info())
 
 
 @api_bp.route("/comfyui/workflow", methods=["DELETE"])
 def delete_workflow():
-    """Remove all stored workflows (API and UI format)."""
-    settings.update_settings({
-        "comfyui_workflow_api_filename": "",
-        "comfyui_workflow_api_json": "",
-        "comfyui_workflow_api_hash": "",
-        "comfyui_workflow_ui_filename": "",
-        "comfyui_workflow_ui_json": "",
-    })
+    """Remove the stored workflow."""
+    from src.controllers import workflow_controller
+    workflow_controller.delete_workflow()
     return jsonify({"status": "deleted"})
 
 
-@api_bp.route("/comfyui/workflow-ui", methods=["POST"])
-def upload_ui_workflow():
-    """Upload a UI-format workflow JSON file and store it in the database.
-
-    Accepts multipart/form-data with a 'file' field containing the JSON file.
-    The uploaded file must be in **UI format** (exported via regular "Save" /
-    "Export" in ComfyUI's graph editor).  This format has a top-level ``"nodes"``
-    array and is required by introspection nodes like KJNodes' GetWidgetValue.
-    """
-    import json as json_mod
-
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-
-    f = request.files["file"]
-    if not f.filename:
-        return jsonify({"error": "No filename"}), 400
-    if not f.filename.lower().endswith(".json"):
-        return jsonify({"error": "File must be a .json file"}), 400
-
-    try:
-        raw = f.read().decode("utf-8")
-        parsed = json_mod.loads(raw)
-    except (UnicodeDecodeError, json_mod.JSONDecodeError) as e:
-        return jsonify({"error": f"Invalid JSON: {e}"}), 400
-
-    # Verify it's UI format (has "nodes" array)
-    if workflow_manager.is_api_format(parsed):
-        return jsonify({
-            "error": "This file appears to be in API format. Please upload the UI-format workflow here (exported via regular 'Save' in ComfyUI). Use the API Workflow upload for the API-format file.",
-        }), 400
-
-    # Store in settings
-    settings.update_settings({
-        "comfyui_workflow_ui_filename": f.filename,
-        "comfyui_workflow_ui_json": raw,
-    })
-
-    return jsonify({
-        "status": "uploaded",
-        "filename": f.filename,
-        "message": f"UI workflow '{f.filename}' uploaded successfully",
-    })
-
-
-@api_bp.route("/comfyui/workflow-ui", methods=["DELETE"])
-def delete_ui_workflow():
-    """Remove the stored UI-format workflow."""
-    settings.update_settings({
-        "comfyui_workflow_ui_filename": "",
-        "comfyui_workflow_ui_json": "",
-    })
-    return jsonify({"status": "deleted"})
 
 
 # ── Generation endpoints ─────────────────────────────────────────────────
@@ -760,6 +662,32 @@ def get_generated_image(job_id, image_id):
         mimetype=content_type,
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+@api_bp.route("/generate/job/<job_id>", methods=["DELETE"])
+def delete_generation_job(job_id):
+    """Delete a generation job (e.g. a failed job with no images)."""
+    job = gen_model.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+
+    # If the job has images, clean them up first
+    images = gen_model.get_job_images(job_id)
+    for image in images:
+        comfyui_service.delete_image_file(
+            image["filename"],
+            image.get("subfolder", ""),
+        )
+
+    # Remove vector store entry if present
+    from src.models import vector_store
+    doc_id = f"gen_{job_id}"
+    vector_store.delete_document(doc_id, "output")
+
+    # Delete the job (cascades to images and settings)
+    gen_model.delete_job(job_id)
+
+    return jsonify({"ok": True})
 
 
 @api_bp.route("/generate/image/<job_id>/<int:image_id>", methods=["DELETE"])

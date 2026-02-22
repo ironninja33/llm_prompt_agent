@@ -204,12 +204,11 @@ def _insert_default_settings(conn: sqlite3.Connection):
         "comfyui_base_url": DEFAULT_COMFYUI_BASE_URL,
         "comfyui_default_model": "",
         "comfyui_default_negative": "",
-        "comfyui_workflow_path": "",
-        "comfyui_workflow_api_filename": "",
-        "comfyui_workflow_api_json": "",
-        "comfyui_workflow_api_hash": "",
-        "comfyui_workflow_ui_filename": "",
-        "comfyui_workflow_ui_json": "",
+        "comfyui_workflow_filename": "",
+        "comfyui_workflow_json": "",
+        "comfyui_workflow_hash": "",
+        "comfyui_workflow_api_cache": "",
+        "comfyui_object_info_cache": "",
     }
 
     for key, value in defaults.items():

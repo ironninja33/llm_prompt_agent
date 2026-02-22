@@ -1,12 +1,11 @@
 """Generation controller — business logic for ComfyUI image generation."""
 
 import logging
-import os
 import random
 import threading
 from src.models import generation as gen_model
 from src.models.settings import get_setting
-from src.services import comfyui_service, workflow_manager
+from src.services import comfyui_service
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +14,10 @@ def submit_generation(chat_id: str, message_id: int | None, settings: dict):
     """Submit an image generation job.
 
     1. Create job record in database
-    2. Load the workflow file from settings
-    3. Apply user settings to the workflow using workflow_manager
-    4. Submit to ComfyUI
-    5. Start polling for progress
-    6. Return the job dict
+    2. Load and prepare the workflow via workflow_controller
+    3. Submit to ComfyUI
+    4. Start polling for progress
+    5. Return the job dict
 
     settings dict should contain:
     - positive_prompt (required)
@@ -30,6 +28,8 @@ def submit_generation(chat_id: str, message_id: int | None, settings: dict):
     - seed (optional, default -1)
     - num_images (optional, default 1)
     """
+    from src.controllers import workflow_controller
+
     # Get defaults from settings for missing values
     if not settings.get("negative_prompt"):
         settings["negative_prompt"] = get_setting("comfyui_default_negative") or ""
@@ -44,59 +44,18 @@ def submit_generation(chat_id: str, message_id: int | None, settings: dict):
         settings["seed"] = seed_value
         logger.info("Resolved seed -1 → %d", seed_value)
 
-    # Get workflow from DB (preferred) or file path (legacy fallback)
-    api_workflow_json = get_setting("comfyui_workflow_api_json") or ""
-    api_workflow_filename = get_setting("comfyui_workflow_api_filename") or ""
-    ui_workflow_json = get_setting("comfyui_workflow_ui_json") or ""
-    workflow_path = get_setting("comfyui_workflow_path") or ""
-
-    if not api_workflow_json and not workflow_path:
-        raise ValueError("No ComfyUI API workflow configured. Upload one in Settings > ComfyUI.")
-
-    # Determine workflow definition name
-    if api_workflow_json and api_workflow_filename:
-        defn = workflow_manager.get_definition_for_workflow(api_workflow_filename)
-    elif workflow_path:
-        defn = workflow_manager.get_definition_for_workflow(os.path.basename(workflow_path))
-    else:
-        defn = None
-
-    workflow_name = defn.name if defn else "unknown"
-    settings["workflow_name"] = workflow_name
+    # Load and prepare workflow with user settings applied
+    prepared_api, prepared_ui = workflow_controller.prepare_for_generation(settings)
 
     # Create job in database
     job = gen_model.create_job(chat_id, message_id, settings)
     job_id = job["id"]
 
     try:
-        # Load and prepare workflow
         num_images = settings.get("num_images", 1) or 1
 
-        if api_workflow_json and api_workflow_filename:
-            prepared = workflow_manager.prepare_workflow_from_json(
-                api_workflow_json, api_workflow_filename, settings
-            )
-        else:
-            workflow_manager.load_workflow(workflow_path)
-            prepared = workflow_manager.prepare_workflow(workflow_path, settings)
-
-        # Parse and prepare the UI-format workflow for extra_pnginfo
-        # (needed by introspection nodes like KJNodes' GetWidgetValue).
-        # The UI workflow must also have the same user settings applied
-        # so that widget values match what the API workflow contains.
-        import json
-        ui_workflow_prepared = None
-        if ui_workflow_json and defn:
-            try:
-                ui_workflow_raw = json.loads(ui_workflow_json)
-                ui_workflow_prepared = defn.apply_settings(ui_workflow_raw, settings)
-            except json.JSONDecodeError:
-                logger.warning("Stored UI workflow JSON is invalid — omitting from extra_pnginfo")
-            except Exception as e:
-                logger.warning("Failed to apply settings to UI workflow: %s", e)
-
         # Submit to ComfyUI
-        result = comfyui_service.submit_prompt(prepared, ui_workflow=ui_workflow_prepared)
+        result = comfyui_service.submit_prompt(prepared_api, ui_workflow=prepared_ui)
 
         if not result.success:
             gen_model.update_job_status(job_id, "failed")

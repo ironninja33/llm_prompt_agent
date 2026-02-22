@@ -207,26 +207,26 @@
 
                     <label>API Workflow JSON
                         <div class="workflow-upload-area">
-                            <span id="workflow-filename" class="workflow-filename">No API workflow uploaded</span>
+                            <span id="workflow-api-filename" class="workflow-filename">No API workflow uploaded</span>
                             <div class="input-group">
-                                <input type="file" id="workflow-file-input" accept=".json" class="hidden">
-                                <button class="btn-sm" onclick="document.getElementById('workflow-file-input').click()">Browse…</button>
-                                <button class="btn-sm btn-danger" id="workflow-delete-btn" onclick="deleteUploadedWorkflow()" style="display:none">Remove</button>
+                                <input type="file" id="workflow-api-file-input" accept=".json" class="hidden">
+                                <button class="btn-sm" onclick="document.getElementById('workflow-api-file-input').click()">Browse…</button>
+                                <button class="btn-sm btn-danger" id="workflow-api-delete-btn" onclick="deleteUploadedWorkflow()" style="display:none">Remove</button>
                             </div>
                         </div>
-                        <span id="workflow-status" class="hint">Export via "Save (API Format)" in ComfyUI</span>
+                        <span id="workflow-api-status" class="hint">Export via "Save (API Format)" in ComfyUI — required for generation</span>
                     </label>
 
-                    <label>UI Workflow JSON
+                    <label>UI Workflow JSON <span class="hint" style="display:inline">(optional)</span>
                         <div class="workflow-upload-area">
-                            <span id="ui-workflow-filename" class="workflow-filename">No UI workflow uploaded</span>
+                            <span id="workflow-ui-filename" class="workflow-filename">No UI workflow uploaded</span>
                             <div class="input-group">
-                                <input type="file" id="ui-workflow-file-input" accept=".json" class="hidden">
-                                <button class="btn-sm" onclick="document.getElementById('ui-workflow-file-input').click()">Browse…</button>
-                                <button class="btn-sm btn-danger" id="ui-workflow-delete-btn" onclick="deleteUploadedUIWorkflow()" style="display:none">Remove</button>
+                                <input type="file" id="workflow-ui-file-input" accept=".json" class="hidden">
+                                <button class="btn-sm" onclick="document.getElementById('workflow-ui-file-input').click()">Browse…</button>
+                                <button class="btn-sm btn-danger" id="workflow-ui-delete-btn" onclick="deleteUploadedWorkflow()" style="display:none">Remove</button>
                             </div>
                         </div>
-                        <span id="ui-workflow-status" class="hint">Export via regular "Save" in ComfyUI (required for KJNodes)</span>
+                        <span id="workflow-ui-status" class="hint">Export via regular "Save" in ComfyUI — used for image metadata</span>
                     </label>
 
                     <div class="btn-row">
