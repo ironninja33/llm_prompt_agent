@@ -1,22 +1,49 @@
 /**
  * Full-size image viewer with generation settings sidebar.
  * Opens as a fullscreen overlay when clicking a thumbnail.
+ *
+ * Supports viewing multiple images from different generation jobs
+ * (e.g. a merged bubble with images from several 1-image generations).
  */
 
-let _viewerJob = null;       // Current job being viewed
-let _viewerImageIndex = 0;   // Current image index within job.images
+let _viewerItems = [];       // Array of {job, img} entries
+let _viewerImageIndex = 0;   // Current index into _viewerItems
 let _viewerMissingSet = new Set();  // Track indices of missing images
 
 /**
  * Open the full-size viewer.
- * @param {Object} job - Generation job with settings and images
- * @param {Object} img - The specific image to show initially
+ *
+ * Accepts two calling conventions:
+ *   1. openFullSizeViewer(items, initialIndex) — array of {job, img} + index
+ *   2. openFullSizeViewer(job, img) — legacy single-job call (auto-wrapped)
+ *
+ * @param {Array|Object} itemsOrJob - Array of {job, img} or a single job object
+ * @param {number|Object} initialIndexOrImg - Starting index or the specific image
  */
-function openFullSizeViewer(job, img) {
-    _viewerJob = job;
+function openFullSizeViewer(itemsOrJob, initialIndexOrImg) {
     _viewerMissingSet = new Set();
-    _viewerImageIndex = (job.images || []).findIndex(i => i.id === img.id);
-    if (_viewerImageIndex < 0) _viewerImageIndex = 0;
+
+    if (Array.isArray(itemsOrJob)) {
+        // New-style: array of {job, img} entries + starting index
+        _viewerItems = itemsOrJob;
+        _viewerImageIndex = typeof initialIndexOrImg === 'number' ? initialIndexOrImg : 0;
+    } else {
+        // Legacy: single job + img object
+        const job = itemsOrJob;
+        const img = initialIndexOrImg;
+        if (job.images && job.images.length > 1) {
+            // Job has multiple images — build flat list from this job
+            _viewerItems = job.images.map(i => ({ job, img: i }));
+            _viewerImageIndex = job.images.findIndex(i => i.id === img.id);
+            if (_viewerImageIndex < 0) _viewerImageIndex = 0;
+        } else {
+            // Single image
+            _viewerItems = [{ job, img }];
+            _viewerImageIndex = 0;
+        }
+    }
+
+    if (_viewerItems.length === 0) return;
 
     const overlay = document.getElementById('fullsize-viewer');
     overlay.classList.remove('hidden');
@@ -32,7 +59,7 @@ function openFullSizeViewer(job, img) {
 function closeFullSizeViewer() {
     const overlay = document.getElementById('fullsize-viewer');
     overlay.classList.add('hidden');
-    _viewerJob = null;
+    _viewerItems = [];
     _viewerMissingSet = new Set();
     document.removeEventListener('keydown', _viewerKeyHandler);
 }
@@ -48,9 +75,9 @@ function _viewerKeyHandler(e) {
  * Returns -1 if none found.
  */
 function _findNextValidIndex(fromIndex, direction) {
-    if (!_viewerJob || !_viewerJob.images) return -1;
+    if (_viewerItems.length === 0) return -1;
     let idx = fromIndex + direction;
-    while (idx >= 0 && idx < _viewerJob.images.length) {
+    while (idx >= 0 && idx < _viewerItems.length) {
         if (!_viewerMissingSet.has(idx)) return idx;
         idx += direction;
     }
@@ -62,6 +89,7 @@ function viewerPrev() {
     if (idx >= 0) {
         _viewerImageIndex = idx;
         _renderViewerImage();
+        _renderViewerSidebar();
         _updateViewerNavigation();
     }
 }
@@ -71,16 +99,18 @@ function viewerNext() {
     if (idx >= 0) {
         _viewerImageIndex = idx;
         _renderViewerImage();
+        _renderViewerSidebar();
         _updateViewerNavigation();
     }
 }
 
 function _renderViewerImage() {
     const imgEl = document.getElementById('viewer-image');
-    if (!imgEl || !_viewerJob) return;
+    if (!imgEl || _viewerItems.length === 0) return;
 
-    const img = _viewerJob.images[_viewerImageIndex];
-    if (!img) return;
+    const entry = _viewerItems[_viewerImageIndex];
+    if (!entry) return;
+    const { job, img } = entry;
 
     // Remove any previous placeholder
     const container = imgEl.parentElement;
@@ -88,7 +118,7 @@ function _renderViewerImage() {
     if (existingPlaceholder) existingPlaceholder.remove();
     imgEl.classList.remove('hidden');
 
-    imgEl.src = `/api/generate/image/${_viewerJob.id}/${img.id}`;
+    imgEl.src = `/api/generate/image/${job.id}/${img.id}`;
     imgEl.alt = `Generated image ${_viewerImageIndex + 1}`;
 
     // Handle load failure — show placeholder in viewer
@@ -114,7 +144,7 @@ function _renderViewerImage() {
     // Update counter
     const counter = document.getElementById('viewer-counter');
     if (counter) {
-        counter.textContent = `${_viewerImageIndex + 1} / ${_viewerJob.images.length}`;
+        counter.textContent = `${_viewerImageIndex + 1} / ${_viewerItems.length}`;
     }
 }
 
@@ -138,9 +168,11 @@ function _showViewerMissingPlaceholder(imgEl) {
 
 function _renderViewerSidebar() {
     const sidebar = document.getElementById('viewer-sidebar-content');
-    if (!sidebar || !_viewerJob) return;
+    if (!sidebar || _viewerItems.length === 0) return;
 
-    const s = _viewerJob.settings || {};
+    const entry = _viewerItems[_viewerImageIndex];
+    if (!entry) return;
+    const s = entry.job.settings || {};
 
     // Build settings table
     let html = '<table class="viewer-settings-table">';

@@ -8,8 +8,10 @@
  *             pillInput.js (createPillInput)
  */
 
-// Session-level last-used settings (not persisted to DB)
-let _lastGenerationSettings = null;
+// Per-chat session-level last-used settings (not persisted to DB).
+// Maps chatId → settings object. Ensures switching threads doesn't
+// bleed settings from one chat into another.
+let _lastGenerationSettingsPerChat = {};
 
 // Widget instances (created once, reused across opens)
 let _genModelDropdown = null;
@@ -67,19 +69,23 @@ async function openGenerationOverlay(options) {
     // Load model/lora/folder lists (cached after first fetch)
     await _loadGenerationData();
 
-    // Determine what values to fill
+    // Determine what values to fill.
+    // Priority: 1) explicit settings (regenerate), 2) defaultSettings from
+    // current chat's bubbles, 3) per-chat session memory, 4) first-time defaults.
+    // This ensures switching threads uses the correct thread's settings.
+    const chatSessionSettings = _currentGenChatId
+        ? _lastGenerationSettingsPerChat[_currentGenChatId] || null
+        : null;
+
     if (settings) {
         // Regenerate mode: remember the actual seed but default input to -1
         const actualSeed = settings.seed != null ? settings.seed : null;
         _previousGenSeed = (actualSeed != null && actualSeed !== -1) ? actualSeed : null;
         _fillOverlayFields({ ...settings, seed: -1 });
-    } else if (_lastGenerationSettings) {
-        // Returning user: use last settings + new prompt
-        _previousGenSeed = null;
-        _fillOverlayFields({ ..._lastGenerationSettings, positive_prompt: prompt, seed: -1 });
     } else if (defaultSettings) {
-        // After page refresh: use stored bubble settings (base_model, loras, output_folder)
-        // with the new prompt and seed=-1
+        // Use stored bubble settings from the current chat (base_model, loras, output_folder).
+        // This takes priority over session memory to ensure the current thread's
+        // settings are used even if the user generated in a different thread recently.
         _previousGenSeed = null;
         _fillOverlayFields({
             positive_prompt: prompt,
@@ -89,6 +95,10 @@ async function openGenerationOverlay(options) {
             seed: -1,
             num_images: 1,
         });
+    } else if (chatSessionSettings) {
+        // Returning user on same chat: use last settings from this chat + new prompt
+        _previousGenSeed = null;
+        _fillOverlayFields({ ...chatSessionSettings, positive_prompt: prompt, seed: -1 });
     } else {
         // First time: defaults + prompt; try to get default model from settings
         _previousGenSeed = null;
@@ -159,8 +169,10 @@ async function submitGeneration() {
     try {
         const settings = _gatherOverlayValues();
 
-        // Persist to session memory
-        _lastGenerationSettings = { ...settings };
+        // Persist to per-chat session memory
+        if (_currentGenChatId) {
+            _lastGenerationSettingsPerChat[_currentGenChatId] = { ...settings };
+        }
 
         // Build chat/message IDs
         const chatId = _currentGenChatId;

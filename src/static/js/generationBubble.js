@@ -161,6 +161,11 @@ function _createThumbnailItem(job, img) {
     item.className = 'gen-thumbnail-item';
     item.dataset.jobId = job.id;
 
+    // Store job/img references on the DOM element so the viewer can
+    // collect all images from the parent grid for cross-job navigation.
+    item._viewerJob = job;
+    item._viewerImg = img;
+
     // Thumbnail image (clickable for full-size view)
     const thumb = document.createElement('img');
     thumb.className = 'gen-thumbnail-img';
@@ -170,6 +175,26 @@ function _createThumbnailItem(job, img) {
     thumb.onclick = () => {
         if (item.classList.contains('thumbnail-missing')) return;
         if (typeof openFullSizeViewer === 'function') {
+            // Gather all non-missing, non-failed, non-pending images from the bubble grid
+            const grid = item.closest('.gen-thumbnail-grid');
+            if (grid) {
+                const allItems = grid.querySelectorAll(
+                    '.gen-thumbnail-item:not(.gen-thumbnail-pending):not(.gen-thumbnail-failed):not(.thumbnail-missing)'
+                );
+                const viewerItems = [];
+                let startIndex = 0;
+                allItems.forEach((el, idx) => {
+                    if (el._viewerJob && el._viewerImg) {
+                        viewerItems.push({ job: el._viewerJob, img: el._viewerImg });
+                        if (el === item) startIndex = viewerItems.length - 1;
+                    }
+                });
+                if (viewerItems.length > 0) {
+                    openFullSizeViewer(viewerItems, startIndex);
+                    return;
+                }
+            }
+            // Fallback: open with just this image
             openFullSizeViewer(job, img);
         }
     };
@@ -520,18 +545,8 @@ async function _handleGenerationComplete(data) {
         console.error('Failed to fetch generation results:', err);
     }
 
-    // Re-enable chat input if no more active jobs
-    _checkAndUnlockChat();
 }
 
-/**
- * Check if there are any active generation jobs and unlock chat if not.
- */
-function _checkAndUnlockChat() {
-    if (Object.keys(_activeGenerationPollers).length === 0) {
-        setStreaming(false);
-    }
-}
 
 // ── Overflow viewer ──────────────────────────────────────────────────────
 
@@ -663,9 +678,6 @@ function cleanupGenerationPollers() {
 window.addEventListener('generation-submitted', (e) => {
     const job = e.detail;
     if (!job || !job.id) return;
-
-    // Lock chat input
-    setStreaming(true);
 
     const msgId = String(job.message_id || job.messageId || '');
 

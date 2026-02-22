@@ -221,7 +221,11 @@ function addErrorMessage(text) {
 async function sendMessage() {
     const input = $('#message-input');
     const rawContent = input.value.trim();
-    if (!rawContent || isStreaming) return;
+    if (!rawContent) return;
+
+    // Block if THIS chat already has an active stream
+    if (StreamRegistry.isActive(currentChatId)) return;
+
     let pendingToolCalls = null;
 
     // If refine context is active, build the combined message
@@ -232,6 +236,9 @@ async function sendMessage() {
     if (!currentChatId) {
         await createNewChat();
     }
+
+    // Capture chatId at send time — this won't change even if user switches chats
+    const sendChatId = currentChatId;
 
     // Capture attachment thumbnails before clearing
     const attachmentThumbs = typeof getAttachmentThumbnails === 'function'
@@ -278,6 +285,10 @@ async function sendMessage() {
     if (hasRefine && typeof clearRefineContext === 'function') {
         clearRefineContext();
     }
+
+    // Register stream and lock input for this chat
+    StreamRegistry.register(sendChatId);
+    renderChatList();  // Update sidebar to show streaming indicator
     setStreaming(true);
     scrollToBottom();
 
@@ -285,55 +296,86 @@ async function sendMessage() {
         // Check for attachments
         let response;
         if (typeof hasAttachments === 'function' && hasAttachments()) {
-            const formData = await prepareAttachmentsForSend(currentChatId, content);
-            response = await API.sendMessageWithAttachments(currentChatId, formData);
+            const formData = await prepareAttachmentsForSend(sendChatId, content);
+            response = await API.sendMessageWithAttachments(sendChatId, formData);
             clearAttachments();
         } else {
-            response = await API.sendMessage(currentChatId, content);
+            response = await API.sendMessage(sendChatId, content);
         }
 
         if (!response.ok) {
             const err = await response.json();
-            addErrorMessage(err.error || 'Failed to send message');
-            setStreaming(false);
+            StreamRegistry.setError(sendChatId);
+            if (currentChatId === sendChatId) {
+                addErrorMessage(err.error || 'Failed to send message');
+                setStreaming(false);
+            }
+            StreamRegistry.cleanup(sendChatId);
             return;
         }
 
-        const streamingEl = addStreamingMessage();
+        // Only add streaming element if still viewing this chat
+        if (currentChatId === sendChatId) {
+            addStreamingMessage();
+        }
 
         await readSSEStream(response, {
             token(data) {
-                appendToStreamingMessage(data.text || '');
+                const text = data.text || '';
+                // Always buffer in registry (survives chat switching)
+                StreamRegistry.appendText(sendChatId, text);
+                // Only update DOM if user is still viewing this chat
+                if (currentChatId === sendChatId) {
+                    appendToStreamingMessage(text);
+                }
             },
             status(data) {
-                removeStatusMessages();
-                addStatusMessage(data.message || 'Processing...');
+                if (currentChatId === sendChatId) {
+                    removeStatusMessages();
+                    addStatusMessage(data.message || 'Processing...');
+                }
             },
             tool_result(data) {
-                removeStatusMessages();
-                const summary = data.summary || 'Done';
-                addStatusMessage(`✓ ${data.tool}: ${summary}`);
-                // Remove after a short delay
-                setTimeout(removeStatusMessages, 1500);
+                if (currentChatId === sendChatId) {
+                    removeStatusMessages();
+                    const summary = data.summary || 'Done';
+                    addStatusMessage(`✓ ${data.tool}: ${summary}`);
+                    setTimeout(removeStatusMessages, 1500);
+                }
             },
             tool_calls(data) {
                 pendingToolCalls = data.calls;
+                StreamRegistry.setToolCalls(sendChatId, data.calls);
             },
             error(data) {
-                addErrorMessage(data.message || 'An error occurred');
+                StreamRegistry.setError(sendChatId);
+                if (currentChatId === sendChatId) {
+                    addErrorMessage(data.message || 'An error occurred');
+                }
             },
             done(data) {
-                finalizeStreamingMessage(data.message_id, pendingToolCalls);
-                setStreaming(false);
+                StreamRegistry.finalize(sendChatId, data.message_id);
+                if (currentChatId === sendChatId) {
+                    finalizeStreamingMessage(data.message_id, pendingToolCalls);
+                    setStreaming(false);
+                }
+                StreamRegistry.cleanup(sendChatId);
                 // Refresh chat list to pick up new title
                 loadChats();
             },
         });
 
     } catch (err) {
-        addErrorMessage(`Network error: ${err.message}`);
+        StreamRegistry.setError(sendChatId);
+        if (currentChatId === sendChatId) {
+            addErrorMessage(`Network error: ${err.message}`);
+        }
+        StreamRegistry.cleanup(sendChatId);
     } finally {
-        setStreaming(false);
+        // Ensure input is unlocked if still viewing this chat
+        if (currentChatId === sendChatId) {
+            setStreaming(false);
+        }
     }
 }
 
@@ -354,7 +396,11 @@ function startEditMessage(messageId, content) {
 async function submitEditedMessage(messageId) {
     const input = $('#message-input');
     const content = input.value.trim();
-    if (!content || isStreaming) return;
+    if (!content) return;
+
+    // Block if THIS chat already has an active stream
+    if (StreamRegistry.isActive(currentChatId)) return;
+
     let pendingToolCalls = null;
 
     // Restore normal send behavior
@@ -362,61 +408,91 @@ async function submitEditedMessage(messageId) {
     sendBtn.onclick = sendMessage;
     sendBtn.title = 'Send';
 
+    const sendChatId = currentChatId;
+
     input.value = '';
     autoResizeInput(input);
+    StreamRegistry.register(sendChatId);
+    renderChatList();  // Update sidebar to show streaming indicator
     setStreaming(true);
 
-    // Reload messages up to the edited point
-    // (The backend deletes from messageId onward)
     try {
-        const response = await API.editMessage(currentChatId, messageId, content);
+        const response = await API.editMessage(sendChatId, messageId, content);
         if (!response.ok) {
             const err = await response.json();
-            addErrorMessage(err.error || 'Failed to edit message');
-            setStreaming(false);
+            StreamRegistry.setError(sendChatId);
+            if (currentChatId === sendChatId) {
+                addErrorMessage(err.error || 'Failed to edit message');
+                setStreaming(false);
+            }
+            StreamRegistry.cleanup(sendChatId);
             return;
         }
 
-        // Reload messages to show cleaned-up history, then stream
-        await loadMessages(currentChatId);
+        if (currentChatId === sendChatId) {
+            // Reload messages to show cleaned-up history, then stream
+            await loadMessages(sendChatId);
 
-        // Add the new user message
-        const container = $('#messages');
-        const userDiv = document.createElement('div');
-        userDiv.className = 'message user';
-        userDiv.textContent = content;
-        container.appendChild(userDiv);
+            // Add the new user message
+            const container = $('#messages');
+            const userDiv = document.createElement('div');
+            userDiv.className = 'message user';
+            userDiv.textContent = content;
+            container.appendChild(userDiv);
 
-        const streamingEl = addStreamingMessage();
+            addStreamingMessage();
+        }
 
         await readSSEStream(response, {
             token(data) {
-                appendToStreamingMessage(data.text || '');
+                const text = data.text || '';
+                StreamRegistry.appendText(sendChatId, text);
+                if (currentChatId === sendChatId) {
+                    appendToStreamingMessage(text);
+                }
             },
             status(data) {
-                removeStatusMessages();
-                addStatusMessage(data.message || 'Processing...');
+                if (currentChatId === sendChatId) {
+                    removeStatusMessages();
+                    addStatusMessage(data.message || 'Processing...');
+                }
             },
             tool_result(data) {
-                removeStatusMessages();
+                if (currentChatId === sendChatId) {
+                    removeStatusMessages();
+                }
             },
             tool_calls(data) {
                 pendingToolCalls = data.calls;
+                StreamRegistry.setToolCalls(sendChatId, data.calls);
             },
             error(data) {
-                addErrorMessage(data.message || 'An error occurred');
+                StreamRegistry.setError(sendChatId);
+                if (currentChatId === sendChatId) {
+                    addErrorMessage(data.message || 'An error occurred');
+                }
             },
             done(data) {
-                finalizeStreamingMessage(data.message_id, pendingToolCalls);
-                setStreaming(false);
+                StreamRegistry.finalize(sendChatId, data.message_id);
+                if (currentChatId === sendChatId) {
+                    finalizeStreamingMessage(data.message_id, pendingToolCalls);
+                    setStreaming(false);
+                }
+                StreamRegistry.cleanup(sendChatId);
                 loadChats();
             },
         });
 
     } catch (err) {
-        addErrorMessage(`Network error: ${err.message}`);
+        StreamRegistry.setError(sendChatId);
+        if (currentChatId === sendChatId) {
+            addErrorMessage(`Network error: ${err.message}`);
+        }
+        StreamRegistry.cleanup(sendChatId);
     } finally {
-        setStreaming(false);
+        if (currentChatId === sendChatId) {
+            setStreaming(false);
+        }
     }
 }
 

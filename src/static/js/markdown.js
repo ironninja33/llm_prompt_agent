@@ -25,32 +25,41 @@ function copyPromptText(button) {
 
     const text = contentEl.textContent;
 
-    navigator.clipboard.writeText(text).then(() => {
-        // Show success feedback
-        button.innerHTML = CHECK_ICON_SVG;
-        button.classList.add('copied');
-        setTimeout(() => {
-            button.innerHTML = COPY_ICON_SVG;
-            button.classList.remove('copied');
-        }, 1500);
-    }).catch(() => {
-        // Fallback for older browsers
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
+    // Try modern clipboard API first
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            _showCopySuccess(button);
+        }).catch(() => {
+            _fallbackCopy(text, button);
+        });
+    } else {
+        _fallbackCopy(text, button);
+    }
+}
 
-        button.innerHTML = CHECK_ICON_SVG;
-        button.classList.add('copied');
-        setTimeout(() => {
-            button.innerHTML = COPY_ICON_SVG;
-            button.classList.remove('copied');
-        }, 1500);
-    });
+function _showCopySuccess(button) {
+    button.innerHTML = CHECK_ICON_SVG;
+    button.classList.add('copied');
+    setTimeout(() => {
+        button.innerHTML = COPY_ICON_SVG;
+        button.classList.remove('copied');
+    }, 1500);
+}
+
+function _fallbackCopy(text, button) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+        document.execCommand('copy');
+        _showCopySuccess(button);
+    } catch (e) {
+        console.error('Copy failed:', e);
+    }
+    document.body.removeChild(textarea);
 }
 
 /**
@@ -114,8 +123,8 @@ function renderMarkdown(text) {
                 + `<span class="prompt-block-label">Suggested Prompt</span>`
                 + `<span class="prompt-header-actions">`
                 + `<button class="prompt-refine-btn" title="Refine this prompt" onclick="_refineFromPromptBlock(this)">${REFINE_ICON_SVG}</button>`
-                + `<button class="prompt-gen-btn" title="Generate image" onclick="_openGenFromPromptBlock(this)">${GENERATE_ICON_SVG}</button>`
                 + `<button class="prompt-copy-btn" title="Copy to clipboard" onclick="copyPromptText(this)">${COPY_ICON_SVG}</button>`
+                + `<button class="prompt-gen-btn" title="Generate image" onclick="_openGenFromPromptBlock(this)">${GENERATE_ICON_SVG}</button>`
                 + `</span>`
                 + `</div>`
                 + `<div class="prompt-block-content">${trimmed}</div>`

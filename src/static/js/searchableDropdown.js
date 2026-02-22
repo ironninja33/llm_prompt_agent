@@ -36,6 +36,7 @@ function createSearchableDropdown(options) {
     let currentValue = initialValue;
     let isOpen = false;
     let highlightIndex = -1;
+    let _mouseDownOnDropdown = false;
 
     // ── Build DOM ───────────────────────────────────────────────
     const wrapper = document.createElement('div');
@@ -168,6 +169,7 @@ function createSearchableDropdown(options) {
 
     // Click on items in dropdown
     dropdownList.addEventListener('mousedown', (e) => {
+        _mouseDownOnDropdown = true;
         // mousedown instead of click so it fires before blur
         const itemEl = e.target.closest('.sd-item:not(.sd-no-results):not(.sd-more)');
         if (itemEl) {
@@ -179,7 +181,8 @@ function createSearchableDropdown(options) {
     // Hide on blur (with a small delay so click can register)
     input.addEventListener('blur', () => {
         setTimeout(() => {
-            hideDropdown();
+            if (!_mouseDownOnDropdown) hideDropdown();
+            _mouseDownOnDropdown = false;
         }, 150);
     });
 
