@@ -36,6 +36,17 @@ const API = {
         });
     },
 
+    /**
+     * Send a message with file attachments via multipart/form-data.
+     * Do NOT set Content-Type — the browser sets it with the boundary.
+     */
+    sendMessageWithAttachments(chatId, formData) {
+        return fetch(`/api/chats/${chatId}/messages`, {
+            method: 'POST',
+            body: formData,
+        });
+    },
+
     editMessage(chatId, messageId, content) {
         return fetch(`/api/chats/${chatId}/messages/${messageId}`, {
             method: 'PUT',
@@ -103,6 +114,87 @@ const API = {
     // ── Stats ───────────────────────────────────────────────────
     async getStats() {
         const res = await fetch('/api/stats');
+        return res.json();
+    },
+
+    // ── ComfyUI endpoints ──────────────────────────────────────
+    async checkComfyUIHealth() {
+        const res = await fetch('/api/comfyui/health');
+        return res.json();
+    },
+
+    async getComfyUIModels(modelType) {
+        const res = await fetch(`/api/comfyui/models/${modelType}`);
+        return res.json();
+    },
+
+    async getComfyUIOutputFolders() {
+        const res = await fetch('/api/comfyui/output-folders');
+        return res.json();
+    },
+
+    async validateWorkflow(path) {
+        const res = await fetch('/api/comfyui/validate-workflow', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path }),
+        });
+        return res.json();
+    },
+
+    async getWorkflowInfo() {
+        const res = await fetch('/api/comfyui/workflow');
+        return res.json();
+    },
+
+    async uploadWorkflow(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/comfyui/workflow', {
+            method: 'POST',
+            body: formData,
+        });
+        return res.json();
+    },
+
+    async uploadUIWorkflow(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/comfyui/workflow-ui', {
+            method: 'POST',
+            body: formData,
+        });
+        return res.json();
+    },
+
+    async deleteWorkflow() {
+        const res = await fetch('/api/comfyui/workflow', { method: 'DELETE' });
+        return res.json();
+    },
+
+    async deleteUIWorkflow() {
+        const res = await fetch('/api/comfyui/workflow-ui', { method: 'DELETE' });
+        return res.json();
+    },
+
+    async submitGeneration(chatId, messageId, settings) {
+        const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, message_id: messageId, settings }),
+        });
+        return res.json();
+    },
+
+    async getChatGenerations(chatId) {
+        const res = await fetch(`/api/generate/chat/${chatId}`);
+        return res.json();
+    },
+
+    async deleteGeneratedImage(jobId, imageId) {
+        const res = await fetch(`/api/generate/image/${jobId}/${imageId}`, {
+            method: 'DELETE',
+        });
         return res.json();
     },
 };

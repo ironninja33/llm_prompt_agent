@@ -5,7 +5,7 @@ import os
 import logging
 from contextlib import contextmanager
 
-from src.config import SQLITE_DB_PATH
+from src.config import SQLITE_DB_PATH, DEFAULT_COMFYUI_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,44 @@ MIGRATIONS = [
             started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP
         )""",
+    ]),
+    (3, "Image generation tables", [
+        """CREATE TABLE IF NOT EXISTS generation_jobs (
+            id TEXT PRIMARY KEY,
+            chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+            message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+            prompt_id TEXT,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'queued', 'running', 'completed', 'failed')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS generated_images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL REFERENCES generation_jobs(id) ON DELETE CASCADE,
+            filename TEXT NOT NULL,
+            subfolder TEXT DEFAULT '',
+            width INTEGER,
+            height INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS generation_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL UNIQUE REFERENCES generation_jobs(id) ON DELETE CASCADE,
+            positive_prompt TEXT NOT NULL,
+            negative_prompt TEXT,
+            base_model TEXT,
+            loras TEXT,
+            output_folder TEXT,
+            seed INTEGER DEFAULT -1,
+            num_images INTEGER DEFAULT 1,
+            workflow_name TEXT,
+            extra_settings TEXT
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_gen_jobs_chat ON generation_jobs(chat_id)""",
+        """CREATE INDEX IF NOT EXISTS idx_gen_jobs_message ON generation_jobs(message_id)""",
+        """CREATE INDEX IF NOT EXISTS idx_gen_images_job ON generated_images(job_id)""",
+        """CREATE INDEX IF NOT EXISTS idx_gen_settings_job ON generation_settings(job_id)""",
     ]),
 ]
 
@@ -163,6 +201,15 @@ def _insert_default_settings(conn: sqlite3.Connection):
         "cluster_k_cross": "15",
         "cluster_min_folder_size": "20",
         "cluster_label_terms": "3",  # Number of TF-IDF terms used in cluster labels
+        "comfyui_base_url": DEFAULT_COMFYUI_BASE_URL,
+        "comfyui_default_model": "",
+        "comfyui_default_negative": "",
+        "comfyui_workflow_path": "",
+        "comfyui_workflow_api_filename": "",
+        "comfyui_workflow_api_json": "",
+        "comfyui_workflow_api_hash": "",
+        "comfyui_workflow_ui_filename": "",
+        "comfyui_workflow_ui_json": "",
     }
 
     for key, value in defaults.items():

@@ -49,6 +49,11 @@ def create_app() -> Flask:
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
 
+    # Initialize generation listener
+    from src.controllers import generation_controller
+    logger.info("Initializing generation listener...")
+    generation_controller.initialize()
+
     # Start background ingestion
     from src.services.ingestion_service import start_ingestion
     logger.info("Starting background data ingestion...")

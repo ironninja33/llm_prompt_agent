@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_all_settings() -> dict:
-    """Get all settings. Masks the API key for security."""
+    """Get all settings. Masks the API key and strips bulky fields."""
     all_settings = settings.get_all_settings()
     # Mask API key
     if "gemini_api_key" in all_settings and all_settings["gemini_api_key"]:
@@ -21,6 +21,10 @@ def get_all_settings() -> dict:
         all_settings["gemini_api_key_set"] = False
     # Don't send the raw key
     all_settings.pop("gemini_api_key", None)
+    # Don't send bulky workflow JSON/hash to the frontend
+    all_settings.pop("comfyui_workflow_api_json", None)
+    all_settings.pop("comfyui_workflow_api_hash", None)
+    all_settings.pop("comfyui_workflow_ui_json", None)
     return all_settings
 
 
@@ -82,3 +86,57 @@ def delete_data_directory(dir_id: int) -> bool:
 
     # Remove the directory record from SQLite
     return settings.delete_data_directory(dir_id)
+
+
+def validate_workflow(workflow_path: str) -> dict:
+    """Check if a workflow file is valid and has a matching definition.
+
+    Returns {"valid": bool, "workflow_name": str | None, "error": str | None}
+    """
+    import os
+    from src.services.workflow_manager import get_definition_for_workflow, load_workflow
+
+    if not workflow_path or not os.path.exists(workflow_path):
+        return {"valid": False, "workflow_name": None, "error": "File not found"}
+
+    try:
+        load_workflow(workflow_path)
+    except Exception as e:
+        return {"valid": False, "workflow_name": None, "error": f"Invalid JSON: {e}"}
+
+    defn = get_definition_for_workflow(os.path.basename(workflow_path))
+    if not defn:
+        return {
+            "valid": False,
+            "workflow_name": None,
+            "error": "No matching workflow definition found",
+        }
+
+    return {"valid": True, "workflow_name": defn.name, "error": None}
+
+
+def validate_workflow_json(json_string: str, filename: str) -> dict:
+    """Check if a workflow JSON string is valid and has a matching definition.
+
+    Returns {"valid": bool, "workflow_name": str | None, "error": str | None}
+    """
+    import json
+    from src.services.workflow_manager import get_definition_for_workflow
+
+    if not json_string:
+        return {"valid": False, "workflow_name": None, "error": "No workflow content"}
+
+    try:
+        json.loads(json_string)
+    except Exception as e:
+        return {"valid": False, "workflow_name": None, "error": f"Invalid JSON: {e}"}
+
+    defn = get_definition_for_workflow(filename)
+    if not defn:
+        return {
+            "valid": False,
+            "workflow_name": None,
+            "error": "No matching workflow definition found",
+        }
+
+    return {"valid": True, "workflow_name": defn.name, "error": None}

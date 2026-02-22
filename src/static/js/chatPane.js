@@ -1,0 +1,434 @@
+/**
+ * LLM Prompt Agent — Message rendering and sending.
+ *
+ * Depends on: api.js, sse.js, markdown.js,
+ *             app.js ($, $$, escapeHtml, currentChatId, isStreaming),
+ *             sidebar.js (loadChats, createNewChat)
+ */
+
+// ── Messages ────────────────────────────────────────────────────────────
+
+async function loadMessages(chatId) {
+    const messages = await API.getMessages(chatId);
+    renderMessages(messages);
+    // Load generation bubbles after messages are rendered
+    await loadGenerationBubbles(chatId);
+}
+
+function renderMessages(messages) {
+    const container = $('#messages');
+    if (!container) return;
+
+    if (messages.length === 0) {
+        renderEmptyState();
+        return;
+    }
+
+    $('#empty-state')?.classList.add('hidden');
+
+    container.innerHTML = '';
+    messages.forEach((msg, idx) => {
+        const el = createMessageElement(msg, idx === messages.length - 1 && msg.role === 'user');
+        container.appendChild(el);
+    });
+
+    scrollToBottom();
+}
+
+function renderEmptyState() {
+    const container = $('#messages');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div id="empty-state" class="empty-state">
+            <h2>Welcome to LLM Prompt Agent</h2>
+            <p>Start a conversation to generate creative image prompts.</p>
+            <p class="hint">The agent can search your training data and generated outputs to create new, tailored prompts.</p>
+        </div>
+    `;
+}
+
+function createMessageElement(msg, isLastUserMsg = false) {
+    const div = document.createElement('div');
+    div.className = `message ${msg.role}`;
+    div.dataset.messageId = msg.id;
+
+    if (msg.role === 'assistant') {
+        div.innerHTML = renderMarkdown(msg.content);
+    } else {
+        div.textContent = msg.content;
+    }
+
+    // Show attachment thumbnails in user messages (if metadata has them)
+    if (msg.role === 'user' && msg.attachment_urls && msg.attachment_urls.length > 0) {
+        const attDiv = document.createElement('div');
+        attDiv.className = 'message-attachments';
+        msg.attachment_urls.forEach(url => {
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = 'Attached image';
+            img.onclick = () => {
+                if (typeof openFullSizeViewer === 'function') {
+                    openFullSizeViewer([{ fullUrl: url }], 0);
+                } else {
+                    window.open(url, '_blank');
+                }
+            };
+            attDiv.appendChild(img);
+        });
+        div.appendChild(attDiv);
+    }
+
+    // Edit button on the last user message
+    if (isLastUserMsg && msg.role === 'user') {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn';
+        editBtn.textContent = '✎';
+        editBtn.title = 'Edit and resubmit';
+        editBtn.onclick = () => startEditMessage(msg.id, msg.content);
+        div.appendChild(editBtn);
+    }
+
+    return div;
+}
+
+function addStreamingMessage() {
+    const container = $('#messages');
+    const div = document.createElement('div');
+    div.className = 'message assistant streaming';
+    div.id = 'streaming-message';
+    container.appendChild(div);
+    scrollToBottom();
+    return div;
+}
+
+function appendToStreamingMessage(text) {
+    const el = $('#streaming-message');
+    if (!el) return;
+
+    // Accumulate raw text in a data attribute
+    const rawText = (el.dataset.rawText || '') + text;
+    el.dataset.rawText = rawText;
+
+    // Render as markdown
+    el.innerHTML = renderMarkdown(rawText);
+    scrollToBottom();
+}
+
+function finalizeStreamingMessage(messageId, toolCalls = null) {
+    const el = $('#streaming-message');
+    if (!el) {
+        return;
+    }
+
+    el.classList.remove('streaming');
+    el.id = '';
+    if (messageId) {
+        el.dataset.messageId = messageId;
+    }
+
+    // Insert tool calls introspection section if present
+    if (toolCalls && toolCalls.length > 0) {
+        const section = buildToolCallsSection(toolCalls);
+        el.insertBefore(section, el.firstChild);
+    }
+}
+
+function buildToolCallsSection(toolCalls) {
+    const details = document.createElement('details');
+    details.className = 'tool-calls-section';
+
+    const summary = document.createElement('summary');
+    summary.className = 'tool-calls-toggle';
+    summary.innerHTML =
+        `<span class="tool-calls-icon">🔧</span>` +
+        `<span>${toolCalls.length} tool call${toolCalls.length !== 1 ? 's' : ''}</span>` +
+        `<span class="tool-calls-chevron">▶</span>`;
+    details.appendChild(summary);
+
+    const list = document.createElement('div');
+    list.className = 'tool-calls-list';
+
+    toolCalls.forEach(call => {
+        const item = document.createElement('div');
+        item.className = 'tool-call-item';
+
+        const header = document.createElement('div');
+        header.className = 'tool-call-header';
+        header.innerHTML = `<span class="tool-call-name">${escapeHtml(call.tool)}</span>`;
+        item.appendChild(header);
+
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'tool-call-details';
+
+        // Args
+        const argsDiv = document.createElement('div');
+        argsDiv.className = 'tool-call-args';
+        const argsLabel = document.createElement('span');
+        argsLabel.className = 'tool-call-label';
+        argsLabel.textContent = 'Args:';
+        const argsPre = document.createElement('pre');
+        argsPre.textContent = JSON.stringify(call.args, null, 2);
+        argsDiv.appendChild(argsLabel);
+        argsDiv.appendChild(argsPre);
+        detailsDiv.appendChild(argsDiv);
+
+        // Result
+        const resultDiv = document.createElement('div');
+        resultDiv.className = 'tool-call-result';
+        const resultLabel = document.createElement('span');
+        resultLabel.className = 'tool-call-label';
+        resultLabel.textContent = 'Result:';
+        const resultPre = document.createElement('pre');
+        resultPre.textContent = JSON.stringify(call.result, null, 2);
+        resultDiv.appendChild(resultLabel);
+        resultDiv.appendChild(resultPre);
+        detailsDiv.appendChild(resultDiv);
+
+        item.appendChild(detailsDiv);
+        list.appendChild(item);
+    });
+
+    details.appendChild(list);
+    return details;
+}
+
+function addStatusMessage(text) {
+    const container = $('#messages');
+    const div = document.createElement('div');
+    div.className = 'tool-status';
+    div.innerHTML = `<div class="spinner"></div><span>${escapeHtml(text)}</span>`;
+    container.appendChild(div);
+    scrollToBottom();
+    return div;
+}
+
+function removeStatusMessages() {
+    $$('.tool-status').forEach(el => el.remove());
+}
+
+function addErrorMessage(text) {
+    const container = $('#messages');
+    const div = document.createElement('div');
+    div.className = 'message error';
+    div.textContent = text;
+    container.appendChild(div);
+    scrollToBottom();
+}
+
+// ── Send Message ────────────────────────────────────────────────────────
+
+async function sendMessage() {
+    const input = $('#message-input');
+    const content = input.value.trim();
+    if (!content || isStreaming) return;
+    let pendingToolCalls = null;
+
+    // Create chat if none selected
+    if (!currentChatId) {
+        await createNewChat();
+    }
+
+    // Capture attachment thumbnails before clearing
+    const attachmentThumbs = typeof getAttachmentThumbnails === 'function'
+        ? getAttachmentThumbnails() : [];
+
+    // Add user message to UI
+    const container = $('#messages');
+    $('#empty-state')?.classList.add('hidden');
+
+    const userDiv = document.createElement('div');
+    userDiv.className = 'message user';
+    userDiv.textContent = content;
+
+    // Show attachment thumbnails in the user bubble
+    if (attachmentThumbs.length > 0) {
+        const attDiv = document.createElement('div');
+        attDiv.className = 'message-attachments';
+        attachmentThumbs.forEach(url => {
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = 'Attached image';
+            attDiv.appendChild(img);
+        });
+        userDiv.appendChild(attDiv);
+    }
+
+    container.appendChild(userDiv);
+
+    input.value = '';
+    autoResizeInput(input);
+    setStreaming(true);
+    scrollToBottom();
+
+    try {
+        // Check for attachments
+        let response;
+        if (typeof hasAttachments === 'function' && hasAttachments()) {
+            const formData = await prepareAttachmentsForSend(currentChatId, content);
+            response = await API.sendMessageWithAttachments(currentChatId, formData);
+            clearAttachments();
+        } else {
+            response = await API.sendMessage(currentChatId, content);
+        }
+
+        if (!response.ok) {
+            const err = await response.json();
+            addErrorMessage(err.error || 'Failed to send message');
+            setStreaming(false);
+            return;
+        }
+
+        const streamingEl = addStreamingMessage();
+
+        await readSSEStream(response, {
+            token(data) {
+                appendToStreamingMessage(data.text || '');
+            },
+            status(data) {
+                removeStatusMessages();
+                addStatusMessage(data.message || 'Processing...');
+            },
+            tool_result(data) {
+                removeStatusMessages();
+                const summary = data.summary || 'Done';
+                addStatusMessage(`✓ ${data.tool}: ${summary}`);
+                // Remove after a short delay
+                setTimeout(removeStatusMessages, 1500);
+            },
+            tool_calls(data) {
+                pendingToolCalls = data.calls;
+            },
+            error(data) {
+                addErrorMessage(data.message || 'An error occurred');
+            },
+            done(data) {
+                finalizeStreamingMessage(data.message_id, pendingToolCalls);
+                setStreaming(false);
+                // Refresh chat list to pick up new title
+                loadChats();
+            },
+        });
+
+    } catch (err) {
+        addErrorMessage(`Network error: ${err.message}`);
+    } finally {
+        setStreaming(false);
+    }
+}
+
+// ── Edit & Resubmit ─────────────────────────────────────────────────────
+
+function startEditMessage(messageId, content) {
+    const input = $('#message-input');
+    input.value = content;
+    input.focus();
+    autoResizeInput(input);
+
+    // Replace send button behavior temporarily
+    const sendBtn = $('#send-btn');
+    sendBtn.onclick = () => submitEditedMessage(messageId);
+    sendBtn.title = 'Resubmit';
+}
+
+async function submitEditedMessage(messageId) {
+    const input = $('#message-input');
+    const content = input.value.trim();
+    if (!content || isStreaming) return;
+    let pendingToolCalls = null;
+
+    // Restore normal send behavior
+    const sendBtn = $('#send-btn');
+    sendBtn.onclick = sendMessage;
+    sendBtn.title = 'Send';
+
+    input.value = '';
+    autoResizeInput(input);
+    setStreaming(true);
+
+    // Reload messages up to the edited point
+    // (The backend deletes from messageId onward)
+    try {
+        const response = await API.editMessage(currentChatId, messageId, content);
+        if (!response.ok) {
+            const err = await response.json();
+            addErrorMessage(err.error || 'Failed to edit message');
+            setStreaming(false);
+            return;
+        }
+
+        // Reload messages to show cleaned-up history, then stream
+        await loadMessages(currentChatId);
+
+        // Add the new user message
+        const container = $('#messages');
+        const userDiv = document.createElement('div');
+        userDiv.className = 'message user';
+        userDiv.textContent = content;
+        container.appendChild(userDiv);
+
+        const streamingEl = addStreamingMessage();
+
+        await readSSEStream(response, {
+            token(data) {
+                appendToStreamingMessage(data.text || '');
+            },
+            status(data) {
+                removeStatusMessages();
+                addStatusMessage(data.message || 'Processing...');
+            },
+            tool_result(data) {
+                removeStatusMessages();
+            },
+            tool_calls(data) {
+                pendingToolCalls = data.calls;
+            },
+            error(data) {
+                addErrorMessage(data.message || 'An error occurred');
+            },
+            done(data) {
+                finalizeStreamingMessage(data.message_id, pendingToolCalls);
+                setStreaming(false);
+                loadChats();
+            },
+        });
+
+    } catch (err) {
+        addErrorMessage(`Network error: ${err.message}`);
+    } finally {
+        setStreaming(false);
+    }
+}
+
+// ── Input Handling ──────────────────────────────────────────────────────
+
+function handleInputKeydown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+    }
+}
+
+function autoResizeInput(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+}
+
+function setStreaming(value) {
+    isStreaming = value;
+    const sendBtn = $('#send-btn');
+    const input = $('#message-input');
+    if (sendBtn) sendBtn.disabled = value;
+    if (input) input.disabled = value;
+}
+
+// ── Scroll ──────────────────────────────────────────────────────────────
+
+function scrollToBottom() {
+    const container = $('#messages');
+    if (container) {
+        requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight;
+        });
+    }
+}

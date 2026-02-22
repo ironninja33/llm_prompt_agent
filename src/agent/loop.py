@@ -17,8 +17,18 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ITERATIONS = 10
 
 
-def run_agent_turn(chat_id: str, user_message: str) -> Generator[dict, None, None]:
+def run_agent_turn(
+    chat_id: str,
+    user_message: str,
+    attachments: list | None = None,
+) -> Generator[dict, None, None]:
     """Run one agent turn: process user message, stream response.
+
+    Args:
+        chat_id: Chat session ID.
+        user_message: Text content from the user.
+        attachments: Optional list of dicts with keys
+            'filename', 'content_type', 'data' (raw bytes).
 
     Yields event dicts:
         {"type": "token", "text": "..."}
@@ -46,6 +56,11 @@ def run_agent_turn(chat_id: str, user_message: str) -> Generator[dict, None, Non
 
         # Build conversation history (clean — no state injected into user messages)
         messages = _build_message_history(chat_id)
+
+        # If attachments were provided, enhance the last user message with
+        # inline image parts so the LLM can see the images.
+        if attachments:
+            _inject_attachments(messages, attachments)
 
         # Run agent loop (may involve multiple tool calls)
         full_response = ""
@@ -180,6 +195,43 @@ def run_agent_turn(chat_id: str, user_message: str) -> Generator[dict, None, Non
     except Exception as e:
         logger.error(f"Agent loop error: {e}", exc_info=True)
         yield {"type": "error", "message": f"Internal error: {str(e)}"}
+
+
+def _inject_attachments(messages: list[dict], attachments: list[dict]):
+    """Inject image attachments into the last user message as inline data parts.
+
+    Modifies *messages* in place.  The last user message is converted from a
+    simple ``{"role": "user", "content": "..."}`` dict into one that uses
+    ``"parts"`` (a list of ``types.Part``) so the Gemini API receives both text
+    and images in a single turn.
+    """
+    if not attachments:
+        return
+
+    # Find the last user message (should be the most recent one)
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            text_content = messages[i].get("content", "")
+            parts = [types.Part.from_text(text=text_content)]
+
+            for att in attachments:
+                mime = att.get("content_type", "image/png")
+                raw = att.get("data", b"")
+                if raw:
+                    parts.append(types.Part.from_bytes(
+                        data=raw,
+                        mime_type=mime,
+                    ))
+                    logger.debug(
+                        "Attached image %s (%s, %d bytes) to user message",
+                        att.get("filename", "unknown"),
+                        mime,
+                        len(raw),
+                    )
+
+            # Replace the simple content dict with a parts-based dict
+            messages[i] = {"role": "user", "parts": parts}
+            break
 
 
 def _build_message_history(chat_id: str) -> list[dict]:

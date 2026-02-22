@@ -32,8 +32,14 @@ def get_messages(chat_id: str) -> list[dict]:
     return chat_model.get_messages(chat_id)
 
 
-def send_message(chat_id: str, content: str):
+def send_message(chat_id: str, content: str, attachments: list | None = None):
     """Process a user message through the agent loop.
+
+    Args:
+        chat_id: The chat session ID.
+        content: Text content of the user message.
+        attachments: Optional list of attachment dicts with keys
+            'filename', 'content_type', 'data' (raw bytes).
 
     Returns a generator that yields SSE event dicts.
     """
@@ -44,7 +50,7 @@ def send_message(chat_id: str, content: str):
         return
 
     # Run agent turn
-    yield from run_agent_turn(chat_id, content)
+    yield from run_agent_turn(chat_id, content, attachments=attachments)
 
 
 def edit_and_resubmit(chat_id: str, message_id: int, new_content: str):

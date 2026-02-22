@@ -23,3 +23,6 @@ FLASK_DEBUG = True
 
 # Embedding batch size
 EMBEDDING_BATCH_SIZE = 10
+
+# ComfyUI defaults
+DEFAULT_COMFYUI_BASE_URL = "http://localhost:8188"

@@ -314,6 +314,23 @@ def get_existing_ids(source_type: str) -> set[str]:
         return set()
 
 
+def delete_document(doc_id: str, source_type: str) -> bool:
+    """Delete a single document by ID from the given collection.
+
+    Returns True if the document was found and deleted.
+    """
+    collection = _get_collection(source_type)
+    try:
+        if not document_exists(doc_id, source_type):
+            return False
+        collection.delete(ids=[doc_id])
+        logger.info(f"Deleted document {doc_id} from {source_type} collection")
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting document {doc_id}: {e}")
+        return False
+
+
 def delete_documents_by_directory(dir_path: str, source_type: str) -> int:
     """Delete all documents whose IDs start with the given directory path.
 

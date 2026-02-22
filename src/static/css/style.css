@@ -8,5 +8,9 @@
 @import url('input.css');
 @import url('forms.css');
 @import url('modal.css');
+@import url('widgets.css');
+@import url('generation.css');
+@import url('attachments.css');
+@import url('viewer.css');
 @import url('overlay.css');
 @import url('responsive.css');

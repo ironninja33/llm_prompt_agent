@@ -7,6 +7,8 @@
 // SVG icon for the copy button
 const COPY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 const CHECK_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+// SVG icon for the generate button (image/landscape icon)
+const GENERATE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
 
 /**
  * Copy the text content of a prompt block to the clipboard.
@@ -49,6 +51,20 @@ function copyPromptText(button) {
     });
 }
 
+/**
+ * Open generation overlay from a prompt block's generate button.
+ * Extracts the prompt text and the parent message's ID so that
+ * generated images are grouped under the correct chat message.
+ */
+function _openGenFromPromptBlock(button) {
+    const block = button.closest('.prompt-block');
+    if (!block) return;
+    const prompt = block.querySelector('.prompt-block-content')?.textContent || '';
+    const msgEl = block.closest('.message[data-message-id]');
+    const messageId = msgEl ? parseInt(msgEl.dataset.messageId, 10) || null : null;
+    openGenerationOverlay({ prompt, messageId });
+}
+
 function renderMarkdown(text) {
     if (!text) return '';
 
@@ -65,7 +81,10 @@ function renderMarkdown(text) {
             return `<div class="prompt-block">`
                 + `<div class="prompt-block-header">`
                 + `<span class="prompt-block-label">Suggested Prompt</span>`
+                + `<span class="prompt-header-actions">`
+                + `<button class="prompt-gen-btn" title="Generate image" onclick="_openGenFromPromptBlock(this)">${GENERATE_ICON_SVG}</button>`
                 + `<button class="prompt-copy-btn" title="Copy to clipboard" onclick="copyPromptText(this)">${COPY_ICON_SVG}</button>`
+                + `</span>`
                 + `</div>`
                 + `<div class="prompt-block-content">${trimmed}</div>`
                 + `</div>`;

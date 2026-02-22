@@ -1,0 +1,98 @@
+/* ── Attachment Bar ─────────────────────────────────────────── */
+.attachment-bar {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.attachment-bar.hidden {
+    display: none;
+}
+
+.attachment-thumb {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.attachment-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.attachment-remove {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: var(--danger);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.attachment-remove:hover {
+    background: var(--danger-hover);
+}
+
+/* ── Attach Button (+ icon) ────────────────────────────────── */
+.btn-attach {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: var(--radius);
+    width: 40px;
+    height: 40px;
+    font-size: 1.3rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+}
+
+.btn-attach:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+/* ── User Message Attachment Thumbnails ─────────────────────── */
+.message-attachments {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.message-attachments img {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.message-attachments img:hover {
+    opacity: 0.85;
+}
