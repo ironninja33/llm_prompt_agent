@@ -1,0 +1,330 @@
+/**
+ * Generation overlay — configurable image generation dialog.
+ * Reusable: can be opened from prompt blocks, thumbnail regenerate icons,
+ * or future image browser.
+ *
+ * Depends on: api.js (API), app.js ($, escapeHtml),
+ *             searchableDropdown.js (createSearchableDropdown),
+ *             pillInput.js (createPillInput)
+ */
+
+// Session-level last-used settings (not persisted to DB)
+let _lastGenerationSettings = null;
+
+// Widget instances (created once, reused across opens)
+let _genModelDropdown = null;
+let _genLoraInput = null;
+
+// Internal state for the current overlay open
+let _currentGenChatId = null;
+let _currentGenMessageId = null;
+
+// Seed from a previous generation (shown as a clickable hint)
+let _previousGenSeed = null;
+
+// Cache for fetched lists (avoid re-fetching every open)
+let _cachedModels = null;
+let _cachedLoras = null;
+let _cachedFolders = null;
+
+// ── Open the overlay ────────────────────────────────────────────────────
+
+/**
+ * Open the generation overlay.
+ * @param {Object|string} options - Options object or just the prompt string.
+ * @param {string} options.prompt - Positive prompt text to pre-fill
+ * @param {string|null} [options.chatId] - Chat ID for submission
+ * @param {number|null} [options.messageId] - Message ID the prompt came from
+ * @param {Object|null} [options.settings] - Full settings to pre-fill (for regenerate)
+ */
+async function openGenerationOverlay(options) {
+    // Accept a plain string as shorthand
+    if (typeof options === 'string') {
+        options = { prompt: options };
+    }
+
+    const {
+        prompt = '',
+        chatId = null,
+        messageId = null,
+        settings = null,
+    } = options;
+
+    // Store chat/message context; fall back to global currentChatId
+    _currentGenChatId = chatId || (typeof currentChatId !== 'undefined' ? currentChatId : null);
+    _currentGenMessageId = messageId || null;
+
+    // Show modal
+    const overlay = $('#generation-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('hidden');
+
+    // Initialise widgets on first open
+    _initGenWidgets();
+
+    // Load model/lora/folder lists (cached after first fetch)
+    await _loadGenerationData();
+
+    // Determine what values to fill
+    if (settings) {
+        // Regenerate mode: remember the actual seed but default input to -1
+        const actualSeed = settings.seed != null ? settings.seed : null;
+        _previousGenSeed = (actualSeed != null && actualSeed !== -1) ? actualSeed : null;
+        _fillOverlayFields({ ...settings, seed: -1 });
+    } else if (_lastGenerationSettings) {
+        // Returning user: use last settings + new prompt
+        _previousGenSeed = null;
+        _fillOverlayFields({ ..._lastGenerationSettings, positive_prompt: prompt });
+    } else {
+        // First time: defaults + prompt; try to get default model from settings
+        _previousGenSeed = null;
+        _fillOverlayDefaults(prompt);
+    }
+
+    // Show/hide the "use previous seed" hint button
+    _updateSeedHint();
+
+    // Focus the prompt textarea
+    const textarea = $('#gen-prompt');
+    if (textarea) textarea.focus();
+}
+
+// ── Close the overlay ───────────────────────────────────────────────────
+
+function closeGenerationOverlay() {
+    const overlay = $('#generation-overlay');
+    if (overlay) overlay.classList.add('hidden');
+}
+
+// ── Random seed ─────────────────────────────────────────────────────────
+
+function generateRandomSeed() {
+    const seed = Math.floor(Math.random() * 1125899906842624);
+    const input = $('#gen-seed');
+    if (input) input.value = seed;
+}
+
+// ── Use previous seed ───────────────────────────────────────────────────
+
+/**
+ * Apply the previous generation's seed value to the seed input.
+ * Called when user clicks the "Use seed: …" hint button.
+ */
+function usePreviousSeed() {
+    if (_previousGenSeed == null) return;
+    const input = $('#gen-seed');
+    if (input) input.value = _previousGenSeed;
+}
+
+/**
+ * Show or hide the "use previous seed" hint button below the seed input.
+ */
+function _updateSeedHint() {
+    const hintBtn = $('#gen-seed-hint');
+    if (!hintBtn) return;
+
+    if (_previousGenSeed != null) {
+        hintBtn.textContent = `Use seed: ${_previousGenSeed}`;
+        hintBtn.classList.remove('hidden');
+    } else {
+        hintBtn.classList.add('hidden');
+    }
+}
+
+// ── Submit generation ───────────────────────────────────────────────────
+
+async function submitGeneration() {
+    const btn = $('#gen-submit-btn');
+    if (!btn) return;
+
+    // Prevent double-click
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+
+    try {
+        const settings = _gatherOverlayValues();
+
+        // Persist to session memory
+        _lastGenerationSettings = { ...settings };
+
+        // Build chat/message IDs
+        const chatId = _currentGenChatId;
+        const messageId = _currentGenMessageId;
+
+        if (!chatId) {
+            console.warn('No chat ID available for generation');
+            return;
+        }
+
+        const result = await API.submitGeneration(chatId, messageId, settings);
+
+        // Close overlay
+        closeGenerationOverlay();
+
+        // Dispatch custom event so Phase 8 (generation bubbles) can react
+        window.dispatchEvent(new CustomEvent('generation-submitted', {
+            detail: { ...result, chatId, messageId, settings },
+        }));
+    } catch (err) {
+        console.error('Generation submission failed:', err);
+        alert('Failed to submit generation: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+    }
+}
+
+// ── Internal: initialise widgets ────────────────────────────────────────
+
+function _initGenWidgets() {
+    // Only create once
+    if (_genModelDropdown) return;
+
+    const modelContainer = $('#gen-model-dropdown');
+    if (modelContainer) {
+        _genModelDropdown = createSearchableDropdown({
+            container: modelContainer,
+            placeholder: 'Select a diffusion model…',
+            items: [],
+            value: '',
+        });
+    }
+
+    const loraContainer = $('#gen-lora-input');
+    if (loraContainer) {
+        _genLoraInput = createPillInput({
+            container: loraContainer,
+            placeholder: 'Search LoRAs…',
+            items: [],
+            truncateAt: 35,
+        });
+    }
+}
+
+// ── Internal: load models, loras, and output folders ────────────────────
+
+async function _loadGenerationData() {
+    const promises = [];
+
+    // Models
+    if (!_cachedModels) {
+        promises.push(
+            API.getComfyUIModels('diffusion_models')
+                .then(models => {
+                    if (Array.isArray(models)) {
+                        _cachedModels = models;
+                        if (_genModelDropdown) _genModelDropdown.setItems(models);
+                    }
+                })
+                .catch(err => console.warn('Failed to load models:', err))
+        );
+    } else if (_genModelDropdown) {
+        _genModelDropdown.setItems(_cachedModels);
+    }
+
+    // LoRAs
+    if (!_cachedLoras) {
+        promises.push(
+            API.getComfyUIModels('loras')
+                .then(loras => {
+                    if (Array.isArray(loras)) {
+                        _cachedLoras = loras;
+                        if (_genLoraInput) _genLoraInput.setItems(loras);
+                    }
+                })
+                .catch(err => console.warn('Failed to load loras:', err))
+        );
+    } else if (_genLoraInput) {
+        _genLoraInput.setItems(_cachedLoras);
+    }
+
+    // Output folders
+    if (!_cachedFolders) {
+        promises.push(
+            API.getComfyUIOutputFolders()
+                .then(folders => {
+                    if (Array.isArray(folders)) {
+                        _cachedFolders = folders;
+                        _populateFolderDatalist(folders);
+                    }
+                })
+                .catch(err => console.warn('Failed to load output folders:', err))
+        );
+    } else {
+        _populateFolderDatalist(_cachedFolders);
+    }
+
+    if (promises.length > 0) {
+        await Promise.allSettled(promises);
+    }
+}
+
+function _populateFolderDatalist(folders) {
+    const datalist = $('#gen-folder-list');
+    if (!datalist) return;
+    datalist.innerHTML = folders.map(f => `<option value="${escapeHtml(f)}">`).join('');
+}
+
+// ── Internal: fill overlay fields ───────────────────────────────────────
+
+function _fillOverlayFields(settings) {
+    const textarea = $('#gen-prompt');
+    if (textarea) textarea.value = settings.positive_prompt || '';
+
+    if (_genModelDropdown && settings.base_model) {
+        _genModelDropdown.setValue(settings.base_model);
+    }
+
+    if (_genLoraInput) {
+        _genLoraInput.setValue(Array.isArray(settings.loras) ? settings.loras : []);
+    }
+
+    const folderInput = $('#gen-output-folder');
+    if (folderInput) folderInput.value = settings.output_folder || '';
+
+    const seedInput = $('#gen-seed');
+    if (seedInput) seedInput.value = settings.seed != null ? settings.seed : -1;
+
+    const numInput = $('#gen-num-images');
+    if (numInput) numInput.value = settings.num_images || 1;
+}
+
+async function _fillOverlayDefaults(prompt) {
+    const textarea = $('#gen-prompt');
+    if (textarea) textarea.value = prompt || '';
+
+    // Try to get the default model from app settings
+    try {
+        const appSettings = await API.getSettings();
+        if (_genModelDropdown && appSettings.comfyui_default_model) {
+            _genModelDropdown.setValue(appSettings.comfyui_default_model);
+        }
+    } catch (_) {
+        // Non-critical
+    }
+
+    if (_genLoraInput) _genLoraInput.setValue([]);
+
+    const folderInput = $('#gen-output-folder');
+    if (folderInput) folderInput.value = '';
+
+    const seedInput = $('#gen-seed');
+    if (seedInput) seedInput.value = -1;
+
+    const numInput = $('#gen-num-images');
+    if (numInput) numInput.value = 1;
+}
+
+// ── Internal: gather values from the form ───────────────────────────────
+
+function _gatherOverlayValues() {
+    return {
+        positive_prompt: ($('#gen-prompt') || {}).value || '',
+        base_model: _genModelDropdown ? _genModelDropdown.getValue() : '',
+        loras: _genLoraInput ? _genLoraInput.getValue() : [],
+        output_folder: ($('#gen-output-folder') || {}).value || '',
+        seed: parseInt(($('#gen-seed') || {}).value, 10) || -1,
+        num_images: parseInt(($('#gen-num-images') || {}).value, 10) || 1,
+    };
+}

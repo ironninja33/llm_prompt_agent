@@ -31,6 +31,78 @@
         </div>
     </div>
 
+    <!-- ── Full-size image viewer ─────────────────────────────────── -->
+    <div id="fullsize-viewer" class="viewer-overlay hidden">
+        <div class="viewer-backdrop" onclick="closeFullSizeViewer()"></div>
+        <div class="viewer-container">
+            <div class="viewer-main">
+                <button class="viewer-close" onclick="closeFullSizeViewer()" title="Close (Esc)">&times;</button>
+                <button class="viewer-nav viewer-nav-prev" id="viewer-prev" onclick="viewerPrev()" title="Previous (←)">❮</button>
+                <div class="viewer-image-wrap">
+                    <img id="viewer-image" src="" alt="Full size image">
+                </div>
+                <button class="viewer-nav viewer-nav-next" id="viewer-next" onclick="viewerNext()" title="Next (→)">❯</button>
+                <div class="viewer-counter" id="viewer-counter"></div>
+            </div>
+            <aside class="viewer-sidebar">
+                <h3 class="viewer-sidebar-title">Generation Settings</h3>
+                <div id="viewer-sidebar-content"></div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- ── Generation overlay ─────────────────────────────────────── -->
+    <div id="generation-overlay" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeGenerationOverlay()"></div>
+        <div class="modal-dialog generation-dialog">
+            <div class="modal-header">
+                <h2>Generate Image</h2>
+                <button class="btn-icon" onclick="closeGenerationOverlay()" title="Close">&times;</button>
+            </div>
+            <div class="modal-body generation-body">
+                <label>Prompt
+                    <textarea id="gen-prompt" rows="5" placeholder="Positive prompt..."></textarea>
+                </label>
+
+                <div class="gen-row">
+                    <label class="gen-field-wide">Base Model
+                        <div id="gen-model-dropdown"></div>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-wide">LoRAs
+                        <div id="gen-lora-input"></div>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field">Output Folder
+                        <input type="text" id="gen-output-folder" placeholder="subfolder name" list="gen-folder-list">
+                        <datalist id="gen-folder-list"></datalist>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-half">Seed
+                        <div class="input-group">
+                            <input type="number" id="gen-seed" value="-1" min="-1">
+                            <button class="btn-sm" onclick="generateRandomSeed()" title="Random seed">🎲</button>
+                        </div>
+                        <button type="button" id="gen-seed-hint" class="gen-seed-hint hidden" onclick="usePreviousSeed()"></button>
+                    </label>
+                    <label class="gen-field-half">Images
+                        <input type="number" id="gen-num-images" value="1" min="1" max="20">
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeGenerationOverlay()">Cancel</button>
+                <button class="btn-primary" id="gen-submit-btn" onclick="submitGeneration()">Generate</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Settings modal ────────────────────────────────────────── -->
     <div id="settings-modal" class="modal hidden">
         <div class="modal-backdrop" onclick="closeSettings()"></div>
@@ -44,6 +116,7 @@
                 <button class="tab" data-tab="tab-prompt" onclick="switchTab(this)">System Prompt</button>
                 <button class="tab" data-tab="tab-dirs" onclick="switchTab(this)">Data Directories</button>
                 <button class="tab" data-tab="tab-params" onclick="switchTab(this)">Parameters</button>
+                <button class="tab" data-tab="tab-comfyui" onclick="switchTab(this)">ComfyUI</button>
             </div>
             <div class="modal-body">
                 <!-- API & Models tab -->
@@ -106,6 +179,58 @@
                     <div class="btn-row">
                         <button class="btn-secondary" onclick="triggerIngestion()">Re-index All</button>
                         <button class="btn-primary" onclick="refreshOutput()">Refresh Output Folders</button>
+                    </div>
+                </div>
+
+                <!-- ComfyUI tab -->
+                <div id="tab-comfyui" class="tab-pane hidden">
+                    <div class="comfyui-connection-status">
+                        <span id="comfyui-status-dot" class="status-dot offline"></span>
+                        <span id="comfyui-status-text">Not connected</span>
+                    </div>
+
+                    <label>ComfyUI Base URL
+                        <div class="input-group">
+                            <input type="text" id="setting-comfyui-url" placeholder="http://localhost:8188">
+                            <button class="btn-sm" onclick="testComfyUIConnection()">Test</button>
+                        </div>
+                    </label>
+
+                    <label>Default Base Model
+                        <div id="comfyui-model-dropdown"></div>
+                        <span class="hint">Select from available diffusion models</span>
+                    </label>
+
+                    <label>Default Negative Prompt
+                        <textarea id="setting-comfyui-negative" rows="4" placeholder="Default negative prompt..."></textarea>
+                    </label>
+
+                    <label>API Workflow JSON
+                        <div class="workflow-upload-area">
+                            <span id="workflow-filename" class="workflow-filename">No API workflow uploaded</span>
+                            <div class="input-group">
+                                <input type="file" id="workflow-file-input" accept=".json" class="hidden">
+                                <button class="btn-sm" onclick="document.getElementById('workflow-file-input').click()">Browse…</button>
+                                <button class="btn-sm btn-danger" id="workflow-delete-btn" onclick="deleteUploadedWorkflow()" style="display:none">Remove</button>
+                            </div>
+                        </div>
+                        <span id="workflow-status" class="hint">Export via "Save (API Format)" in ComfyUI</span>
+                    </label>
+
+                    <label>UI Workflow JSON
+                        <div class="workflow-upload-area">
+                            <span id="ui-workflow-filename" class="workflow-filename">No UI workflow uploaded</span>
+                            <div class="input-group">
+                                <input type="file" id="ui-workflow-file-input" accept=".json" class="hidden">
+                                <button class="btn-sm" onclick="document.getElementById('ui-workflow-file-input').click()">Browse…</button>
+                                <button class="btn-sm btn-danger" id="ui-workflow-delete-btn" onclick="deleteUploadedUIWorkflow()" style="display:none">Remove</button>
+                            </div>
+                        </div>
+                        <span id="ui-workflow-status" class="hint">Export via regular "Save" in ComfyUI (required for KJNodes)</span>
+                    </label>
+
+                    <div class="btn-row">
+                        <button class="btn-primary" onclick="saveComfyUISettings()">Save</button>
                     </div>
                 </div>
 
@@ -220,7 +345,9 @@
                 </div>
 
                 <div class="input-area">
+                    <div id="attachment-bar" class="attachment-bar hidden"></div>
                     <div class="input-row">
+                        <button class="btn-attach" onclick="openAttachmentPicker()" title="Add attachment">+</button>
                         <textarea id="message-input" placeholder="Describe the kind of prompt you want..."
                                   rows="1" onkeydown="handleInputKeydown(event)"
                                   oninput="autoResizeInput(this)"></textarea>
@@ -237,5 +364,16 @@
     <script src="/static/js/sse.js"></script>
     <script src="/static/js/markdown.js"></script>
     <script src="/static/js/app.js"></script>
+    <script src="/static/js/searchableDropdown.js"></script>
+    <script src="/static/js/pillInput.js"></script>
+    <script src="/static/js/fullSizeViewer.js"></script>
+    <script src="/static/js/generationOverlay.js"></script>
+    <script src="/static/js/generationBubble.js"></script>
+    <script src="/static/js/attachments.js"></script>
+    <script src="/static/js/sidebar.js"></script>
+    <script src="/static/js/chatPane.js"></script>
+    <script src="/static/js/settings.js"></script>
+    <script src="/static/js/settingsComfyUI.js"></script>
+    <script src="/static/js/datasetMap.js"></script>
 </body>
 </html>
