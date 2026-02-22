@@ -4,3 +4,4 @@ data
 workflows
 plans
 __pycache__
+src/agent/default_system_prompt_local.md
