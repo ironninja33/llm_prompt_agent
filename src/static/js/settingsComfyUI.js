@@ -18,7 +18,7 @@ async function loadComfyUISettings() {
 
         // Populate fields
         $('#setting-comfyui-url').value = settings.comfyui_base_url || 'http://localhost:8188';
-        $('#setting-comfyui-negative').value = settings.comfyui_default_negative_prompt || '';
+        $('#setting-comfyui-negative').value = settings.comfyui_default_negative || '';
 
         // Initialize or update model dropdown
         _initModelDropdown(settings.comfyui_default_model || '');
@@ -338,7 +338,7 @@ async function saveComfyUISettings() {
     }
 
     const negative = $('#setting-comfyui-negative').value;
-    data.comfyui_default_negative_prompt = negative;
+    data.comfyui_default_negative = negative;
 
     try {
         await API.updateSettings(data);

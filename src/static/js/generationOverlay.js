@@ -36,6 +36,7 @@ let _cachedFolders = null;
  * @param {string|null} [options.chatId] - Chat ID for submission
  * @param {number|null} [options.messageId] - Message ID the prompt came from
  * @param {Object|null} [options.settings] - Full settings to pre-fill (for regenerate)
+ * @param {Object|null} [options.defaultSettings] - Partial defaults (base_model, loras, output_folder) from generation bubble
  */
 async function openGenerationOverlay(options) {
     // Accept a plain string as shorthand
@@ -48,6 +49,7 @@ async function openGenerationOverlay(options) {
         chatId = null,
         messageId = null,
         settings = null,
+        defaultSettings = null,
     } = options;
 
     // Store chat/message context; fall back to global currentChatId
@@ -74,7 +76,19 @@ async function openGenerationOverlay(options) {
     } else if (_lastGenerationSettings) {
         // Returning user: use last settings + new prompt
         _previousGenSeed = null;
-        _fillOverlayFields({ ..._lastGenerationSettings, positive_prompt: prompt });
+        _fillOverlayFields({ ..._lastGenerationSettings, positive_prompt: prompt, seed: -1 });
+    } else if (defaultSettings) {
+        // After page refresh: use stored bubble settings (base_model, loras, output_folder)
+        // with the new prompt and seed=-1
+        _previousGenSeed = null;
+        _fillOverlayFields({
+            positive_prompt: prompt,
+            base_model: defaultSettings.base_model || '',
+            loras: defaultSettings.loras || [],
+            output_folder: defaultSettings.output_folder || '',
+            seed: -1,
+            num_images: 1,
+        });
     } else {
         // First time: defaults + prompt; try to get default model from settings
         _previousGenSeed = null;

@@ -220,9 +220,13 @@ function addErrorMessage(text) {
 
 async function sendMessage() {
     const input = $('#message-input');
-    const content = input.value.trim();
-    if (!content || isStreaming) return;
+    const rawContent = input.value.trim();
+    if (!rawContent || isStreaming) return;
     let pendingToolCalls = null;
+
+    // If refine context is active, build the combined message
+    const hasRefine = typeof hasRefineContext === 'function' && hasRefineContext();
+    const content = hasRefine ? buildRefineMessage(rawContent) : rawContent;
 
     // Create chat if none selected
     if (!currentChatId) {
@@ -241,6 +245,18 @@ async function sendMessage() {
     userDiv.className = 'message user';
     userDiv.textContent = content;
 
+    // If refining, show a small indicator of what prompt is being refined
+    if (hasRefine) {
+        const refineIndicator = document.createElement('div');
+        refineIndicator.className = 'message-refine-indicator';
+        const refinePrompt = getRefineContext();
+        const truncated = refinePrompt.length > 80
+            ? refinePrompt.substring(0, 80) + '…'
+            : refinePrompt;
+        refineIndicator.innerHTML = `<span class="refine-indicator-label">Refining:</span> <span class="refine-indicator-text">${escapeHtml(truncated)}</span>`;
+        userDiv.insertBefore(refineIndicator, userDiv.firstChild);
+    }
+
     // Show attachment thumbnails in the user bubble
     if (attachmentThumbs.length > 0) {
         const attDiv = document.createElement('div');
@@ -258,6 +274,10 @@ async function sendMessage() {
 
     input.value = '';
     autoResizeInput(input);
+    // Clear refine context after capturing the message
+    if (hasRefine && typeof clearRefineContext === 'function') {
+        clearRefineContext();
+    }
     setStreaming(true);
     scrollToBottom();
 

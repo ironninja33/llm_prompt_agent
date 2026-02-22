@@ -9,6 +9,8 @@ const COPY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height
 const CHECK_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 // SVG icon for the generate button (image/landscape icon)
 const GENERATE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
+// SVG icon for the refine button (pencil/edit icon)
+const REFINE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 
 /**
  * Copy the text content of a prompt block to the clipboard.
@@ -52,6 +54,19 @@ function copyPromptText(button) {
 }
 
 /**
+ * Set refine context from a prompt block's refine button.
+ * Extracts the prompt text and populates the quote bar.
+ */
+function _refineFromPromptBlock(button) {
+    const block = button.closest('.prompt-block');
+    if (!block) return;
+    const prompt = block.querySelector('.prompt-block-content')?.textContent || '';
+    if (prompt && typeof setRefineContext === 'function') {
+        setRefineContext(prompt);
+    }
+}
+
+/**
  * Open generation overlay from a prompt block's generate button.
  * Extracts the prompt text and the parent message's ID so that
  * generated images are grouped under the correct chat message.
@@ -62,7 +77,23 @@ function _openGenFromPromptBlock(button) {
     const prompt = block.querySelector('.prompt-block-content')?.textContent || '';
     const msgEl = block.closest('.message[data-message-id]');
     const messageId = msgEl ? parseInt(msgEl.dataset.messageId, 10) || null : null;
-    openGenerationOverlay({ prompt, messageId });
+
+    // Look for stored generation settings from the bubble associated with this message
+    // (persists across page reloads via DOM storage on the bubble element)
+    let defaultSettings = null;
+    if (messageId && typeof getGenerationBubbleSettings === 'function') {
+        defaultSettings = getGenerationBubbleSettings(messageId);
+    }
+
+    // Fallback: if this message has no generation bubble (e.g. a new assistant
+    // response with suggested prompts but images were generated on an earlier
+    // message), use the most recent generation settings from any bubble in the chat.
+    // Works after page reload because loadGenerationBubbles() repopulates settings.
+    if (!defaultSettings && typeof getLastChatGenerationSettings === 'function') {
+        defaultSettings = getLastChatGenerationSettings();
+    }
+
+    openGenerationOverlay({ prompt, messageId, defaultSettings });
 }
 
 function renderMarkdown(text) {
@@ -82,6 +113,7 @@ function renderMarkdown(text) {
                 + `<div class="prompt-block-header">`
                 + `<span class="prompt-block-label">Suggested Prompt</span>`
                 + `<span class="prompt-header-actions">`
+                + `<button class="prompt-refine-btn" title="Refine this prompt" onclick="_refineFromPromptBlock(this)">${REFINE_ICON_SVG}</button>`
                 + `<button class="prompt-gen-btn" title="Generate image" onclick="_openGenFromPromptBlock(this)">${GENERATE_ICON_SVG}</button>`
                 + `<button class="prompt-copy-btn" title="Copy to clipboard" onclick="copyPromptText(this)">${COPY_ICON_SVG}</button>`
                 + `</span>`

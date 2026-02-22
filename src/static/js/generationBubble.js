@@ -76,11 +76,28 @@ function _createMergedBubble(jobs) {
  * Append grid items for a single job (thumbnails, failed card, or spinners).
  * Does NOT update the bubble header — caller is responsible for that.
  */
+/**
+ * Store the last completed job's generation settings on the bubble element.
+ * Used as defaults when opening the generation overlay from prompt blocks
+ * after a page refresh (when _lastGenerationSettings is lost).
+ */
+function _storeLastJobSettings(bubble, job) {
+    if (!bubble || !job || !job.settings) return;
+    bubble._lastJobSettings = {
+        base_model: job.settings.base_model || '',
+        loras: job.settings.loras || [],
+        output_folder: job.settings.output_folder || '',
+    };
+}
+
 function _appendJobItems(grid, job) {
     if (job.status === 'completed' && job.images && job.images.length > 0) {
         job.images.forEach(img => {
             grid.appendChild(_createThumbnailItem(job, img));
         });
+        // Store this completed job's settings on the bubble for later use as defaults
+        const bubble = grid.closest('.message.generation');
+        if (bubble) _storeLastJobSettings(bubble, job);
     } else if (job.status === 'failed') {
         grid.appendChild(_createFailedCard(job));
     } else {
@@ -193,6 +210,20 @@ function _createThumbnailItem(job, img) {
         });
     };
     actions.appendChild(regenBtn);
+
+    // Refine icon
+    const refineBtn = document.createElement('button');
+    refineBtn.className = 'gen-action-btn gen-refine-btn';
+    refineBtn.title = 'Refine this prompt';
+    refineBtn.innerHTML = '✏️';
+    refineBtn.onclick = (e) => {
+        e.stopPropagation();
+        const prompt = job.settings?.positive_prompt || '';
+        if (prompt && typeof setRefineContext === 'function') {
+            setRefineContext(prompt);
+        }
+    };
+    actions.appendChild(refineBtn);
 
     // Attach icon
     const attachBtn = document.createElement('button');
@@ -450,22 +481,30 @@ async function _handleGenerationComplete(data) {
         if (job && pendingItems.length > 0) {
             const grid = pendingItems[0].closest('.gen-thumbnail-grid');
 
-            // Remove spinners for this job
-            pendingItems.forEach(item => item.remove());
+            // Capture the insertion point: the first spinner's position.
+            // We insert new items before the first spinner, preserving
+            // submission order even when jobs complete out of order.
+            const insertBeforeRef = pendingItems[0];
 
             if (data.phase === 'completed' && job.images && job.images.length > 0) {
                 job.images.forEach(img => {
-                    grid.appendChild(_createThumbnailItem(job, img));
+                    grid.insertBefore(_createThumbnailItem(job, img), insertBeforeRef);
                 });
+                // Store this completed job's settings on the bubble
+                const bubble = grid.closest('.message.generation');
+                if (bubble) _storeLastJobSettings(bubble, job);
             } else {
-                grid.appendChild(_createFailedCard(job));
+                grid.insertBefore(_createFailedCard(job), insertBeforeRef);
             }
+
+            // Remove spinners for this job (after insertion to keep ref valid)
+            pendingItems.forEach(item => item.remove());
 
             _updateBubbleStatusFromGrid(grid);
         } else if (!job && pendingItems.length > 0) {
             // Job not found in API — render a generic failed card
             const grid = pendingItems[0].closest('.gen-thumbnail-grid');
-            pendingItems.forEach(item => item.remove());
+            const insertBeforeRef = pendingItems[0];
             const failedItem = document.createElement('div');
             failedItem.className = 'gen-thumbnail-item gen-thumbnail-failed';
             failedItem.dataset.jobId = data.job_id;
@@ -473,7 +512,8 @@ async function _handleGenerationComplete(data) {
                 <span class="gen-failed-icon">✕</span>
                 <span class="gen-failed-text">Failed</span>
             </div>`;
-            grid.appendChild(failedItem);
+            grid.insertBefore(failedItem, insertBeforeRef);
+            pendingItems.forEach(item => item.remove());
             _updateBubbleStatusFromGrid(grid);
         }
     } catch (err) {
@@ -523,6 +563,50 @@ function _showAllThumbnails(job) {
 
     overlay.appendChild(content);
     document.body.appendChild(overlay);
+}
+
+// ── Retrieve stored settings for a message ──────────────────────────────
+
+/**
+ * Get the last generation settings stored on the bubble for a given message ID.
+ * Searches for generation bubbles associated with the message and returns
+ * the _lastJobSettings from the last one (most recent settings).
+ * Returns null if no bubble or no stored settings found.
+ * @param {string|number} messageId
+ * @returns {Object|null} - { base_model, loras, output_folder } or null
+ */
+function getGenerationBubbleSettings(messageId) {
+    if (!messageId) return null;
+    const bubbles = document.querySelectorAll(
+        `.message.generation[data-message-id="${messageId}"]`
+    );
+    // Walk backwards to find the last bubble with stored settings
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+        if (bubbles[i]._lastJobSettings) {
+            return bubbles[i]._lastJobSettings;
+        }
+    }
+    return null;
+}
+
+/**
+ * Get the most recent generation settings from ANY generation bubble in the chat.
+ * Searches all generation bubbles in DOM order (last = most recent) and returns
+ * the _lastJobSettings from the last one that has stored settings.
+ * Used as a fallback when a new assistant message has suggested prompts but
+ * the generated images are on an earlier message.
+ * Works after page reload because loadGenerationBubbles() re-fetches jobs
+ * from the API and _storeLastJobSettings() repopulates _lastJobSettings.
+ * @returns {Object|null} - { base_model, loras, output_folder } or null
+ */
+function getLastChatGenerationSettings() {
+    const bubbles = document.querySelectorAll('.message.generation');
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+        if (bubbles[i]._lastJobSettings) {
+            return bubbles[i]._lastJobSettings;
+        }
+    }
+    return null;
 }
 
 // ── Chat reload ──────────────────────────────────────────────────────────
