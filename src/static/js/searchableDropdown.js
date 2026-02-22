@@ -37,6 +37,7 @@ function createSearchableDropdown(options) {
     let isOpen = false;
     let highlightIndex = -1;
     let _mouseDownOnDropdown = false;
+    let _scrollTarget = null;
 
     // ── Build DOM ───────────────────────────────────────────────
     const wrapper = document.createElement('div');
@@ -104,6 +105,25 @@ function createSearchableDropdown(options) {
         highlightIndex = -1;
         renderItems(input.value);
         dropdownList.classList.remove('hidden');
+
+        // Scroll to a pending target value (used by pill input to center on last selection)
+        if (_scrollTarget !== null) {
+            scrollToValue(_scrollTarget);
+            _scrollTarget = null;
+        }
+    }
+
+    function scrollToValue(value) {
+        const itemEls = dropdownList.querySelectorAll('.sd-item:not(.sd-no-results)');
+        for (const el of itemEls) {
+            if (el.dataset.value === value) {
+                const dropdownHeight = dropdownList.clientHeight;
+                const itemTop = el.offsetTop;
+                const itemHeight = el.offsetHeight;
+                dropdownList.scrollTop = itemTop - (dropdownHeight / 2) + (itemHeight / 2);
+                break;
+            }
+        }
     }
 
     function hideDropdown() {
@@ -211,6 +231,11 @@ function createSearchableDropdown(options) {
         setValue(val) {
             currentValue = val;
             input.value = val;
+        },
+
+        /** Queue a value to scroll-to-center when the dropdown next opens */
+        setScrollTarget(value) {
+            _scrollTarget = value;
         },
 
         destroy() {

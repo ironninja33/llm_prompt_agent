@@ -413,14 +413,13 @@ function _createCircularProgress(progress) {
     const circumference = 2 * Math.PI * radius;
     const offset = circumference * (1 - progress);
 
+    const label = progress > 0 ? Math.round(progress * 100) + '%' : '⏳';
     return `<svg class="gen-progress-svg" viewBox="0 0 80 80">
         <circle class="gen-progress-bg" cx="40" cy="40" r="${radius}" />
         <circle class="gen-progress-fill" cx="40" cy="40" r="${radius}"
                 stroke-dasharray="${circumference}"
                 stroke-dashoffset="${offset}" />
-        <text class="gen-progress-text" x="40" y="44" text-anchor="middle">
-            ${progress > 0 ? Math.round(progress * 100) + '%' : '⏳'}
-        </text>
+        <text class="gen-progress-text" x="40" y="40" text-anchor="middle" dominant-baseline="central">${label}</text>
     </svg>`;
 }
 

@@ -207,6 +207,7 @@
     border-bottom-left-radius: 4px;
     padding: 12px 16px;
     max-width: 85%;
+    white-space: normal;
 }
 
 .gen-bubble-header {
@@ -263,6 +264,7 @@
 
 .gen-thumbnail-pending {
     display: flex;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
     min-height: 120px;
@@ -302,7 +304,7 @@
 }
 
 /* Circular progress */
-.gen-progress-svg { width: 70px; height: 70px; }
+.gen-progress-svg { width: 70px; height: 70px; display: block; }
 
 .gen-progress-bg {
     fill: none;

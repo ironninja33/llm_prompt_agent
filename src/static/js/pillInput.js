@@ -62,14 +62,49 @@ function createPillInput(options) {
             addPill(value);
             // Reset the input text after selection
             dropdown.setValue('');
-            dropdown.setItems(availableItems());
+            const remaining = availableItems();
+            dropdown.setItems(remaining);
+
+            // Queue scroll target so next open centers near the just-selected item
+            queueScrollTarget(value);
         },
     });
+
+    /** Set scroll target to the nearest remaining neighbor of a just-selected value. */
+    function queueScrollTarget(value) {
+        const remaining = availableItems();
+        const neighbor = findNeighbor(value, remaining);
+        if (neighbor) dropdown.setScrollTarget(neighbor);
+    }
+
+    // If initialized with pre-selected values, center near the last one on first open
+    if (selected.length > 0) {
+        queueScrollTarget(selected[selected.length - 1]);
+    }
 
     // ── Helpers ─────────────────────────────────────────────────
     function availableItems() {
         const sel = new Set(selected);
         return allItems.filter(item => !sel.has(item));
+    }
+
+    /** Find the nearest still-available item to `value` in the master list. */
+    function findNeighbor(value, remaining) {
+        if (remaining.length === 0) return null;
+        const idx = allItems.indexOf(value);
+        if (idx === -1) return remaining[0];
+
+        // Search outward from the original position for the closest remaining item
+        const remainingSet = new Set(remaining);
+        for (let offset = 1; offset < allItems.length; offset++) {
+            if (idx + offset < allItems.length && remainingSet.has(allItems[idx + offset])) {
+                return allItems[idx + offset];
+            }
+            if (idx - offset >= 0 && remainingSet.has(allItems[idx - offset])) {
+                return allItems[idx - offset];
+            }
+        }
+        return remaining[0];
     }
 
     function truncate(text) {
