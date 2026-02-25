@@ -23,7 +23,7 @@ function escapeHtml(text) {
 
 // ── Initialization ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-    await loadChats();
+    if (typeof loadChats === 'function') await loadChats();
     loadStats();
     monitorIngestion();
 });

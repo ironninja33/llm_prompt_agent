@@ -1,0 +1,17 @@
+    <!-- ── Dataset Map modal ─────────────────────────────────────── -->
+    <div id="dataset-map-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeDatasetMap()"></div>
+        <div class="modal-dialog modal-lg">
+            <div class="modal-header">
+                <h2>Dataset Map</h2>
+                <button class="btn-icon" onclick="closeDatasetMap()" title="Close">&times;</button>
+            </div>
+            <div class="dataset-map-tabs">
+                <button class="dataset-map-tab active" data-map-tab="map-themes" onclick="switchDatasetMapTab(this)">Cross-folder Themes</button>
+                <button class="dataset-map-tab" data-map-tab="map-folders" onclick="switchDatasetMapTab(this)">Folders</button>
+            </div>
+            <div class="modal-body" id="dataset-map-content">
+                <div class="loading-text">Loading dataset map...</div>
+            </div>
+        </div>
+    </div>

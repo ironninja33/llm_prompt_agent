@@ -8,11 +8,92 @@
  *
  * Depends on: api.js, app.js ($, $$, escapeHtml, currentChatId, isStreaming),
  *             chatPane.js (setStreaming, scrollToBottom),
- *             generationOverlay.js (openGenerationOverlay)
+ *             generationOverlay.js (openGenerationOverlay),
+ *             thumbnails.js (createThumbnailItem, createFailedCard,
+ *                            createCircularProgress, getGridStatus)
  */
 
 // Track active SSE connections for cleanup
 let _activeGenerationPollers = {};
+
+// ── Chat-specific thumbnail callbacks ────────────────────────────────────
+
+/** Default callbacks for thumbnail action buttons in chat context. */
+function _chatThumbnailOptions(job) {
+    return {
+        onRegenerate: (job, img) => {
+            openGenerationOverlay({
+                prompt: job.settings?.positive_prompt || '',
+                chatId: job.chat_id,
+                messageId: job.message_id,
+                settings: job.settings
+            });
+        },
+        onRefine: (job, img) => {
+            const prompt = job.settings?.positive_prompt || '';
+            if (prompt && typeof setRefineContext === 'function') {
+                setRefineContext(prompt);
+            }
+        },
+        onAttach: (job, img) => {
+            if (typeof addAttachment === 'function') {
+                addAttachment({
+                    type: 'generated',
+                    jobId: job.id,
+                    imageId: img.id,
+                    thumbnailUrl: `/api/generate/thumbnail/${job.id}/${img.id}`,
+                    fullUrl: `/api/generate/image/${job.id}/${img.id}`,
+                });
+            }
+        },
+        onDelete: async (job, img, item) => {
+            try {
+                await API.deleteGeneratedImage(job.id, img.id);
+                const grid = item.closest('.gen-thumbnail-grid');
+                item.remove();
+                if (grid) {
+                    _updateBubbleStatusFromGrid(grid);
+                    if (grid.querySelectorAll('.gen-thumbnail-item').length === 0) {
+                        const bubble = grid.closest('.message.generation');
+                        if (bubble) bubble.remove();
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to delete image:', err);
+            }
+        },
+    };
+}
+
+/** Default callbacks for failed card action buttons in chat context. */
+function _chatFailedOptions(job) {
+    return {
+        onRegenerate: (job) => {
+            openGenerationOverlay({
+                prompt: job.settings?.positive_prompt || '',
+                chatId: job.chat_id,
+                messageId: job.message_id,
+                settings: job.settings
+            });
+        },
+        onDelete: async (job, item) => {
+            try {
+                await API.deleteGenerationJob(job.id);
+                const grid = item.closest('.gen-thumbnail-grid');
+                item.remove();
+                if (grid) {
+                    _updateBubbleStatusFromGrid(grid);
+                    if (grid.querySelectorAll('.gen-thumbnail-item').length === 0) {
+                        const bubble = grid.closest('.message.generation');
+                        if (bubble) bubble.remove();
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to delete job:', err);
+            }
+        },
+    };
+}
 
 // ── Bubble creation ──────────────────────────────────────────────────────
 
@@ -73,10 +154,6 @@ function _createMergedBubble(jobs) {
 }
 
 /**
- * Append grid items for a single job (thumbnails, failed card, or spinners).
- * Does NOT update the bubble header — caller is responsible for that.
- */
-/**
  * Store the last completed job's generation settings on the bubble element.
  * Used as defaults when opening the generation overlay from prompt blocks
  * after a page refresh (when _lastGenerationSettings is lost).
@@ -90,16 +167,20 @@ function _storeLastJobSettings(bubble, job) {
     };
 }
 
+/**
+ * Append grid items for a single job (thumbnails, failed card, or spinners).
+ * Does NOT update the bubble header — caller is responsible for that.
+ */
 function _appendJobItems(grid, job) {
     if (job.status === 'completed' && job.images && job.images.length > 0) {
         job.images.forEach(img => {
-            grid.appendChild(_createThumbnailItem(job, img));
+            grid.appendChild(createThumbnailItem(job, img, _chatThumbnailOptions(job)));
         });
         // Store this completed job's settings on the bubble for later use as defaults
         const bubble = grid.closest('.message.generation');
         if (bubble) _storeLastJobSettings(bubble, job);
     } else if (job.status === 'failed') {
-        grid.appendChild(_createFailedCard(job));
+        grid.appendChild(createFailedCard(job, _chatFailedOptions(job)));
     } else {
         _appendProgressSpinners(grid, job);
         _startProgressPolling(job.id);
@@ -116,7 +197,7 @@ function _appendProgressSpinners(grid, job) {
         const item = document.createElement('div');
         item.className = 'gen-thumbnail-item gen-thumbnail-pending';
         item.dataset.jobId = job.id;
-        item.innerHTML = _createCircularProgress(0);
+        item.innerHTML = createCircularProgress(0);
         grid.appendChild(item);
     }
 }
@@ -151,281 +232,11 @@ function insertGenerationBubble(bubble, messageId) {
     scrollToBottom();
 }
 
-// ── Thumbnail items ──────────────────────────────────────────────────────
-
-/**
- * Create a single thumbnail item with image and action icons.
- */
-function _createThumbnailItem(job, img) {
-    const item = document.createElement('div');
-    item.className = 'gen-thumbnail-item';
-    item.dataset.jobId = job.id;
-
-    // Store job/img references on the DOM element so the viewer can
-    // collect all images from the parent grid for cross-job navigation.
-    item._viewerJob = job;
-    item._viewerImg = img;
-
-    // Thumbnail image (clickable for full-size view)
-    const thumb = document.createElement('img');
-    thumb.className = 'gen-thumbnail-img';
-    thumb.src = `/api/generate/thumbnail/${job.id}/${img.id}`;
-    thumb.alt = 'Generated image';
-    thumb.loading = 'lazy';
-    thumb.onclick = () => {
-        if (item.classList.contains('thumbnail-missing')) return;
-        if (typeof openFullSizeViewer === 'function') {
-            // Gather all non-missing, non-failed, non-pending images from the bubble grid
-            const grid = item.closest('.gen-thumbnail-grid');
-            if (grid) {
-                const allItems = grid.querySelectorAll(
-                    '.gen-thumbnail-item:not(.gen-thumbnail-pending):not(.gen-thumbnail-failed):not(.thumbnail-missing)'
-                );
-                const viewerItems = [];
-                let startIndex = 0;
-                allItems.forEach((el, idx) => {
-                    if (el._viewerJob && el._viewerImg) {
-                        viewerItems.push({ job: el._viewerJob, img: el._viewerImg });
-                        if (el === item) startIndex = viewerItems.length - 1;
-                    }
-                });
-                if (viewerItems.length > 0) {
-                    openFullSizeViewer(viewerItems, startIndex);
-                    return;
-                }
-            }
-            // Fallback: open with just this image
-            openFullSizeViewer(job, img);
-        }
-    };
-
-    // Handle missing/broken images
-    thumb.onerror = () => {
-        _replaceThumbnailWithPlaceholder(item, thumb);
-    };
-    // Also detect SVG placeholder returned by backend (content-type mismatch)
-    thumb.onload = () => {
-        if (thumb.naturalWidth === 256 && thumb.naturalHeight === 256 && thumb.src.includes('/thumbnail/')) {
-            fetch(thumb.src, { method: 'HEAD' }).then(res => {
-                if (res.headers.get('content-type')?.includes('svg')) {
-                    _replaceThumbnailWithPlaceholder(item, thumb);
-                }
-            }).catch(() => {});
-        }
-    };
-
-    item.appendChild(thumb);
-
-    // Action icons row
-    const actions = document.createElement('div');
-    actions.className = 'gen-thumbnail-actions';
-
-    // Regenerate icon
-    const regenBtn = document.createElement('button');
-    regenBtn.className = 'gen-action-btn';
-    regenBtn.title = 'Regenerate with same settings';
-    regenBtn.innerHTML = '🔄';
-    regenBtn.onclick = (e) => {
-        e.stopPropagation();
-        openGenerationOverlay({
-            prompt: job.settings?.positive_prompt || '',
-            chatId: job.chat_id,
-            messageId: job.message_id,
-            settings: job.settings
-        });
-    };
-    actions.appendChild(regenBtn);
-
-    // Refine icon
-    const refineBtn = document.createElement('button');
-    refineBtn.className = 'gen-action-btn gen-refine-btn';
-    refineBtn.title = 'Refine this prompt';
-    refineBtn.innerHTML = '✏️';
-    refineBtn.onclick = (e) => {
-        e.stopPropagation();
-        const prompt = job.settings?.positive_prompt || '';
-        if (prompt && typeof setRefineContext === 'function') {
-            setRefineContext(prompt);
-        }
-    };
-    actions.appendChild(refineBtn);
-
-    // Attach icon
-    const attachBtn = document.createElement('button');
-    attachBtn.className = 'gen-action-btn gen-attach-btn';
-    attachBtn.title = 'Add as attachment';
-    attachBtn.innerHTML = '📎';
-    attachBtn.onclick = (e) => {
-        e.stopPropagation();
-        if (typeof addAttachment === 'function') {
-            addAttachment({
-                type: 'generated',
-                jobId: job.id,
-                imageId: img.id,
-                thumbnailUrl: `/api/generate/thumbnail/${job.id}/${img.id}`,
-                fullUrl: `/api/generate/image/${job.id}/${img.id}`,
-            });
-        }
-    };
-    actions.appendChild(attachBtn);
-
-    // Delete icon
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'gen-action-btn gen-delete-btn';
-    deleteBtn.title = 'Delete image';
-    deleteBtn.innerHTML = '✕';
-    deleteBtn.onclick = async (e) => {
-        e.stopPropagation();
-        try {
-            await API.deleteGeneratedImage(job.id, img.id);
-            const grid = item.closest('.gen-thumbnail-grid');
-            item.remove();
-            if (grid) {
-                _updateBubbleStatusFromGrid(grid);
-                // If grid is now empty, remove the entire bubble
-                if (grid.querySelectorAll('.gen-thumbnail-item').length === 0) {
-                    const bubble = grid.closest('.message.generation');
-                    if (bubble) bubble.remove();
-                }
-            }
-        } catch (err) {
-            console.error('Failed to delete image:', err);
-        }
-    };
-    actions.appendChild(deleteBtn);
-
-    item.appendChild(actions);
-    return item;
-}
-
-// ── Failed card ──────────────────────────────────────────────────────────
-
-/**
- * Create a thumbnail-sized failed card with error icon and regenerate button.
- * Same aspect ratio and size as a real thumbnail so they sit in the grid.
- */
-function _createFailedCard(job) {
-    const item = document.createElement('div');
-    item.className = 'gen-thumbnail-item gen-thumbnail-failed';
-    item.dataset.jobId = job.id;
-
-    const content = document.createElement('div');
-    content.className = 'gen-failed-content';
-    content.innerHTML = `<span class="gen-failed-icon">✕</span>
-                         <span class="gen-failed-text">Failed</span>`;
-    item.appendChild(content);
-
-    // Action icons (always visible on failed cards)
-    const actions = document.createElement('div');
-    actions.className = 'gen-thumbnail-actions';
-
-    const regenBtn = document.createElement('button');
-    regenBtn.className = 'gen-action-btn';
-    regenBtn.title = 'Retry with same settings';
-    regenBtn.innerHTML = '🔄';
-    regenBtn.onclick = (e) => {
-        e.stopPropagation();
-        openGenerationOverlay({
-            prompt: job.settings?.positive_prompt || '',
-            chatId: job.chat_id,
-            messageId: job.message_id,
-            settings: job.settings
-        });
-    };
-    actions.appendChild(regenBtn);
-
-    // Delete icon
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'gen-action-btn gen-delete-btn';
-    deleteBtn.title = 'Delete failed job';
-    deleteBtn.innerHTML = '✕';
-    deleteBtn.onclick = async (e) => {
-        e.stopPropagation();
-        try {
-            await API.deleteGenerationJob(job.id);
-            const grid = item.closest('.gen-thumbnail-grid');
-            item.remove();
-            if (grid) {
-                _updateBubbleStatusFromGrid(grid);
-                // If grid is now empty, remove the entire bubble
-                if (grid.querySelectorAll('.gen-thumbnail-item').length === 0) {
-                    const bubble = grid.closest('.message.generation');
-                    if (bubble) bubble.remove();
-                }
-            }
-        } catch (err) {
-            console.error('Failed to delete job:', err);
-        }
-    };
-    actions.appendChild(deleteBtn);
-
-    item.appendChild(actions);
-    return item;
-}
-
-// ── Missing/broken image handling ────────────────────────────────────────
-
-/**
- * Replace a broken/missing thumbnail <img> with a placeholder div.
- */
-function _replaceThumbnailWithPlaceholder(item, imgEl) {
-    if (item.classList.contains('thumbnail-missing')) return;
-    item.classList.add('thumbnail-missing');
-
-    const placeholder = document.createElement('div');
-    placeholder.className = 'gen-thumbnail-placeholder';
-    placeholder.innerHTML = '<span class="gen-placeholder-icon">✕</span><span class="gen-placeholder-text">Missing</span>';
-    item.replaceChild(placeholder, imgEl);
-
-    // Disable the attach button for this item
-    const attachBtn = item.querySelector('.gen-attach-btn');
-    if (attachBtn) {
-        attachBtn.disabled = true;
-        attachBtn.title = 'Image not available';
-    }
-
-    // Check if ALL thumbnails in this bubble are now missing
-    _checkAllThumbnailsMissing(item);
-}
-
-/**
- * After marking a thumbnail as missing, check if all thumbnails in the
- * parent bubble are missing. If so, add a class for styling.
- */
-function _checkAllThumbnailsMissing(item) {
-    const grid = item.closest('.gen-thumbnail-grid');
-    if (!grid) return;
-    const allItems = grid.querySelectorAll('.gen-thumbnail-item:not(.gen-thumbnail-failed)');
-    const missingItems = grid.querySelectorAll('.gen-thumbnail-item.thumbnail-missing');
-    if (allItems.length > 0 && allItems.length === missingItems.length) {
-        grid.closest('.message.generation')?.classList.add('gen-all-missing');
-    }
-}
-
-// ── Progress & status ────────────────────────────────────────────────────
-
-/**
- * Create circular SVG progress indicator.
- * @param {number} progress - 0.0 to 1.0
- */
-function _createCircularProgress(progress) {
-    const radius = 30;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference * (1 - progress);
-
-    const label = progress > 0 ? Math.round(progress * 100) + '%' : '⏳';
-    return `<svg class="gen-progress-svg" viewBox="0 0 80 80">
-        <circle class="gen-progress-bg" cx="40" cy="40" r="${radius}" />
-        <circle class="gen-progress-fill" cx="40" cy="40" r="${radius}"
-                stroke-dasharray="${circumference}"
-                stroke-dashoffset="${offset}" />
-        <text class="gen-progress-text" x="40" y="40" text-anchor="middle" dominant-baseline="central">${label}</text>
-    </svg>`;
-}
+// ── Bubble status helper ─────────────────────────────────────────────────
 
 /**
  * Update the bubble header status by scanning grid contents.
- * Computes aggregate counts of completed, failed, and pending items.
+ * Wraps the shared getGridStatus() and applies it to the bubble DOM.
  */
 function _updateBubbleStatusFromGrid(grid) {
     const bubble = grid.closest('.message.generation');
@@ -433,27 +244,9 @@ function _updateBubbleStatusFromGrid(grid) {
     const statusEl = bubble.querySelector('.gen-bubble-status');
     if (!statusEl) return;
 
-    const completed = grid.querySelectorAll(
-        '.gen-thumbnail-item:not(.gen-thumbnail-pending):not(.gen-thumbnail-failed):not(.thumbnail-missing)'
-    ).length;
-    const missing = grid.querySelectorAll('.gen-thumbnail-item.thumbnail-missing').length;
-    const failed = grid.querySelectorAll('.gen-thumbnail-failed').length;
-    const pending = grid.querySelectorAll('.gen-thumbnail-pending').length;
-
-    const parts = [];
-    if (completed > 0) parts.push(`${completed} image${completed !== 1 ? 's' : ''}`);
-    if (missing > 0) parts.push(`${missing} missing`);
-    if (failed > 0) parts.push(`${failed} failed`);
-    if (pending > 0) parts.push(`generating…`);
-
-    statusEl.textContent = parts.join(', ') || 'Waiting…';
-
-    // Set status class based on priority: running > failed > completed
-    let phase = 'pending';
-    if (pending > 0) phase = 'running';
-    else if (completed > 0) phase = 'completed';
-    else if (failed > 0) phase = 'failed';
-    statusEl.className = `gen-bubble-status gen-status-${phase}`;
+    const status = getGridStatus(grid);
+    statusEl.textContent = status.statusText;
+    statusEl.className = `gen-bubble-status gen-status-${status.phase}`;
 }
 
 // ── SSE polling ──────────────────────────────────────────────────────────
@@ -493,7 +286,7 @@ function _handleProgressUpdate(data) {
     );
     if (items.length > 0 && data.progress > 0) {
         const currentIdx = Math.min(data.current_image || 0, items.length - 1);
-        items[currentIdx].innerHTML = _createCircularProgress(data.progress);
+        items[currentIdx].innerHTML = createCircularProgress(data.progress);
     }
 
     // Update aggregate status in the bubble header
@@ -537,13 +330,19 @@ async function _handleGenerationComplete(data) {
 
             if (data.phase === 'completed' && job.images && job.images.length > 0) {
                 job.images.forEach(img => {
-                    grid.insertBefore(_createThumbnailItem(job, img), insertBeforeRef);
+                    grid.insertBefore(
+                        createThumbnailItem(job, img, _chatThumbnailOptions(job)),
+                        insertBeforeRef
+                    );
                 });
                 // Store this completed job's settings on the bubble
                 const bubble = grid.closest('.message.generation');
                 if (bubble) _storeLastJobSettings(bubble, job);
             } else {
-                grid.insertBefore(_createFailedCard(job), insertBeforeRef);
+                grid.insertBefore(
+                    createFailedCard(job, _chatFailedOptions(job)),
+                    insertBeforeRef
+                );
             }
 
             // Remove spinners for this job (after insertion to keep ref valid)
@@ -596,7 +395,7 @@ function _showAllThumbnails(job) {
     const grid = document.createElement('div');
     grid.className = 'gen-thumbnail-grid gen-thumbnail-grid-full';
     job.images.forEach(img => {
-        grid.appendChild(_createThumbnailItem(job, img));
+        grid.appendChild(createThumbnailItem(job, img, _chatThumbnailOptions(job)));
     });
     content.appendChild(grid);
 

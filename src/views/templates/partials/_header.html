@@ -1,0 +1,18 @@
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <button class="btn-icon sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+                <h1>LLM Prompt Agent</h1>
+                <nav class="header-nav">
+                    <a href="/" class="header-nav-link {% if active_page == 'chat' %}active{% endif %}">Chat</a>
+                    <a href="/browser" class="header-nav-link {% if active_page == 'browser' %}active{% endif %}">Browser</a>
+                </nav>
+                <div id="header-stats" class="header-stats"></div>
+            </div>
+            <div class="header-right">
+                <span id="db-stats" class="stats"></span>
+                <button class="btn-icon" onclick="triggerClustering()" title="Re-cluster Dataset">🔄</button>
+                <button class="btn-icon" onclick="openDatasetMap()" title="Dataset Map">🗂️</button>
+                <button class="btn-icon" onclick="openSettings()" title="Settings">⚙</button>
+            </div>
+        </header>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LLM Prompt Agent{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    {% include 'partials/_ingestion_overlay.html' %}
+    {% include 'partials/_clustering_overlay.html' %}
+    {% include 'partials/_fullsize_viewer.html' %}
+    {% include 'partials/_generation_overlay.html' %}
+    {% include 'partials/_settings_modal.html' %}
+    {% include 'partials/_dataset_map_modal.html' %}
+
+    <!-- ── Main layout ───────────────────────────────────────────── -->
+    <div class="app-layout">
+        {% include 'partials/_header.html' %}
+
+        {% block body %}{% endblock %}
+    </div>
+
+    <!-- Shared scripts -->
+    <script src="/static/js/core/api.js"></script>
+    <script src="/static/js/core/sse.js"></script>
+    <script src="/static/js/core/markdown.js"></script>
+    <script src="/static/js/core/app.js"></script>
+    <script src="/static/js/widgets/searchableDropdown.js"></script>
+    <script src="/static/js/widgets/pillInput.js"></script>
+    <script src="/static/js/generation/fullSizeViewer.js"></script>
+    <script src="/static/js/generation/generationOverlay.js"></script>
+    <script src="/static/js/generation/thumbnails.js"></script>
+    <script src="/static/js/settings/settings.js"></script>
+    <script src="/static/js/settings/settingsComfyUI.js"></script>
+    <script src="/static/js/data/datasetMap.js"></script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

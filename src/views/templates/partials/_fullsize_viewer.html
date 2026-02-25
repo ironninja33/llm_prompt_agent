@@ -1,0 +1,19 @@
+    <!-- ── Full-size image viewer ─────────────────────────────────── -->
+    <div id="fullsize-viewer" class="viewer-overlay hidden">
+        <div class="viewer-backdrop" onclick="closeFullSizeViewer()"></div>
+        <div class="viewer-container">
+            <div class="viewer-main">
+                <button class="viewer-close" onclick="closeFullSizeViewer()" title="Close (Esc)">&times;</button>
+                <button class="viewer-nav viewer-nav-prev" id="viewer-prev" onclick="viewerPrev()" title="Previous (←)">❮</button>
+                <div class="viewer-image-wrap">
+                    <img id="viewer-image" src="" alt="Full size image">
+                </div>
+                <button class="viewer-nav viewer-nav-next" id="viewer-next" onclick="viewerNext()" title="Next (→)">❯</button>
+                <div class="viewer-counter" id="viewer-counter"></div>
+            </div>
+            <aside class="viewer-sidebar">
+                <h3 class="viewer-sidebar-title">Generation Settings</h3>
+                <div id="viewer-sidebar-content"></div>
+            </aside>
+        </div>
+    </div>

@@ -1,0 +1,51 @@
+    <!-- ── Generation overlay ─────────────────────────────────────── -->
+    <div id="generation-overlay" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeGenerationOverlay()"></div>
+        <div class="modal-dialog generation-dialog">
+            <div class="modal-header">
+                <h2>Generate Image</h2>
+                <button class="btn-icon" onclick="closeGenerationOverlay()" title="Close">&times;</button>
+            </div>
+            <div class="modal-body generation-body">
+                <label>Prompt
+                    <textarea id="gen-prompt" rows="5" placeholder="Positive prompt..."></textarea>
+                </label>
+
+                <div class="gen-row">
+                    <label class="gen-field-wide">Base Model
+                        <div id="gen-model-dropdown"></div>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-wide">LoRAs
+                        <div id="gen-lora-input"></div>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field">Output Folder
+                        <input type="text" id="gen-output-folder" placeholder="subfolder name" list="gen-folder-list">
+                        <datalist id="gen-folder-list"></datalist>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-half">Seed
+                        <div class="input-group">
+                            <input type="number" id="gen-seed" value="-1" min="-1">
+                            <button class="btn-sm" onclick="generateRandomSeed()" title="Random seed">🎲</button>
+                        </div>
+                        <button type="button" id="gen-seed-hint" class="gen-seed-hint hidden" onclick="usePreviousSeed()"></button>
+                    </label>
+                    <label class="gen-field-half">Images
+                        <input type="number" id="gen-num-images" value="1" min="1" max="20">
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeGenerationOverlay()">Cancel</button>
+                <button class="btn-primary" id="gen-submit-btn" onclick="submitGeneration()">Generate</button>
+            </div>
+        </div>
+    </div>

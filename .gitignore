@@ -2,6 +2,8 @@ chroma_db
 app.db
 data
 workflows
-plans
+docs/plans
+tests
 __pycache__
 src/agent/default_system_prompt_local.md
+claude.md

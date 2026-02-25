@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block body %}
+        <!-- Sidebar + Chat area -->
+        <div class="app-body">
+            <!-- Sidebar -->
+            <aside id="sidebar" class="sidebar">
+                <button class="btn-new-chat" onclick="createNewChat()">+ New Chat</button>
+                <div id="chat-list" class="chat-list"></div>
+            </aside>
+
+            <!-- Chat pane -->
+            <main class="chat-pane">
+                <div id="messages" class="messages">
+                    <div id="empty-state" class="empty-state">
+                        <h2>Welcome to LLM Prompt Agent</h2>
+                        <p>Start a conversation to generate creative image prompts.</p>
+                        <p class="hint">The agent can search your training data and generated outputs to create new, tailored prompts.</p>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <div id="attachment-bar" class="attachment-bar hidden"></div>
+                    <div id="refine-bar" class="refine-bar hidden"></div>
+                    <div class="input-row">
+                        <button class="btn-attach" onclick="openAttachmentPicker()" title="Add attachment">+</button>
+                        <textarea id="message-input" placeholder="Describe the kind of prompt you want..."
+                                  rows="1" onkeydown="handleInputKeydown(event)"
+                                  oninput="autoResizeInput(this)"></textarea>
+                        <button id="send-btn" class="btn-send" onclick="sendMessage()" title="Send">
+                            <span class="send-icon">➤</span>
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="/static/js/chat/streamRegistry.js"></script>
+    <script src="/static/js/chat/generationBubble.js"></script>
+    <script src="/static/js/chat/refineContext.js"></script>
+    <script src="/static/js/chat/attachments.js"></script>
+    <script src="/static/js/chat/sidebar.js"></script>
+    <script src="/static/js/chat/chatPane.js"></script>
+{% endblock %}
