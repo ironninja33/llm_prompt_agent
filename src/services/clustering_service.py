@@ -852,6 +852,7 @@ def get_themed_prompts(
     k_cross: int | None = None,
     k_random: int = 0,
     k_opposite: int = 0,
+    source_type: str | None = None,
 ) -> dict:
     """Unified query returning prompts from multiple retrieval strategies.
 
@@ -862,6 +863,7 @@ def get_themed_prompts(
         k_cross: Number of prompts per cross-folder theme cluster. Defaults to ``query_k_theme_cross``.
         k_random: Number of random prompts to include.
         k_opposite: Number of diverse/opposite prompts to include.
+        source_type: Filter by ``'training'`` or ``'output'``, or ``None`` for both.
 
     Returns:
         Dictionary with ``direct_similar``, ``intra_theme_matches``,
@@ -890,7 +892,7 @@ def get_themed_prompts(
     query_emb = np.array(query_embedding)
 
     # 1. Direct similar
-    similar_results = vector_store.search_similar(query_embedding, k=k_similar)
+    similar_results = vector_store.search_similar(query_embedding, k=k_similar, source_type=source_type)
     result["direct_similar"] = [
         {
             "text": r["document"],
@@ -903,17 +905,19 @@ def get_themed_prompts(
 
     # 2. Intra-folder themed
     result["intra_theme_matches"] = _get_theme_matches(
-        query_emb, cluster_type="intra_folder", k_per_cluster=k_intra, top_clusters=3
+        query_emb, cluster_type="intra_folder", k_per_cluster=k_intra, top_clusters=3,
+        source_type=source_type,
     )
 
     # 3. Cross-folder themed
     result["cross_theme_matches"] = _get_theme_matches(
-        query_emb, cluster_type="cross_folder", k_per_cluster=k_cross, top_clusters=3
+        query_emb, cluster_type="cross_folder", k_per_cluster=k_cross, top_clusters=3,
+        source_type=source_type,
     )
 
     # 4. Random
     if k_random > 0:
-        random_results = vector_store.get_random(k=k_random)
+        random_results = vector_store.get_random(k=k_random, source_type=source_type)
         result["random"] = [
             {
                 "text": r["document"],
@@ -926,7 +930,7 @@ def get_themed_prompts(
 
     # 5. Opposite
     if k_opposite > 0:
-        opposite_results = vector_store.search_diverse(query_embedding, k=k_opposite, offset=100)
+        opposite_results = vector_store.search_diverse(query_embedding, k=k_opposite, offset=100, source_type=source_type)
         result["opposite"] = [
             {
                 "text": r["document"],
@@ -953,6 +957,7 @@ def _get_theme_matches(
     cluster_type: str,
     k_per_cluster: int,
     top_clusters: int = 3,
+    source_type: str | None = None,
 ) -> list[dict]:
     """Find the closest cluster centroids and return their assigned prompts.
 
@@ -961,6 +966,7 @@ def _get_theme_matches(
         cluster_type: ``"cross_folder"`` or ``"intra_folder"``.
         k_per_cluster: Maximum prompts to return per cluster.
         top_clusters: Number of nearest clusters to use.
+        source_type: Filter by ``'training'`` or ``'output'``, or ``None`` for both.
 
     Returns:
         List of theme match dicts with ``theme_label``, ``theme_id``, and ``prompts``.
@@ -998,10 +1004,16 @@ def _get_theme_matches(
 
         # Get assigned doc IDs
         with get_db() as conn:
-            cursor = conn.execute(
-                "SELECT doc_id, source_type FROM cluster_assignments WHERE cluster_id = ? ORDER BY distance ASC LIMIT ?",
-                (cluster_id, k_per_cluster),
-            )
+            if source_type:
+                cursor = conn.execute(
+                    "SELECT doc_id, source_type FROM cluster_assignments WHERE cluster_id = ? AND source_type = ? ORDER BY distance ASC LIMIT ?",
+                    (cluster_id, source_type, k_per_cluster),
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT doc_id, source_type FROM cluster_assignments WHERE cluster_id = ? ORDER BY distance ASC LIMIT ?",
+                    (cluster_id, k_per_cluster),
+                )
             assignments = cursor.fetchall()
 
         if not assignments:

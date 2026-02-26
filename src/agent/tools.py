@@ -55,6 +55,11 @@ TOOL_DECLARATIONS = [
                 properties={
                     "query": types.Schema(type="STRING", description="Query text to find diverse prompts away from"),
                     "k": types.Schema(type="INTEGER", description="Number of results (default 10)"),
+                    "source_type": types.Schema(
+                        type="STRING",
+                        description="Filter by source: 'training', 'output', or null for both",
+                        nullable=True,
+                    ),
                 },
                 required=["query"],
             ),
@@ -82,6 +87,11 @@ TOOL_DECLARATIONS = [
                 properties={
                     "query": types.Schema(type="STRING", description="Query to find opposites of"),
                     "k": types.Schema(type="INTEGER", description="Number of results (default 10)"),
+                    "source_type": types.Schema(
+                        type="STRING",
+                        description="Filter by source: 'training', 'output', or null for both",
+                        nullable=True,
+                    ),
                 },
                 required=["query"],
             ),
@@ -137,6 +147,11 @@ TOOL_DECLARATIONS = [
                     "include_opposite": types.Schema(
                         type="BOOLEAN",
                         description="Include opposite/contrasting prompts (default: false)",
+                        nullable=True,
+                    ),
+                    "source_type": types.Schema(
+                        type="STRING",
+                        description="Filter by source: 'training', 'output', or null for both",
                         nullable=True,
                     ),
                 },
@@ -299,9 +314,10 @@ def _search_similar(args: dict) -> dict:
 def _search_diverse(args: dict) -> dict:
     query = args.get("query", "")
     k = args.get("k", 10)
+    source_type = args.get("source_type")
 
     query_embedding = embedding_service.embed(query)
-    results = vector_store.search_diverse(query_embedding, k=k)
+    results = vector_store.search_diverse(query_embedding, k=k, source_type=source_type)
 
     return {
         "query": query,
@@ -339,10 +355,11 @@ def _get_random(args: dict) -> dict:
 def _get_opposite(args: dict) -> dict:
     query = args.get("query", "")
     k = args.get("k", 10)
+    source_type = args.get("source_type")
 
     query_embedding = embedding_service.embed(query)
     # Use a large offset to get the most distant prompts
-    results = vector_store.search_diverse(query_embedding, k=k, offset=100)
+    results = vector_store.search_diverse(query_embedding, k=k, offset=100, source_type=source_type)
 
     return {
         "query": query,
@@ -381,6 +398,7 @@ def _query_themed_prompts(args: dict) -> dict:
     query = args.get("query", "")
     include_random = args.get("include_random", False)
     include_opposite = args.get("include_opposite", False)
+    source_type = args.get("source_type")
 
     # Generate embedding for the query
     query_embedding = embedding_service.embed(query)
@@ -394,6 +412,7 @@ def _query_themed_prompts(args: dict) -> dict:
         query_embedding=query_embedding,
         k_random=k_random,
         k_opposite=k_opposite,
+        source_type=source_type,
     )
 
     return result
