@@ -28,6 +28,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     monitorIngestion();
 });
 
+// ── Tab Visibility Recovery ──────────────────────────────────────────────
+// Browsers throttle/drop SSE and fetch streams for background tabs.
+// When the user switches back, refresh any stale state.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+
+    if (typeof refreshStaleGenerationPollers === 'function') {
+        refreshStaleGenerationPollers();
+    }
+    if (typeof refreshStaleChatStream === 'function') {
+        refreshStaleChatStream();
+    }
+});
+
 // ── Stats ───────────────────────────────────────────────────────────────
 
 async function loadStats() {

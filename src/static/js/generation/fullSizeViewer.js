@@ -118,6 +118,8 @@ function _renderViewerImage() {
     if (existingPlaceholder) existingPlaceholder.remove();
     imgEl.classList.remove('hidden');
 
+    // Hide old image while the new one loads to prevent stale flash
+    imgEl.classList.add('hidden');
     imgEl.src = `/api/generate/image/${job.id}/${img.id}`;
     imgEl.alt = `Generated image ${_viewerImageIndex + 1}`;
 
@@ -128,8 +130,9 @@ function _renderViewerImage() {
         _updateViewerNavigation();
     };
 
-    // Detect SVG placeholder returned by backend
+    // Show image once loaded; detect SVG placeholder returned by backend
     imgEl.onload = () => {
+        imgEl.classList.remove('hidden');
         if (imgEl.naturalWidth === 256 && imgEl.naturalHeight === 256) {
             fetch(imgEl.src, { method: 'HEAD' }).then(res => {
                 if (res.headers.get('content-type')?.includes('svg')) {

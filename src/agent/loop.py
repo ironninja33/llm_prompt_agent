@@ -2,6 +2,7 @@
 
 import json
 import logging
+import sqlite3
 from typing import Generator
 
 from google.genai import types
@@ -21,6 +22,7 @@ def run_agent_turn(
     chat_id: str,
     user_message: str,
     attachments: list | None = None,
+    attachment_urls: list[str] | None = None,
 ) -> Generator[dict, None, None]:
     """Run one agent turn: process user message, stream response.
 
@@ -29,6 +31,7 @@ def run_agent_turn(
         user_message: Text content from the user.
         attachments: Optional list of dicts with keys
             'filename', 'content_type', 'data' (raw bytes).
+        attachment_urls: Optional list of persistent URLs for the attachments.
 
     Yields event dicts:
         {"type": "token", "text": "..."}
@@ -48,8 +51,12 @@ def run_agent_turn(
             agent_state = create_initial_state()
             chat_model.save_agent_state(chat_id, agent_state)
 
-        # Save user message
-        chat_model.add_message(chat_id, "user", user_message)
+        # Save user message with attachment metadata if present
+        msg_metadata = None
+        if attachment_urls:
+            msg_metadata = {"attachment_urls": attachment_urls}
+        user_msg = chat_model.add_message(chat_id, "user", user_message, metadata=msg_metadata)
+        yield {"type": "user_saved", "message_id": user_msg["id"]}
 
         # Build system prompt with agent state context appended
         full_system_prompt = system_prompt + state_to_context(agent_state)
@@ -141,7 +148,11 @@ def run_agent_turn(
                     # Handle update_state specially: apply updates to agent state
                     if tool_name == "update_state":
                         agent_state = apply_state_update(agent_state, tool_args)
-                        chat_model.save_agent_state(chat_id, agent_state)
+                        try:
+                            chat_model.save_agent_state(chat_id, agent_state)
+                        except sqlite3.IntegrityError:
+                            logger.warning("Chat %s was deleted mid-turn; stopping agent loop.", chat_id)
+                            return
                         # Refresh the system prompt with updated state
                         full_system_prompt = system_prompt + state_to_context(agent_state)
                         logger.info(f"Agent state updated for chat {chat_id}: phase={agent_state.get('phase')}")
@@ -176,11 +187,15 @@ def run_agent_turn(
                 full_response += current_text
                 break
 
-        # Save the assistant response
-        msg = chat_model.add_message(chat_id, "assistant", full_response)
-
-        # Save final agent state
-        chat_model.save_agent_state(chat_id, agent_state)
+        # Save the assistant response and final agent state.
+        # The chat may have been deleted while the agent was streaming
+        # (e.g. user closed the tab); guard against the FK violation.
+        try:
+            msg = chat_model.add_message(chat_id, "assistant", full_response)
+            chat_model.save_agent_state(chat_id, agent_state)
+        except sqlite3.IntegrityError:
+            logger.warning("Chat %s was deleted before response could be saved; discarding.", chat_id)
+            return
 
         # Generate chat title BEFORE yielding done, so the client gets
         # the updated title when it refreshes the chat list.

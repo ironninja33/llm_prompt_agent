@@ -16,6 +16,13 @@
 // Track active SSE connections for cleanup
 let _activeGenerationPollers = {};
 
+/** Check if the messages container is scrolled near the bottom (within 150px). */
+function _isNearBottom() {
+    const container = $('#messages');
+    if (!container) return true;
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+}
+
 // ── Chat-specific thumbnail callbacks ────────────────────────────────────
 
 /** Default callbacks for thumbnail action buttons in chat context. */
@@ -33,6 +40,21 @@ function _chatThumbnailOptions(job) {
             const prompt = job.settings?.positive_prompt || '';
             if (prompt && typeof setRefineContext === 'function') {
                 setRefineContext(prompt);
+            }
+        },
+        onRefineWithAttachment: (job, img) => {
+            const prompt = job.settings?.positive_prompt || '';
+            if (prompt && typeof setRefineContext === 'function') {
+                setRefineContext(prompt);
+            }
+            if (typeof addAttachment === 'function') {
+                addAttachment({
+                    type: 'generated',
+                    jobId: job.id,
+                    imageId: img.id,
+                    thumbnailUrl: `/api/generate/thumbnail/${job.id}/${img.id}`,
+                    fullUrl: `/api/generate/image/${job.id}/${img.id}`,
+                });
             }
         },
         onAttach: (job, img) => {
@@ -206,7 +228,7 @@ function _appendProgressSpinners(grid, job) {
  * Insert a generation bubble after the correct message in the chat.
  * Finds the message element with matching message_id and inserts after it.
  */
-function insertGenerationBubble(bubble, messageId) {
+function insertGenerationBubble(bubble, messageId, shouldScroll = true) {
     const container = $('#messages');
     if (!container) return;
 
@@ -222,14 +244,14 @@ function insertGenerationBubble(bubble, messageId) {
                 next = next.nextElementSibling;
             }
             insertAfter.after(bubble);
-            scrollToBottom();
+            if (shouldScroll) scrollToBottom();
             return;
         }
     }
 
     // Fallback: append to end
     container.appendChild(bubble);
-    scrollToBottom();
+    if (shouldScroll) scrollToBottom();
 }
 
 // ── Bubble status helper ─────────────────────────────────────────────────
@@ -284,7 +306,14 @@ function _handleProgressUpdate(data) {
     const items = document.querySelectorAll(
         `.gen-thumbnail-pending[data-job-id="${data.job_id}"]`
     );
-    if (items.length > 0 && data.progress > 0) {
+    const queuePos = data.queue_position || 0;
+
+    if (data.phase === 'queued' && queuePos > 0) {
+        // Update all spinners with queue position
+        items.forEach(item => {
+            item.innerHTML = createCircularProgress(0, queuePos);
+        });
+    } else if (items.length > 0 && data.progress > 0) {
         const currentIdx = Math.min(data.current_image || 0, items.length - 1);
         items[currentIdx].innerHTML = createCircularProgress(data.progress);
     }
@@ -296,9 +325,14 @@ function _handleProgressUpdate(data) {
             const bubble = grid.closest('.message.generation');
             const statusEl = bubble?.querySelector('.gen-bubble-status');
             if (statusEl) {
-                const statusMsg = data.phase === 'running'
-                    ? `Generating… ${Math.round(data.progress * 100)}%`
-                    : 'Queued…';
+                let statusMsg;
+                if (data.phase === 'queued') {
+                    statusMsg = queuePos > 0 ? `Queued #${queuePos}` : 'Queued…';
+                } else if (data.phase === 'running') {
+                    statusMsg = `Generating… ${Math.round(data.progress * 100)}%`;
+                } else {
+                    statusMsg = data.message || 'Processing…';
+                }
                 statusEl.textContent = statusMsg;
                 statusEl.className = `gen-bubble-status gen-status-${data.phase}`;
             }
@@ -496,11 +530,47 @@ function cleanupGenerationPollers() {
     _activeGenerationPollers = {};
 }
 
+/**
+ * Check all active generation pollers against the server.
+ * If a job completed or failed while the tab was hidden, handle
+ * completion and close the stale EventSource.
+ */
+async function refreshStaleGenerationPollers() {
+    const jobIds = Object.keys(_activeGenerationPollers);
+    if (jobIds.length === 0 || !currentChatId) return;
+
+    try {
+        const jobs = await API.getChatGenerations(currentChatId);
+        const jobMap = {};
+        for (const j of jobs) jobMap[j.id] = j;
+
+        for (const jobId of jobIds) {
+            const job = jobMap[jobId];
+            if (!job) continue;
+            if (job.status === 'completed' || job.status === 'failed') {
+                // Job finished while tab was hidden — trigger completion
+                _handleGenerationComplete({
+                    job_id: jobId,
+                    phase: job.status,
+                });
+                const es = _activeGenerationPollers[jobId];
+                if (es) es.close();
+                delete _activeGenerationPollers[jobId];
+            }
+        }
+    } catch (err) {
+        console.error('Failed to refresh stale generation pollers:', err);
+    }
+}
+
 // ── Event Listeners ─────────────────────────────────────────────────────
 
 window.addEventListener('generation-submitted', (e) => {
     const job = e.detail;
     if (!job || !job.id) return;
+
+    // Capture scroll position before any DOM changes
+    const wasNearBottom = _isNearBottom();
 
     const msgId = String(job.message_id || job.messageId || '');
 
@@ -519,11 +589,11 @@ window.addEventListener('generation-submitted', (e) => {
             _appendProgressSpinners(grid, job);
             _startProgressPolling(job.id);
             _updateBubbleStatusFromGrid(grid);
-            scrollToBottom();
+            if (wasNearBottom) scrollToBottom();
         }
     } else {
         // Create and insert a new bubble
         const bubble = createGenerationBubble(job);
-        insertGenerationBubble(bubble, job.message_id || job.messageId);
+        insertGenerationBubble(bubble, job.message_id || job.messageId, wasNearBottom);
     }
 });

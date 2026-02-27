@@ -28,11 +28,12 @@ const API = {
      * Send a message. Returns an EventSource-like reader for SSE.
      * We use fetch + ReadableStream since POST can't use EventSource.
      */
-    sendMessage(chatId, content) {
+    sendMessage(chatId, content, { signal } = {}) {
         return fetch(`/api/chats/${chatId}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content }),
+            signal,
         });
     },
 
@@ -40,18 +41,28 @@ const API = {
      * Send a message with file attachments via multipart/form-data.
      * Do NOT set Content-Type — the browser sets it with the boundary.
      */
-    sendMessageWithAttachments(chatId, formData) {
+    sendMessageWithAttachments(chatId, formData, { signal } = {}) {
         return fetch(`/api/chats/${chatId}/messages`, {
             method: 'POST',
             body: formData,
+            signal,
         });
     },
 
-    editMessage(chatId, messageId, content) {
+    editMessage(chatId, messageId, content, { signal } = {}) {
         return fetch(`/api/chats/${chatId}/messages/${messageId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content }),
+            signal,
+        });
+    },
+
+    cancelMessage(chatId, messageId) {
+        return fetch(`/api/chats/${chatId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message_id: messageId }),
         });
     },
 

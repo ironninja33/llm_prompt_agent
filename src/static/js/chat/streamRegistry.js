@@ -25,6 +25,9 @@ const StreamRegistry = {
             toolCalls: [],
             messageId: null,
             phase: 'streaming',
+            abortController: null,
+            userText: '',
+            userMessageId: null,
         };
     },
 
@@ -131,5 +134,42 @@ const StreamRegistry = {
      */
     getActiveChats() {
         return Object.keys(_activeStreams).filter(id => _activeStreams[id].phase === 'streaming');
+    },
+
+    // ── Cancel support ───────────────────────────────────────────
+
+    setAbortController(chatId, ctrl) {
+        if (_activeStreams[chatId]) _activeStreams[chatId].abortController = ctrl;
+    },
+
+    getAbortController(chatId) {
+        return _activeStreams[chatId]?.abortController || null;
+    },
+
+    setUserText(chatId, text) {
+        if (_activeStreams[chatId]) _activeStreams[chatId].userText = text;
+    },
+
+    getUserText(chatId) {
+        return _activeStreams[chatId]?.userText || '';
+    },
+
+    setUserMessageId(chatId, id) {
+        if (_activeStreams[chatId]) _activeStreams[chatId].userMessageId = id;
+    },
+
+    getUserMessageId(chatId) {
+        return _activeStreams[chatId]?.userMessageId || null;
+    },
+
+    /**
+     * Abort the stream for a chat (cancel in progress).
+     * @param {string} chatId
+     */
+    abort(chatId) {
+        const s = _activeStreams[chatId];
+        if (!s) return;
+        if (s.abortController) s.abortController.abort();
+        s.phase = 'cancelled';
     },
 };

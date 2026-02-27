@@ -64,3 +64,11 @@
 .send-icon {
     display: inline-block;
 }
+
+.btn-send.btn-cancel {
+    background: var(--error, #c0392b);
+}
+
+.btn-send.btn-cancel:hover {
+    background: color-mix(in srgb, var(--error, #c0392b) 85%, black);
+}

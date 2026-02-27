@@ -134,6 +134,37 @@ function finalizeStreamingMessage(messageId, toolCalls = null) {
     }
 }
 
+function finalizeStreamingAsError(errorText) {
+    const el = $('#streaming-message');
+    if (el) {
+        el.classList.remove('streaming', 'assistant');
+        el.classList.add('error');
+        el.id = '';
+        el.textContent = errorText;
+    } else {
+        addErrorMessage(errorText);
+    }
+}
+
+function addEditButtonToLastUserMessage() {
+    const msgs = $$('.message.user');
+    const lastUser = msgs[msgs.length - 1];
+    if (!lastUser || lastUser.querySelector('.edit-btn')) return;
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'edit-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = 'Edit and resubmit';
+    editBtn.onclick = async () => {
+        const messages = await API.getMessages(currentChatId);
+        const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+        if (lastUserMsg) {
+            startEditMessage(lastUserMsg.id, lastUserMsg.content);
+        }
+    };
+    lastUser.appendChild(editBtn);
+}
+
 function buildToolCallsSection(toolCalls) {
     const details = document.createElement('details');
     details.className = 'tool-calls-section';
@@ -231,6 +262,7 @@ async function sendMessage() {
     // If refine context is active, build the combined message
     const hasRefine = typeof hasRefineContext === 'function' && hasRefineContext();
     const content = hasRefine ? buildRefineMessage(rawContent) : rawContent;
+    const refinePrompt = hasRefine ? getRefineContext() : '';
 
     // Create chat if none selected
     if (!currentChatId) {
@@ -240,9 +272,18 @@ async function sendMessage() {
     // Capture chatId at send time — this won't change even if user switches chats
     const sendChatId = currentChatId;
 
-    // Capture attachment thumbnails before clearing
+    // Snapshot attachments before clearing
+    const attachmentSnapshot = typeof getAttachments === 'function'
+        ? getAttachments().slice() : [];
     const attachmentThumbs = typeof getAttachmentThumbnails === 'function'
         ? getAttachmentThumbnails() : [];
+    const hasAtts = attachmentSnapshot.length > 0;
+
+    // Clear input, attachments, and refine context immediately
+    input.value = '';
+    autoResizeInput(input);
+    if (hasAtts && typeof clearAttachments === 'function') clearAttachments();
+    if (hasRefine && typeof clearRefineContext === 'function') clearRefineContext();
 
     // Add user message to UI
     const container = $('#messages');
@@ -256,7 +297,6 @@ async function sendMessage() {
     if (hasRefine) {
         const refineIndicator = document.createElement('div');
         refineIndicator.className = 'message-refine-indicator';
-        const refinePrompt = getRefineContext();
         const truncated = refinePrompt.length > 80
             ? refinePrompt.substring(0, 80) + '…'
             : refinePrompt;
@@ -264,50 +304,90 @@ async function sendMessage() {
         userDiv.insertBefore(refineIndicator, userDiv.firstChild);
     }
 
-    // Show attachment thumbnails in the user bubble
-    if (attachmentThumbs.length > 0) {
+    // Show attachment thumbnails with upload progress overlays
+    let attPlaceholders = [];
+    if (hasAtts) {
         const attDiv = document.createElement('div');
         attDiv.className = 'message-attachments';
-        attachmentThumbs.forEach(url => {
+        attachmentThumbs.forEach((url, idx) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'message-attachment-wrap uploading';
             const img = document.createElement('img');
             img.src = url;
             img.alt = 'Attached image';
-            attDiv.appendChild(img);
+            wrap.appendChild(img);
+            // Progress overlay (spinner + progress bar)
+            const overlay = document.createElement('div');
+            overlay.className = 'attachment-upload-overlay';
+            const spinner = document.createElement('div');
+            spinner.className = 'attachment-upload-spinner';
+            overlay.appendChild(spinner);
+            const progressBar = document.createElement('div');
+            progressBar.className = 'attachment-progress-bar';
+            const progressFill = document.createElement('div');
+            progressFill.className = 'attachment-progress-fill';
+            progressBar.appendChild(progressFill);
+            overlay.appendChild(progressBar);
+            wrap.appendChild(overlay);
+            attDiv.appendChild(wrap);
+            attPlaceholders.push(wrap);
         });
         userDiv.appendChild(attDiv);
     }
 
     container.appendChild(userDiv);
 
-    input.value = '';
-    autoResizeInput(input);
-    // Clear refine context after capturing the message
-    if (hasRefine && typeof clearRefineContext === 'function') {
-        clearRefineContext();
-    }
-
     // Register stream and lock input for this chat
     StreamRegistry.register(sendChatId);
+    const abortController = new AbortController();
+    StreamRegistry.setAbortController(sendChatId, abortController);
+    StreamRegistry.setUserText(sendChatId, rawContent);
     renderChatList();  // Update sidebar to show streaming indicator
     setStreaming(true);
     scrollToBottom();
 
     try {
-        // Check for attachments
+        // Prepare and send attachments, or send text-only
         let response;
-        if (typeof hasAttachments === 'function' && hasAttachments()) {
-            const formData = await prepareAttachmentsForSend(sendChatId, content);
-            response = await API.sendMessageWithAttachments(sendChatId, formData);
-            clearAttachments();
+        if (hasAtts) {
+            const formData = await prepareAttachmentsForSend(
+                sendChatId, content, attachmentSnapshot,
+                (idx) => {
+                    // Mark individual attachment as prepared
+                    if (attPlaceholders[idx]) {
+                        attPlaceholders[idx].classList.remove('uploading');
+                    }
+                },
+                (idx, loaded, total) => {
+                    // Update progress bar during generated image fetch
+                    if (attPlaceholders[idx]) {
+                        const fill = attPlaceholders[idx].querySelector('.attachment-progress-fill');
+                        if (fill && total > 0) {
+                            fill.style.width = Math.round((loaded / total) * 100) + '%';
+                        }
+                    }
+                }
+            );
+            // All attachments prepared — show uploading state on all
+            attPlaceholders.forEach(wrap => {
+                wrap.classList.remove('prepared');
+                wrap.classList.add('uploading-server');
+            });
+            response = await API.sendMessageWithAttachments(sendChatId, formData, { signal: abortController.signal });
+            // Upload complete — clear all upload states
+            attPlaceholders.forEach(wrap => {
+                wrap.classList.remove('uploading-server');
+            });
         } else {
-            response = await API.sendMessage(sendChatId, content);
+            response = await API.sendMessage(sendChatId, content, { signal: abortController.signal });
         }
 
         if (!response.ok) {
             const err = await response.json();
             StreamRegistry.setError(sendChatId);
             if (currentChatId === sendChatId) {
-                addErrorMessage(err.error || 'Failed to send message');
+                finalizeStreamingAsError(err.error || 'Failed to send message');
+                addEditButtonToLastUserMessage();
                 setStreaming(false);
             }
             StreamRegistry.cleanup(sendChatId);
@@ -320,6 +400,9 @@ async function sendMessage() {
         }
 
         await readSSEStream(response, {
+            user_saved(data) {
+                StreamRegistry.setUserMessageId(sendChatId, data.message_id);
+            },
             token(data) {
                 const text = data.text || '';
                 // Always buffer in registry (survives chat switching)
@@ -350,8 +433,12 @@ async function sendMessage() {
             error(data) {
                 StreamRegistry.setError(sendChatId);
                 if (currentChatId === sendChatId) {
-                    addErrorMessage(data.message || 'An error occurred');
+                    removeStatusMessages();
+                    finalizeStreamingAsError(data.message || 'An error occurred');
+                    addEditButtonToLastUserMessage();
                 }
+                StreamRegistry.cleanup(sendChatId);
+                renderChatList();
             },
             done(data) {
                 StreamRegistry.finalize(sendChatId, data.message_id);
@@ -366,11 +453,15 @@ async function sendMessage() {
         });
 
     } catch (err) {
+        if (err.name === 'AbortError') return;  // Cancelled by user
         StreamRegistry.setError(sendChatId);
         if (currentChatId === sendChatId) {
-            addErrorMessage(`Network error: ${err.message}`);
+            removeStatusMessages();
+            finalizeStreamingAsError(`Network error: ${err.message}`);
+            addEditButtonToLastUserMessage();
         }
         StreamRegistry.cleanup(sendChatId);
+        renderChatList();
     } finally {
         // Ensure input is unlocked if still viewing this chat
         if (currentChatId === sendChatId) {
@@ -413,16 +504,20 @@ async function submitEditedMessage(messageId) {
     input.value = '';
     autoResizeInput(input);
     StreamRegistry.register(sendChatId);
+    const abortController = new AbortController();
+    StreamRegistry.setAbortController(sendChatId, abortController);
+    StreamRegistry.setUserText(sendChatId, content);
     renderChatList();  // Update sidebar to show streaming indicator
     setStreaming(true);
 
     try {
-        const response = await API.editMessage(sendChatId, messageId, content);
+        const response = await API.editMessage(sendChatId, messageId, content, { signal: abortController.signal });
         if (!response.ok) {
             const err = await response.json();
             StreamRegistry.setError(sendChatId);
             if (currentChatId === sendChatId) {
-                addErrorMessage(err.error || 'Failed to edit message');
+                finalizeStreamingAsError(err.error || 'Failed to edit message');
+                addEditButtonToLastUserMessage();
                 setStreaming(false);
             }
             StreamRegistry.cleanup(sendChatId);
@@ -444,6 +539,9 @@ async function submitEditedMessage(messageId) {
         }
 
         await readSSEStream(response, {
+            user_saved(data) {
+                StreamRegistry.setUserMessageId(sendChatId, data.message_id);
+            },
             token(data) {
                 const text = data.text || '';
                 StreamRegistry.appendText(sendChatId, text);
@@ -469,8 +567,12 @@ async function submitEditedMessage(messageId) {
             error(data) {
                 StreamRegistry.setError(sendChatId);
                 if (currentChatId === sendChatId) {
-                    addErrorMessage(data.message || 'An error occurred');
+                    removeStatusMessages();
+                    finalizeStreamingAsError(data.message || 'An error occurred');
+                    addEditButtonToLastUserMessage();
                 }
+                StreamRegistry.cleanup(sendChatId);
+                renderChatList();
             },
             done(data) {
                 StreamRegistry.finalize(sendChatId, data.message_id);
@@ -484,11 +586,15 @@ async function submitEditedMessage(messageId) {
         });
 
     } catch (err) {
+        if (err.name === 'AbortError') return;  // Cancelled by user
         StreamRegistry.setError(sendChatId);
         if (currentChatId === sendChatId) {
-            addErrorMessage(`Network error: ${err.message}`);
+            removeStatusMessages();
+            finalizeStreamingAsError(`Network error: ${err.message}`);
+            addEditButtonToLastUserMessage();
         }
         StreamRegistry.cleanup(sendChatId);
+        renderChatList();
     } finally {
         if (currentChatId === sendChatId) {
             setStreaming(false);
@@ -510,12 +616,97 @@ function autoResizeInput(el) {
     el.style.height = Math.min(el.scrollHeight, 200) + 'px';
 }
 
+function cancelStream() {
+    const chatId = currentChatId;
+    if (!StreamRegistry.isActive(chatId)) return;
+
+    // 1. Abort the HTTP stream
+    StreamRegistry.abort(chatId);
+
+    // 2. Remove assistant streaming bubble
+    const streamEl = $('#streaming-message');
+    if (streamEl) streamEl.remove();
+
+    // 3. Remove status messages
+    removeStatusMessages();
+
+    // 4. Get user text and put it back in input
+    const userText = StreamRegistry.getUserText(chatId);
+    const input = $('#message-input');
+    if (input) {
+        input.value = userText;
+        autoResizeInput(input);
+    }
+
+    // 5. Remove last user message bubble from DOM
+    const userMessages = $$('.message.user');
+    const lastUser = userMessages[userMessages.length - 1];
+    if (lastUser) lastUser.remove();
+
+    // 6. Delete user message from DB
+    const userMsgId = StreamRegistry.getUserMessageId(chatId);
+    if (userMsgId) API.cancelMessage(chatId, userMsgId);
+
+    // 7. Cleanup
+    StreamRegistry.cleanup(chatId);
+    setStreaming(false);
+    renderChatList();
+}
+
 function setStreaming(value) {
     isStreaming = value;
     const sendBtn = $('#send-btn');
     const input = $('#message-input');
-    if (sendBtn) sendBtn.disabled = value;
+
+    if (sendBtn) {
+        if (value) {
+            // Switch to cancel mode
+            sendBtn.disabled = false;
+            sendBtn.querySelector('.send-icon').textContent = '⊘';
+            sendBtn.onclick = cancelStream;
+            sendBtn.title = 'Cancel';
+            sendBtn.classList.add('btn-cancel');
+        } else {
+            // Restore send mode
+            sendBtn.disabled = false;
+            sendBtn.querySelector('.send-icon').textContent = '➤';
+            sendBtn.onclick = sendMessage;
+            sendBtn.title = 'Send';
+            sendBtn.classList.remove('btn-cancel');
+        }
+    }
     if (input) input.disabled = value;
+}
+
+// ── Tab Visibility Recovery ──────────────────────────────────────────
+
+/**
+ * Check if an active agent stream completed while the tab was hidden.
+ * If the server has a newer assistant message than what the client shows,
+ * reload the full message list and clean up the stale stream state.
+ */
+async function refreshStaleChatStream() {
+    const chatId = currentChatId;
+    if (!chatId) return;
+    if (!StreamRegistry.isActive(chatId)) return;
+
+    try {
+        const messages = await API.getMessages(chatId);
+        if (!messages || messages.length === 0) return;
+
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg.role === 'assistant') {
+            // Stream finished on server while tab was hidden — reload UI
+            StreamRegistry.cleanup(chatId);
+            removeStatusMessages();
+            await loadMessages(chatId);
+            setStreaming(false);
+            addEditButtonToLastUserMessage();
+            renderChatList();
+        }
+    } catch (err) {
+        console.error('Failed to refresh stale chat stream:', err);
+    }
 }
 
 // ── Scroll ──────────────────────────────────────────────────────────────

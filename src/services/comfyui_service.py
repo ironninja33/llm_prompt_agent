@@ -18,6 +18,7 @@ and :mod:`src.services.clustering_service`.
 from __future__ import annotations
 
 import io
+import json as _json
 import logging
 import os
 import threading
@@ -642,6 +643,7 @@ class GenerationProgress:
     message: str = ""
     complete: bool = False
     output_images: list[dict] | None = None
+    queue_position: int = 0  # 0 = not queued/unknown, 1+ = position in queue
 
 
 _status_listeners: list[Callable[[GenerationProgress], Any]] = []
@@ -707,7 +709,216 @@ def _poll_loop(
     prompt_id: str,
     total_images: int,
 ) -> None:
-    """Internal polling loop — runs in a daemon thread."""
+    """Internal polling loop — tries WebSocket first, falls back to HTTP."""
+    try:
+        _ws_poll_loop(job_id, prompt_id, total_images)
+    except Exception as exc:
+        logger.warning("WS poll failed, falling back to HTTP: %s", exc)
+        _http_poll_loop(job_id, prompt_id, total_images)
+
+
+def _ws_poll_loop(
+    job_id: str,
+    prompt_id: str,
+    total_images: int,
+) -> None:
+    """WebSocket-based progress loop.  Falls back to HTTP polling on failure."""
+    try:
+        import websocket  # websocket-client library
+    except ImportError:
+        logger.warning("websocket-client not installed, falling back to HTTP polling")
+        _http_poll_loop(job_id, prompt_id, total_images)
+        return
+
+    base_url = _get_base_url()
+    ws_url = base_url.replace("https://", "wss://").replace("http://", "ws://")
+    client_id = str(uuid.uuid4())
+    ws_url = f"{ws_url}/ws?clientId={client_id}"
+
+    # Get initial queue position via HTTP before entering WS loop
+    initial_progress = get_job_progress(prompt_id)
+    last_queue_position = 0
+    if initial_progress.status == "queued":
+        # Extract position from message like "Job is queued (position 2/5)"
+        msg = initial_progress.message
+        if "(position " in msg:
+            try:
+                pos_str = msg.split("(position ")[1].split("/")[0]
+                last_queue_position = int(pos_str)
+            except (IndexError, ValueError):
+                pass
+
+    # Emit initial queued status
+    _notify_listeners(GenerationProgress(
+        job_id=job_id,
+        prompt_id=prompt_id,
+        phase="queued",
+        progress=0.0,
+        total_images=total_images,
+        queue_position=last_queue_position,
+        message=f"Queue position: {last_queue_position}" if last_queue_position > 0
+            else "Job submitted, waiting in queue…",
+    ))
+
+    try:
+        ws = websocket.create_connection(ws_url, timeout=10)
+    except Exception as exc:
+        logger.warning("WebSocket connection failed (%s), falling back to HTTP: %s", ws_url, exc)
+        _http_poll_loop(job_id, prompt_id, total_images)
+        return
+
+    ws_failed = False
+    try:
+        ws.settimeout(1.0)  # 1s receive timeout for poll loop responsiveness
+        max_time = 600  # 10 minute overall timeout
+        start = time.monotonic()
+        execution_started = False
+        last_queue_remaining = -1  # track for delta-based position updates
+        last_http_check = time.monotonic()
+        _HTTP_CHECK_INTERVAL = 3.0  # seconds between HTTP fallback checks
+
+        while time.monotonic() - start < max_time:
+            try:
+                raw = ws.recv()
+            except websocket.WebSocketTimeoutException:
+                # No message in 1s — periodically check HTTP as safety net
+                now = time.monotonic()
+                if now - last_http_check >= _HTTP_CHECK_INTERVAL:
+                    last_http_check = now
+                    try:
+                        job_progress = get_job_progress(prompt_id)
+                        if job_progress.status == "completed":
+                            history = get_history(prompt_id)
+                            output_images = _extract_output_images(history) if history else []
+                            _notify_listeners(GenerationProgress(
+                                job_id=job_id, prompt_id=prompt_id,
+                                phase="completed", progress=1.0,
+                                current_image=total_images, total_images=total_images,
+                                message="Generation complete",
+                                complete=True, output_images=output_images,
+                            ))
+                            logger.info("Job %s completed (detected via HTTP fallback)", job_id)
+                            return
+                        elif job_progress.status == "failed":
+                            _notify_listeners(GenerationProgress(
+                                job_id=job_id, prompt_id=prompt_id,
+                                phase="failed", progress=0.0,
+                                total_images=total_images,
+                                message=job_progress.message or "Generation failed",
+                                complete=True,
+                            ))
+                            logger.warning("Job %s failed (detected via HTTP fallback)", job_id)
+                            return
+                        elif job_progress.status == "running" and not execution_started:
+                            # Job started but we missed the WS event
+                            execution_started = True
+                            _notify_listeners(GenerationProgress(
+                                job_id=job_id, prompt_id=prompt_id,
+                                phase="running", progress=0.5,
+                                total_images=total_images,
+                                message="Generating…",
+                            ))
+                    except Exception:
+                        pass  # HTTP check failed, keep listening on WS
+                continue
+            except Exception:
+                logger.warning("WebSocket recv error for job %s, falling back to HTTP", job_id)
+                ws_failed = True
+                break
+
+            msg = _json.loads(raw)
+            msg_type = msg.get("type")
+            data = msg.get("data", {})
+
+            # Filter to our prompt_id where applicable
+            msg_prompt_id = data.get("prompt_id")
+            if msg_prompt_id and msg_prompt_id != prompt_id:
+                continue
+
+            if msg_type == "status":
+                queue_remaining = data.get("status", {}).get("exec_info", {}).get("queue_remaining", 0)
+                if not execution_started and queue_remaining > 0:
+                    # Update position estimate using delta from last known queue_remaining
+                    if last_queue_remaining >= 0 and queue_remaining < last_queue_remaining:
+                        delta = last_queue_remaining - queue_remaining
+                        last_queue_position = max(1, last_queue_position - delta)
+                    last_queue_remaining = queue_remaining
+                    _notify_listeners(GenerationProgress(
+                        job_id=job_id, prompt_id=prompt_id,
+                        phase="queued", progress=0.0,
+                        total_images=total_images,
+                        queue_position=last_queue_position,
+                        message=f"Queue position: {last_queue_position}" if last_queue_position > 0
+                            else "Waiting in queue…",
+                    ))
+
+            elif msg_type == "execution_start":
+                execution_started = True
+                _notify_listeners(GenerationProgress(
+                    job_id=job_id, prompt_id=prompt_id,
+                    phase="running", progress=0.0,
+                    total_images=total_images,
+                    message="Starting generation…",
+                ))
+
+            elif msg_type == "progress":
+                execution_started = True
+                value = data.get("value", 0)
+                max_val = data.get("max", 1)
+                pct = value / max_val if max_val > 0 else 0.0
+                _notify_listeners(GenerationProgress(
+                    job_id=job_id, prompt_id=prompt_id,
+                    phase="running", progress=pct,
+                    total_images=total_images,
+                    message=f"Step {value}/{max_val}",
+                ))
+
+            elif msg_type == "executing":
+                if data.get("node") is None:
+                    # Execution complete — fetch history for output images
+                    time.sleep(0.5)
+                    history = get_history(prompt_id)
+                    output_images = _extract_output_images(history) if history else []
+                    _notify_listeners(GenerationProgress(
+                        job_id=job_id, prompt_id=prompt_id,
+                        phase="completed", progress=1.0,
+                        current_image=total_images, total_images=total_images,
+                        message="Generation complete",
+                        complete=True, output_images=output_images,
+                    ))
+                    logger.info("Job %s completed via WebSocket (%d output images)",
+                                job_id, len(output_images))
+                    return
+                else:
+                    execution_started = True
+
+    finally:
+        ws.close()
+
+    # If we broke out due to WS error, fall back to HTTP polling
+    if ws_failed:
+        _http_poll_loop(job_id, prompt_id, total_images)
+        return
+
+    # Timed out
+    _notify_listeners(GenerationProgress(
+        job_id=job_id,
+        prompt_id=prompt_id,
+        phase="failed",
+        progress=0.0,
+        total_images=total_images,
+        message="Timed out after 10 minutes",
+        complete=True,
+    ))
+    logger.warning("WebSocket polling timed out for job %s", job_id)
+
+
+def _http_poll_loop(
+    job_id: str,
+    prompt_id: str,
+    total_images: int,
+) -> None:
+    """HTTP-based polling loop — fallback when WebSocket is unavailable."""
     max_polls = 600  # ~10 minutes at 1s interval
     poll_count = 0
 

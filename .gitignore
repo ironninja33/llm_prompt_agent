@@ -1,6 +1,7 @@
 chroma_db
 app.db
 data
+uploads
 workflows
 docs/plans
 tests

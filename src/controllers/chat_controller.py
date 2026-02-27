@@ -28,11 +28,23 @@ def delete_chat(chat_id: str) -> bool:
 
 
 def get_messages(chat_id: str) -> list[dict]:
-    """Get all messages for a chat."""
-    return chat_model.get_messages(chat_id)
+    """Get all messages for a chat, with attachment_urls extracted from metadata."""
+    messages = chat_model.get_messages(chat_id)
+    for msg in messages:
+        # Extract attachment_urls from metadata to top-level for frontend
+        if msg.get("metadata") and isinstance(msg["metadata"], dict):
+            urls = msg["metadata"].get("attachment_urls")
+            if urls:
+                msg["attachment_urls"] = urls
+    return messages
 
 
-def send_message(chat_id: str, content: str, attachments: list | None = None):
+def send_message(
+    chat_id: str,
+    content: str,
+    attachments: list | None = None,
+    attachment_urls: list[str] | None = None,
+):
     """Process a user message through the agent loop.
 
     Args:
@@ -40,6 +52,7 @@ def send_message(chat_id: str, content: str, attachments: list | None = None):
         content: Text content of the user message.
         attachments: Optional list of attachment dicts with keys
             'filename', 'content_type', 'data' (raw bytes).
+        attachment_urls: Optional list of persistent URLs for the attachments.
 
     Returns a generator that yields SSE event dicts.
     """
@@ -50,7 +63,11 @@ def send_message(chat_id: str, content: str, attachments: list | None = None):
         return
 
     # Run agent turn
-    yield from run_agent_turn(chat_id, content, attachments=attachments)
+    yield from run_agent_turn(
+        chat_id, content,
+        attachments=attachments,
+        attachment_urls=attachment_urls,
+    )
 
 
 def edit_and_resubmit(chat_id: str, message_id: int, new_content: str):

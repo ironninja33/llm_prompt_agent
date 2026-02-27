@@ -96,3 +96,94 @@
 .message-attachments img:hover {
     opacity: 0.85;
 }
+
+/* ── Attachment Upload Progress ───────────────────────────── */
+.message-attachment-wrap {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.message-attachment-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border: none;
+    border-radius: 0;
+    margin: 0;
+}
+
+/* Upload overlay container */
+.attachment-upload-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    gap: 6px;
+}
+
+/* Phase 1: Preparing attachment (fetching generated image blob) */
+.message-attachment-wrap.uploading img { opacity: 0.4; }
+
+.message-attachment-wrap.uploading .attachment-upload-overlay {
+    display: flex;
+}
+
+/* Phase 2: Uploading to server */
+.message-attachment-wrap.uploading-server img { opacity: 0.4; }
+
+.message-attachment-wrap.uploading-server .attachment-upload-overlay {
+    display: flex;
+}
+
+/* Spinner */
+.attachment-upload-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top-color: var(--accent, #6366f1);
+    border-radius: 50%;
+    animation: att-spin 0.7s linear infinite;
+}
+
+/* Progress bar (shown below spinner) */
+.attachment-progress-bar {
+    width: 60px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.attachment-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent, #6366f1);
+    border-radius: 2px;
+    transition: width 0.2s ease;
+}
+
+/* During server upload phase, show an indeterminate bar animation */
+.message-attachment-wrap.uploading-server .attachment-progress-fill {
+    width: 100%;
+    animation: att-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes att-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes att-indeterminate {
+    0%   { transform: translateX(-100%); }
+    50%  { transform: translateX(0); }
+    100% { transform: translateX(100%); }
+}

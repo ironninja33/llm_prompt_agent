@@ -15,10 +15,11 @@
  * @param {Object} job - Job object from API
  * @param {Object} img - Image object { id, filename, ... }
  * @param {Object} [options] - Callback options
- * @param {Function|null} [options.onRegenerate] - (job, img) => void; null hides button
- * @param {Function|null} [options.onRefine]     - (job, img) => void; null hides button
- * @param {Function|null} [options.onAttach]     - (job, img) => void; null hides button
- * @param {Function|null} [options.onDelete]     - (job, img, item) => void; null hides button
+ * @param {Function|null} [options.onRegenerate]          - (job, img) => void; null hides button
+ * @param {Function|null} [options.onRefine]              - (job, img) => void; null hides button
+ * @param {Function|null} [options.onRefineWithAttachment] - (job, img) => void; null hides menu option
+ * @param {Function|null} [options.onAttach]              - (job, img) => void; null hides button
+ * @param {Function|null} [options.onDelete]              - (job, img, item) => void; null hides button
  * @returns {HTMLElement}
  */
 function createThumbnailItem(job, img, options = {}) {
@@ -98,17 +99,49 @@ function createThumbnailItem(job, img, options = {}) {
         actions.appendChild(regenBtn);
     }
 
-    // Refine icon
+    // Refine icon (with optional hover menu for refine+attach)
     if (options.onRefine !== null) {
-        const refineBtn = document.createElement('button');
-        refineBtn.className = 'gen-action-btn gen-refine-btn';
-        refineBtn.title = 'Refine this prompt';
-        refineBtn.innerHTML = '✏️';
-        refineBtn.onclick = (e) => {
-            e.stopPropagation();
-            if (options.onRefine) options.onRefine(job, img);
-        };
-        actions.appendChild(refineBtn);
+        const hasRefineAttach = options.onRefineWithAttachment != null;
+
+        if (hasRefineAttach) {
+            // Wrap button + popover in a container
+            const wrap = document.createElement('div');
+            wrap.className = 'gen-refine-wrap';
+
+            const menu = document.createElement('div');
+            menu.className = 'gen-refine-menu';
+            const menuItem = document.createElement('button');
+            menuItem.className = 'gen-refine-menu-item';
+            menuItem.textContent = 'Refine + attach';
+            menuItem.onclick = (e) => {
+                e.stopPropagation();
+                options.onRefineWithAttachment(job, img);
+            };
+            menu.appendChild(menuItem);
+            wrap.appendChild(menu);
+
+            const refineBtn = document.createElement('button');
+            refineBtn.className = 'gen-action-btn gen-refine-btn';
+            refineBtn.title = 'Refine this prompt';
+            refineBtn.innerHTML = '✏️';
+            refineBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (options.onRefine) options.onRefine(job, img);
+            };
+            wrap.appendChild(refineBtn);
+
+            actions.appendChild(wrap);
+        } else {
+            const refineBtn = document.createElement('button');
+            refineBtn.className = 'gen-action-btn gen-refine-btn';
+            refineBtn.title = 'Refine this prompt';
+            refineBtn.innerHTML = '✏️';
+            refineBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (options.onRefine) options.onRefine(job, img);
+            };
+            actions.appendChild(refineBtn);
+        }
     }
 
     // Attach icon
@@ -239,14 +272,22 @@ function checkAllThumbnailsMissing(item) {
 /**
  * Create circular SVG progress indicator.
  * @param {number} progress - 0.0 to 1.0
+ * @param {number} [queuePosition=0] - Queue position (1+ shows #N, 0 = not queued)
  * @returns {string} HTML string
  */
-function createCircularProgress(progress) {
+function createCircularProgress(progress, queuePosition = 0) {
     const radius = 30;
     const circumference = 2 * Math.PI * radius;
     const offset = circumference * (1 - progress);
 
-    const label = progress > 0 ? Math.round(progress * 100) + '%' : '⏳';
+    let label;
+    if (queuePosition > 0 && progress === 0) {
+        label = `#${queuePosition}`;
+    } else if (progress > 0) {
+        label = Math.round(progress * 100) + '%';
+    } else {
+        label = '⏳';
+    }
     return `<svg class="gen-progress-svg" viewBox="0 0 80 80">
         <circle class="gen-progress-bg" cx="40" cy="40" r="${radius}" />
         <circle class="gen-progress-fill" cx="40" cy="40" r="${radius}"

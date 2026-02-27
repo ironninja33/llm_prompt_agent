@@ -69,6 +69,7 @@ def generation_status_sse(job_id):
                         "total_images": progress.total_images,
                         "message": progress.message,
                         "complete": progress.complete,
+                        "queue_position": progress.queue_position,
                     }
 
                     if progress.complete:

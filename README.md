@@ -213,7 +213,7 @@ The application automatically indexes chat content and attachments in the vector
 
 ## Contributing
 
-[Contributing guidelines to be added]
+Contact through GitHub
 
 ## Support
 

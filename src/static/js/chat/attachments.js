@@ -135,26 +135,71 @@ function openAttachmentPicker() {
 /**
  * Prepare attachments for sending with a message.
  * Returns a FormData object if there are attachments, or null if text-only.
+ *
+ * @param {string} chatId
+ * @param {string} content - Message text
+ * @param {Object[]} attachmentSnapshot - Snapshot of attachments captured before clearing
+ * @param {Function} [onReady] - Called as onReady(index) when each attachment is prepared
+ * @param {Function} [onProgress] - Called as onProgress(index, loaded, total) during fetch
+ * @returns {Promise<FormData|null>}
  */
-async function prepareAttachmentsForSend(chatId, content) {
-    if (_attachments.length === 0) return null;
+async function prepareAttachmentsForSend(chatId, content, attachmentSnapshot, onReady, onProgress) {
+    if (!attachmentSnapshot || attachmentSnapshot.length === 0) return null;
 
     const formData = new FormData();
     formData.append('content', content);
 
-    for (let i = 0; i < _attachments.length; i++) {
-        const att = _attachments[i];
+    for (let i = 0; i < attachmentSnapshot.length; i++) {
+        const att = attachmentSnapshot[i];
         if (att.type === 'uploaded' && att.file) {
-            formData.append('attachments', att.file, att.file.name);
+            try {
+                const result = await ImageConvert.processFile(att.file, {
+                    onProgress: (phase, fraction) => {
+                        if (!onProgress) return;
+                        // Map 3 phases to 0–100 synthetic progress
+                        const phaseOffsets = { decoding: 0, resizing: 40, encoding: 60 };
+                        const phaseWidths  = { decoding: 40, resizing: 20, encoding: 40 };
+                        const offset = phaseOffsets[phase] || 0;
+                        const width  = phaseWidths[phase]  || 0;
+                        onProgress(i, offset + fraction * width, 100);
+                    },
+                });
+                formData.append('attachments', result.blob, result.filename);
+            } catch (err) {
+                console.warn('Image conversion failed, uploading original:', err);
+                formData.append('attachments', att.file, att.file.name);
+            }
+            if (onReady) onReady(i);
         } else if (att.type === 'generated') {
             // For generated images, fetch the image and add as blob
             try {
                 const response = await fetch(att.fullUrl);
-                const blob = await response.blob();
+                const total = parseInt(response.headers.get('content-length') || '0', 10);
+
+                let blob;
+                if (total > 0 && response.body && onProgress) {
+                    // Read with progress tracking
+                    const reader = response.body.getReader();
+                    let loaded = 0;
+                    const chunks = [];
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        chunks.push(value);
+                        loaded += value.length;
+                        onProgress(i, loaded, total);
+                    }
+                    blob = new Blob(chunks, { type: response.headers.get('content-type') || 'image/png' });
+                } else {
+                    blob = await response.blob();
+                }
+
                 const filename = `generated_${att.jobId}_${att.imageId}.png`;
                 formData.append('attachments', blob, filename);
+                if (onReady) onReady(i);
             } catch (err) {
                 console.error('Failed to fetch generated image for attachment:', err);
+                if (onReady) onReady(i);
             }
         }
     }
