@@ -158,6 +158,156 @@ TOOL_DECLARATIONS = [
                 required=["query"],
             ),
         ),
+        # ── Generation tools ──────────────────────────────────────────
+        types.FunctionDeclaration(
+            name="generate_image",
+            description=(
+                "Submit a single prompt for image generation via ComfyUI. "
+                "Call this multiple times in one turn to generate different prompts "
+                "with different settings. Only call when the user explicitly asks "
+                "you to auto-generate. Seed should be -1 (random) unless the user "
+                "explicitly specifies a seed or says 'use the same seed'. "
+                "Unspecified optional settings use the user's configured defaults."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "prompt": types.Schema(type="STRING", description="The positive prompt text to generate"),
+                    "negative_prompt": types.Schema(
+                        type="STRING",
+                        description="Negative prompt (defaults to user's configured default)",
+                        nullable=True,
+                    ),
+                    "base_model": types.Schema(
+                        type="STRING",
+                        description="Diffusion model filename (defaults to user's configured default)",
+                        nullable=True,
+                    ),
+                    "loras": types.Schema(
+                        type="ARRAY",
+                        description="LoRA stack — list of objects with 'name' (filename) and 'strength' (float, default 1.0)",
+                        items=types.Schema(
+                            type="OBJECT",
+                            properties={
+                                "name": types.Schema(type="STRING", description="LoRA filename"),
+                                "strength": types.Schema(type="NUMBER", description="LoRA strength (default 1.0)"),
+                            },
+                            required=["name"],
+                        ),
+                        nullable=True,
+                    ),
+                    "output_folder": types.Schema(
+                        type="STRING",
+                        description="Output subdirectory name",
+                        nullable=True,
+                    ),
+                    "seed": types.Schema(
+                        type="INTEGER",
+                        description="Seed (-1 for random, which is the default)",
+                        nullable=True,
+                    ),
+                    "num_images": types.Schema(
+                        type="INTEGER",
+                        description="Number of images to generate (default 1)",
+                        nullable=True,
+                    ),
+                    "sampler": types.Schema(
+                        type="STRING",
+                        description="Sampler name",
+                        nullable=True,
+                    ),
+                    "cfg_scale": types.Schema(
+                        type="NUMBER",
+                        description="CFG scale value",
+                        nullable=True,
+                    ),
+                    "scheduler": types.Schema(
+                        type="STRING",
+                        description="Scheduler name",
+                        nullable=True,
+                    ),
+                    "steps": types.Schema(
+                        type="INTEGER",
+                        description="Number of sampling steps",
+                        nullable=True,
+                    ),
+                },
+                required=["prompt"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="get_available_loras",
+            description=(
+                "List available LoRA model filenames from ComfyUI. "
+                "Call this when the user mentions a LoRA by description and you need "
+                "the exact filename to pass to generate_image."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={},
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="get_output_directories",
+            description=(
+                "List available output subdirectories. Call this when the user references "
+                "an output folder or when you need to choose where to save generated images."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={},
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="get_last_generation_settings",
+            description=(
+                "Get the full settings from the most recent completed generation job. "
+                "Use when the user says 're-use settings', 'same as last time', or "
+                "'pull settings from [folder]'. Set current_chat=true to only look at "
+                "generations from this conversation."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "output_folder": types.Schema(
+                        type="STRING",
+                        description="If specified, get settings from the latest job in this output folder",
+                        nullable=True,
+                    ),
+                    "current_chat": types.Schema(
+                        type="BOOLEAN",
+                        description="If true, only search generations from the current chat (default: false)",
+                        nullable=True,
+                    ),
+                },
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="get_last_generated_prompts",
+            description=(
+                "Get the actual prompts submitted in the most recent generation jobs. "
+                "These may differ from your generated_prompts if the user edited them "
+                "before submitting. Use for refinement when the user wants to tweak "
+                "a previously generated prompt. Set current_chat=true to only look at "
+                "generations from this conversation."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "count": types.Schema(
+                        type="INTEGER",
+                        description="Number of recent jobs to retrieve prompts from (default 1)",
+                        nullable=True,
+                    ),
+                    "current_chat": types.Schema(
+                        type="BOOLEAN",
+                        description="If true, only search generations from the current chat (default: false)",
+                        nullable=True,
+                    ),
+                },
+            ),
+        ),
+        # ── State management ─────────────────────────────────────────
         types.FunctionDeclaration(
             name="update_state",
             description=(
@@ -227,8 +377,14 @@ TOOL_DECLARATIONS = [
 
 # ── Tool execution ───────────────────────────────────────────────────────
 
-def execute_tool(name: str, args: dict) -> dict:
+def execute_tool(name: str, args: dict, context: dict | None = None) -> dict:
     """Execute a tool call and return the result as a dict.
+
+    Args:
+        name: Tool name.
+        args: Tool arguments from the LLM.
+        context: Optional context dict with keys like 'chat_id' injected
+                 by the agent loop for tools that need session awareness.
 
     Note: 'update_state' is handled here as a passthrough — it returns
     the updates dict. The caller (loop.py) is responsible for applying
@@ -249,6 +405,16 @@ def execute_tool(name: str, args: dict) -> dict:
             return _get_dataset_map(args)
         elif name == "query_themed_prompts":
             return _query_themed_prompts(args)
+        elif name == "generate_image":
+            return _generate_image(args, context or {})
+        elif name == "get_available_loras":
+            return _get_available_loras(args)
+        elif name == "get_output_directories":
+            return _get_output_directories(args)
+        elif name == "get_last_generation_settings":
+            return _get_last_generation_settings(args, context or {})
+        elif name == "get_last_generated_prompts":
+            return _get_last_generated_prompts(args, context or {})
         elif name == "update_state":
             return _validate_and_passthrough_state_update(args)
         else:
@@ -416,3 +582,160 @@ def _query_themed_prompts(args: dict) -> dict:
     )
 
     return result
+
+
+# ── Generation tool implementations ──────────────────────────────────────
+
+def _generate_image(args: dict, context: dict) -> dict:
+    """Submit a single prompt for image generation."""
+    from src.services import comfyui_service
+    from src.controllers import generation_controller
+
+    prompt = args.get("prompt", "").strip()
+    if not prompt:
+        return {"error": "prompt is required and cannot be empty"}
+
+    # Check ComfyUI connectivity first
+    try:
+        health = comfyui_service.check_health()
+        if not health:
+            return {"error": "ComfyUI is not reachable. Check that ComfyUI is running."}
+    except Exception:
+        return {"error": "ComfyUI is not reachable. Check that ComfyUI is running."}
+
+    # Build settings dict
+    settings = {"positive_prompt": prompt}
+
+    # Map optional args to settings, only if provided (non-None)
+    if args.get("negative_prompt") is not None:
+        settings["negative_prompt"] = args["negative_prompt"]
+    if args.get("base_model") is not None:
+        settings["base_model"] = args["base_model"]
+    if args.get("output_folder") is not None:
+        settings["output_folder"] = args["output_folder"]
+    if args.get("seed") is not None:
+        settings["seed"] = args["seed"]
+    if args.get("num_images") is not None:
+        settings["num_images"] = args["num_images"]
+    if args.get("sampler") is not None:
+        settings["sampler"] = args["sampler"]
+    if args.get("cfg_scale") is not None:
+        settings["cfg_scale"] = args["cfg_scale"]
+    if args.get("scheduler") is not None:
+        settings["scheduler"] = args["scheduler"]
+    if args.get("steps") is not None:
+        settings["steps"] = args["steps"]
+
+    # Handle loras: validate against available loras
+    if args.get("loras"):
+        available = comfyui_service.get_available_models("loras")
+        lora_list = []
+        for lora in args["loras"]:
+            name = lora.get("name", "")
+            if name not in available:
+                return {
+                    "error": f"LoRA '{name}' not found",
+                    "valid_options": available,
+                }
+            lora_list.append({
+                "name": name,
+                "strength": lora.get("strength", 1.0),
+            })
+        settings["loras"] = lora_list
+
+    chat_id = context.get("chat_id")
+    job = generation_controller.submit_generation(
+        chat_id=chat_id, message_id=None, settings=settings, source="chat",
+    )
+
+    if job.get("status") == "failed":
+        return {"error": job.get("error", "Generation failed"), "job_id": job["id"]}
+
+    return {
+        "status": "submitted",
+        "job_id": job["id"],
+        "prompt": prompt,
+        "settings_used": {
+            k: v for k, v in job.get("settings", {}).items()
+            if v is not None and k != "extra_settings"
+        },
+    }
+
+
+def _get_available_loras(args: dict) -> dict:
+    """List available LoRA models."""
+    from src.services import comfyui_service
+
+    try:
+        loras = comfyui_service.get_available_models("loras")
+    except Exception as e:
+        return {"error": f"Failed to fetch loras from ComfyUI: {e}"}
+
+    if not loras:
+        return {"error": "No loras found. ComfyUI may not be running or has no loras installed."}
+
+    return {
+        "count": len(loras),
+        "loras": loras,
+    }
+
+
+def _get_output_directories(args: dict) -> dict:
+    """List available output directories."""
+    from src.services import comfyui_service
+
+    try:
+        folders = comfyui_service.get_output_subfolders()
+    except Exception as e:
+        return {"error": f"Failed to list output directories: {e}"}
+
+    return {
+        "count": len(folders),
+        "directories": folders,
+    }
+
+
+def _get_last_generation_settings(args: dict, context: dict) -> dict:
+    """Get settings from the most recent completed generation job."""
+    from src.models import generation as gen_model
+
+    output_folder = args.get("output_folder")
+    chat_id = context.get("chat_id") if args.get("current_chat") else None
+    settings = gen_model.get_latest_job_settings(
+        output_folder=output_folder, chat_id=chat_id,
+    )
+
+    if not settings:
+        msg = "No completed generation jobs found"
+        if output_folder:
+            msg += f" in output folder '{output_folder}'"
+        if chat_id:
+            msg += " in the current chat"
+        return {"error": msg}
+
+    return {
+        "settings": {
+            k: v for k, v in settings.items()
+            if v is not None and k != "extra_settings" and k != "workflow_name"
+        },
+    }
+
+
+def _get_last_generated_prompts(args: dict, context: dict) -> dict:
+    """Get prompts from the most recent generation jobs."""
+    from src.models import generation as gen_model
+
+    count = args.get("count", 1) or 1
+    chat_id = context.get("chat_id") if args.get("current_chat") else None
+    jobs = gen_model.get_recent_job_prompts(count=count, chat_id=chat_id)
+
+    if not jobs:
+        msg = "No completed generation jobs found"
+        if chat_id:
+            msg += " in the current chat"
+        return {"error": msg}
+
+    return {
+        "count": len(jobs),
+        "jobs": jobs,
+    }

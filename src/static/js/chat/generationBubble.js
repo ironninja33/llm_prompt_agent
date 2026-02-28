@@ -472,6 +472,77 @@ function getLastChatGenerationSettings() {
     return null;
 }
 
+// ── Streaming bubble helpers ─────────────────────────────────────────────
+
+/**
+ * Create a generation bubble during streaming (agent tool call).
+ * These bubbles don't have a message_id yet — they're positioned after
+ * #streaming-message and tagged with a 'streaming-gen' class so they can
+ * be finalized later.
+ * @param {Object} job - Partial job object from generation_submitted SSE event
+ * @returns {HTMLElement}
+ */
+function createStreamingGenerationBubble(job) {
+    const bubble = document.createElement('div');
+    bubble.className = 'message generation streaming-gen';
+    bubble.dataset.jobId = job.id;
+
+    const header = document.createElement('div');
+    header.className = 'gen-bubble-header';
+    header.innerHTML = `<span class="gen-bubble-label">Generated Images</span>
+                        <span class="gen-bubble-status"></span>`;
+    bubble.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'gen-thumbnail-grid';
+    bubble.appendChild(grid);
+
+    _appendProgressSpinners(grid, job);
+    _startProgressPolling(job.id);
+    _updateBubbleStatusFromGrid(grid);
+
+    return bubble;
+}
+
+/**
+ * Insert a streaming generation bubble after #streaming-message (or the
+ * last streaming-gen bubble if multiple jobs are submitted in one turn).
+ * @param {HTMLElement} bubble
+ */
+function insertStreamingGenerationBubble(bubble) {
+    const container = $('#messages');
+    if (!container) return;
+
+    // Insert after the last streaming-gen bubble, or after #streaming-message
+    const existingStreamingGens = container.querySelectorAll('.streaming-gen');
+    if (existingStreamingGens.length > 0) {
+        existingStreamingGens[existingStreamingGens.length - 1].after(bubble);
+    } else {
+        const streamingMsg = $('#streaming-message');
+        if (streamingMsg) {
+            streamingMsg.after(bubble);
+        } else {
+            // Fallback: append at end
+            container.appendChild(bubble);
+        }
+    }
+    scrollToBottom();
+}
+
+/**
+ * Finalize streaming generation bubbles by setting their message_id
+ * and removing the streaming-gen class. Called when the 'done' event
+ * arrives with the assistant message_id.
+ * @param {string|number} messageId
+ */
+function finalizeStreamingGenerationBubbles(messageId) {
+    const bubbles = document.querySelectorAll('.message.generation.streaming-gen');
+    bubbles.forEach(bubble => {
+        bubble.dataset.messageId = String(messageId);
+        bubble.classList.remove('streaming-gen');
+    });
+}
+
 // ── Chat reload ──────────────────────────────────────────────────────────
 
 /**

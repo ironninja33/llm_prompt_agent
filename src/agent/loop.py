@@ -10,6 +10,7 @@ from google.genai import types
 from src.services import llm_service
 from src.models import settings, chat as chat_model
 from src.models import tool_calls as tool_calls_model
+from src.models import generation as gen_model
 from src.agent.tools import TOOL_DECLARATIONS, execute_tool
 from src.agent.state import create_initial_state, state_to_context, apply_state_update
 
@@ -74,6 +75,7 @@ def run_agent_turn(
         full_response = ""
         iteration = 0
         tool_call_log = []  # Collect all tool calls for introspection
+        generation_job_ids = []  # Track generate_image job IDs for message_id backfill
 
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
@@ -149,7 +151,8 @@ def run_agent_turn(
                         "tool": tool_name,
                     }
 
-                    result = execute_tool(tool_name, tool_args)
+                    result = execute_tool(tool_name, tool_args,
+                                          context={"chat_id": chat_id})
 
                     # Record for introspection (ephemeral, not persisted)
                     tool_call_log.append({
@@ -182,6 +185,21 @@ def run_agent_turn(
                             "summary": f"Found {result.get('count', 0)} results" if 'count' in result else "Done",
                         }
 
+                    # If generate_image succeeded, yield event for frontend bubble
+                    if tool_name == "generate_image" and result.get("status") == "submitted":
+                        job_id = result["job_id"]
+                        generation_job_ids.append(job_id)
+                        yield {
+                            "type": "generation_submitted",
+                            "job": {
+                                "id": job_id,
+                                "chat_id": chat_id,
+                                "message_id": None,
+                                "status": "pending",
+                                "settings": result.get("settings_used", {}),
+                            },
+                        }
+
                     # Add tool result to messages
                     messages.append({
                         "role": "tool",
@@ -209,6 +227,14 @@ def run_agent_turn(
         except sqlite3.IntegrityError:
             logger.warning("Chat %s was deleted before response could be saved; discarding.", chat_id)
             return
+
+        # Backfill message_id on generation jobs created during this turn
+        if generation_job_ids:
+            for job_id in generation_job_ids:
+                try:
+                    gen_model.update_job_message_id(job_id, msg["id"])
+                except Exception as e:
+                    logger.warning("Failed to backfill message_id for job %s: %s", job_id, e)
 
         # Persist tool calls to DB for reload
         if tool_call_log:

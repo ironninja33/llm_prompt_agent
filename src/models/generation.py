@@ -179,6 +179,20 @@ def update_job_status(job_id: str, status: str, prompt_id: str | None = None) ->
         return cursor.rowcount > 0
 
 
+def update_job_message_id(job_id: str, message_id: int) -> bool:
+    """Set the message_id on a generation job (used to associate agent-triggered
+    jobs with the assistant message after it's saved to the DB).
+
+    Returns True if job was found and updated.
+    """
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE generation_jobs SET message_id = ? WHERE id = ?",
+            (message_id, job_id),
+        )
+        return cursor.rowcount > 0
+
+
 def _backfill_orphan_message_ids(conn, chat_id: str):
     """Associate orphan generation jobs (message_id IS NULL) with the nearest
     preceding assistant message by timestamp.  Updates the DB in-place so the
@@ -347,6 +361,86 @@ def delete_images_by_filename(filename: str) -> int:
 # ---------------------------------------------------------------------------
 # Settings operations
 # ---------------------------------------------------------------------------
+
+def get_latest_job_settings(output_folder: str | None = None,
+                            chat_id: str | None = None) -> dict | None:
+    """Get settings from the most recent completed generation job.
+
+    Args:
+        output_folder: If provided, only considers jobs that used this folder.
+        chat_id: If provided, only considers jobs from this chat.
+
+    Returns None if no completed jobs match.
+    """
+    with get_db() as conn:
+        conditions = ["gj.status = 'completed'"]
+        params = []
+        if output_folder:
+            conditions.append("gs.output_folder = ?")
+            params.append(output_folder)
+        if chat_id:
+            conditions.append("gj.chat_id = ?")
+            params.append(chat_id)
+
+        where = " AND ".join(conditions)
+        cursor = conn.execute(
+            f"""SELECT gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
+                      gs.output_folder, gs.seed, gs.num_images, gs.workflow_name,
+                      gs.extra_settings, gs.sampler, gs.cfg_scale, gs.scheduler, gs.steps
+               FROM generation_settings gs
+               JOIN generation_jobs gj ON gs.job_id = gj.id
+               WHERE {where}
+               ORDER BY gj.completed_at DESC LIMIT 1""",
+            params,
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return _deserialize_settings(row)
+
+
+def get_recent_job_prompts(count: int = 1,
+                           chat_id: str | None = None) -> list[dict]:
+    """Get prompts and summary settings from the most recent completed jobs.
+
+    Args:
+        count: Number of recent jobs to retrieve.
+        chat_id: If provided, only considers jobs from this chat.
+
+    Returns list of dicts with keys: job_id, positive_prompt, negative_prompt,
+    base_model, loras, output_folder, seed.
+    """
+    with get_db() as conn:
+        conditions = ["gj.status = 'completed'"]
+        params = []
+        if chat_id:
+            conditions.append("gj.chat_id = ?")
+            params.append(chat_id)
+
+        where = " AND ".join(conditions)
+        params.append(count)
+        cursor = conn.execute(
+            f"""SELECT gj.id as job_id, gs.positive_prompt, gs.negative_prompt,
+                      gs.base_model, gs.loras, gs.output_folder, gs.seed
+               FROM generation_settings gs
+               JOIN generation_jobs gj ON gs.job_id = gj.id
+               WHERE {where}
+               ORDER BY gj.completed_at DESC LIMIT ?""",
+            params,
+        )
+        results = []
+        for row in cursor.fetchall():
+            r = dict(row)
+            if r.get("loras"):
+                try:
+                    r["loras"] = json.loads(r["loras"])
+                except (json.JSONDecodeError, TypeError):
+                    r["loras"] = []
+            else:
+                r["loras"] = []
+            results.append(r)
+        return results
+
 
 def get_job_settings(job_id: str) -> dict | None:
     """Get generation settings for a job.

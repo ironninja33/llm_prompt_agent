@@ -509,6 +509,12 @@ async function sendMessage() {
                 pendingToolCalls = data.calls;
                 StreamRegistry.setToolCalls(sendChatId, data.calls);
             },
+            generation_submitted(data) {
+                if (currentChatId === sendChatId && data.job) {
+                    const bubble = createStreamingGenerationBubble(data.job);
+                    insertStreamingGenerationBubble(bubble);
+                }
+            },
             error(data) {
                 StreamRegistry.setError(sendChatId);
                 if (currentChatId === sendChatId) {
@@ -522,6 +528,7 @@ async function sendMessage() {
                 StreamRegistry.finalize(sendChatId, data.message_id);
                 if (currentChatId === sendChatId) {
                     finalizeStreamingMessage(data.message_id, pendingToolCalls);
+                    finalizeStreamingGenerationBubbles(data.message_id);
                     setStreaming(false);
                 }
                 StreamRegistry.cleanup(sendChatId);
@@ -645,6 +652,12 @@ async function submitEditedMessage(messageId) {
                 pendingToolCalls = data.calls;
                 StreamRegistry.setToolCalls(sendChatId, data.calls);
             },
+            generation_submitted(data) {
+                if (currentChatId === sendChatId && data.job) {
+                    const bubble = createStreamingGenerationBubble(data.job);
+                    insertStreamingGenerationBubble(bubble);
+                }
+            },
             error(data) {
                 StreamRegistry.setError(sendChatId);
                 if (currentChatId === sendChatId) {
@@ -658,6 +671,7 @@ async function submitEditedMessage(messageId) {
                 StreamRegistry.finalize(sendChatId, data.message_id);
                 if (currentChatId === sendChatId) {
                     finalizeStreamingMessage(data.message_id, pendingToolCalls);
+                    finalizeStreamingGenerationBubbles(data.message_id);
                     setStreaming(false);
                 }
                 StreamRegistry.cleanup(sendChatId);
