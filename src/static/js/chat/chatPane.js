@@ -170,8 +170,9 @@ function finalizeStreamingAsError(errorText) {
     } else {
         addErrorMessage(errorText);
     }
-    // Add delete button to the preceding user message
+    // Add edit and delete buttons to the preceding user message
     addDeleteButtonToLastUserMessage();
+    addEditButtonToLastUserMessage();
 }
 
 function addEditButtonToLastUserMessage() {
@@ -293,10 +294,23 @@ function addErrorMessage(text) {
 
 async function deleteLastUserMessage(messageId) {
     if (!currentChatId) return;
+
+    // Check if deleting this message would leave the chat empty
+    const allMsgs = $$('.message');
+    const userEl = document.querySelector(`.message[data-message-id="${messageId}"]`);
+    const remainingAfter = allMsgs.length
+        - (userEl ? 1 : 0)
+        - (userEl?.nextElementSibling?.classList.contains('error') ? 1 : 0);
+
+    if (remainingAfter === 0) {
+        // No messages will remain — delete the entire chat
+        await deleteChat(currentChatId);
+        return;
+    }
+
     await API.deleteMessage(currentChatId, messageId);
 
     // Remove the user message element from DOM
-    const userEl = document.querySelector(`.message[data-message-id="${messageId}"]`);
     if (userEl) {
         // Also remove any following error message
         const next = userEl.nextElementSibling;
@@ -304,12 +318,6 @@ async function deleteLastUserMessage(messageId) {
             next.remove();
         }
         userEl.remove();
-    }
-
-    // If no messages remain, show the empty state
-    const remaining = $$('.message');
-    if (remaining.length === 0) {
-        renderEmptyState();
     }
 }
 
@@ -467,6 +475,12 @@ async function sendMessage() {
         await readSSEStream(response, {
             user_saved(data) {
                 StreamRegistry.setUserMessageId(sendChatId, data.message_id);
+                // Tag the DOM element so delete/edit buttons can reference it
+                if (currentChatId === sendChatId) {
+                    const userMsgs = $$('.message.user');
+                    const lastUser = userMsgs[userMsgs.length - 1];
+                    if (lastUser) lastUser.dataset.messageId = data.message_id;
+                }
             },
             token(data) {
                 const text = data.text || '';
@@ -603,6 +617,11 @@ async function submitEditedMessage(messageId) {
         await readSSEStream(response, {
             user_saved(data) {
                 StreamRegistry.setUserMessageId(sendChatId, data.message_id);
+                if (currentChatId === sendChatId) {
+                    const userMsgs = $$('.message.user');
+                    const lastUser = userMsgs[userMsgs.length - 1];
+                    if (lastUser) lastUser.dataset.messageId = data.message_id;
+                }
             },
             token(data) {
                 const text = data.text || '';

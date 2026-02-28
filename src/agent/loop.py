@@ -87,12 +87,12 @@ def run_agent_turn(
                 )
             except Exception as e:
                 error_text = f"LLM error: {str(e)}"
-                yield {"type": "error", "message": error_text}
                 try:
                     chat_model.add_message(chat_id, "assistant", error_text,
                                            metadata={"is_error": True})
                 except Exception:
                     pass
+                yield {"type": "error", "message": error_text}
                 return
 
             # Process the stream
@@ -120,12 +120,12 @@ def run_agent_turn(
 
             except Exception as e:
                 error_text = f"Streaming error: {str(e)}"
-                yield {"type": "error", "message": error_text}
                 try:
                     chat_model.add_message(chat_id, "assistant", error_text,
                                            metadata={"is_error": True})
                 except Exception:
                     pass
+                yield {"type": "error", "message": error_text}
                 return
 
             # If there were tool calls, execute them and continue the loop
@@ -232,12 +232,12 @@ def run_agent_turn(
     except Exception as e:
         logger.error(f"Agent loop error: {e}", exc_info=True)
         error_text = f"Internal error: {str(e)}"
-        yield {"type": "error", "message": error_text}
         try:
             chat_model.add_message(chat_id, "assistant", error_text,
                                    metadata={"is_error": True})
         except Exception:
             pass
+        yield {"type": "error", "message": error_text}
 
 
 def _inject_attachments(messages: list[dict], attachments: list[dict]):
