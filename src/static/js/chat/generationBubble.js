@@ -37,37 +37,10 @@ function _chatThumbnailOptions(job) {
             });
         },
         onRefine: (job, img) => {
-            const prompt = job.settings?.positive_prompt || '';
-            if (prompt && typeof setRefineContext === 'function') {
-                setRefineContext(prompt);
-            }
+            openChatRefineDialog(job, img);
         },
-        onRefineWithAttachment: (job, img) => {
-            const prompt = job.settings?.positive_prompt || '';
-            if (prompt && typeof setRefineContext === 'function') {
-                setRefineContext(prompt);
-            }
-            if (typeof addAttachment === 'function') {
-                addAttachment({
-                    type: 'generated',
-                    jobId: job.id,
-                    imageId: img.id,
-                    thumbnailUrl: `/api/generate/thumbnail/${job.id}/${img.id}`,
-                    fullUrl: `/api/generate/image/${job.id}/${img.id}`,
-                });
-            }
-        },
-        onAttach: (job, img) => {
-            if (typeof addAttachment === 'function') {
-                addAttachment({
-                    type: 'generated',
-                    jobId: job.id,
-                    imageId: img.id,
-                    thumbnailUrl: `/api/generate/thumbnail/${job.id}/${img.id}`,
-                    fullUrl: `/api/generate/image/${job.id}/${img.id}`,
-                });
-            }
-        },
+        onRefineWithAttachment: null,
+        onAttach: null,
         onDelete: async (job, img, item) => {
             try {
                 await API.deleteGeneratedImage(job.id, img.id);
@@ -252,7 +225,22 @@ function insertGenerationBubble(bubble, messageId, shouldScroll = true) {
         }
     }
 
-    // Fallback: append to end
+    // Fallback: place after the last assistant message
+    const assistantMsgs = container.querySelectorAll('.message.assistant');
+    if (assistantMsgs.length > 0) {
+        const lastAssistant = assistantMsgs[assistantMsgs.length - 1];
+        let insertAfter = lastAssistant;
+        let next = lastAssistant.nextElementSibling;
+        while (next && next.classList.contains('generation')) {
+            insertAfter = next;
+            next = next.nextElementSibling;
+        }
+        insertAfter.after(bubble);
+        if (shouldScroll) scrollToBottom();
+        return;
+    }
+
+    // Last resort: append to end
     container.appendChild(bubble);
     if (shouldScroll) scrollToBottom();
 }
@@ -495,10 +483,10 @@ async function loadGenerationBubbles(chatId) {
         const jobs = await API.getChatGenerations(chatId);
         if (!jobs || jobs.length === 0) return;
 
-        // Group jobs by message_id
+        // Group jobs by message_id (orphans without message_id share one group)
         const grouped = {};
         for (const job of jobs) {
-            const key = String(job.message_id || `orphan_${job.id}`);
+            const key = String(job.message_id || 'orphan');
             if (!grouped[key]) grouped[key] = [];
             grouped[key].push(job);
         }

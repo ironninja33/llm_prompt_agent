@@ -179,6 +179,46 @@ def update_job_status(job_id: str, status: str, prompt_id: str | None = None) ->
         return cursor.rowcount > 0
 
 
+def _backfill_orphan_message_ids(conn, chat_id: str):
+    """Associate orphan generation jobs (message_id IS NULL) with the nearest
+    preceding assistant message by timestamp.  Updates the DB in-place so the
+    fix is permanent.
+    """
+    orphans = conn.execute(
+        """SELECT id, created_at FROM generation_jobs
+           WHERE chat_id = ? AND message_id IS NULL AND source = 'chat'
+           ORDER BY created_at ASC""",
+        (chat_id,),
+    ).fetchall()
+    if not orphans:
+        return
+
+    # Load assistant messages for this chat ordered by creation time
+    assistants = conn.execute(
+        """SELECT id, created_at FROM messages
+           WHERE chat_id = ? AND role = 'assistant'
+           ORDER BY created_at ASC""",
+        (chat_id,),
+    ).fetchall()
+    if not assistants:
+        return
+
+    for orphan in orphans:
+        # Find the latest assistant message created before (or at same time as) the job
+        best = None
+        for a in assistants:
+            if a["created_at"] <= orphan["created_at"]:
+                best = a
+            else:
+                break
+        if best:
+            conn.execute(
+                "UPDATE generation_jobs SET message_id = ? WHERE id = ?",
+                (best["id"], orphan["id"]),
+            )
+    logger.info("Backfilled %d orphan generation jobs for chat %s", len(orphans), chat_id)
+
+
 def get_jobs_for_chat(chat_id: str) -> list[dict]:
     """Get all generation jobs for a chat, including settings and images.
 
@@ -188,6 +228,9 @@ def get_jobs_for_chat(chat_id: str) -> list[dict]:
     - images (list of dicts)
     """
     with get_db() as conn:
+        # Auto-fix orphan jobs that lost their message_id
+        _backfill_orphan_message_ids(conn, chat_id)
+
         cursor = conn.execute(
             """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
                FROM generation_jobs WHERE chat_id = ? ORDER BY created_at ASC""",

@@ -316,3 +316,59 @@
     color: #ef5350;
     padding: 2rem;
 }
+
+/* ── Refine Dialog (shared by chat + browser) ────────────────── */
+.refine-dialog-controls {
+    display: block;
+    padding: 8px 20px;
+}
+
+.refine-attach-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.refine-attach-toggle input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.refine-dialog-footer {
+    padding: 10px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-refine-ok {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 6px 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.btn-refine-ok:hover {
+    opacity: 0.85;
+}
+
+.chat-refine-prompt {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    max-height: 120px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

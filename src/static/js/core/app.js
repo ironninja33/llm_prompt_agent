@@ -52,25 +52,26 @@ function _handleRefineParams() {
 
     // Set refine context if the function exists (chat page only)
     if (typeof setRefineContext === 'function') {
-        // Create a new chat for the refinement
-        if (typeof createNewChat === 'function') {
-            createNewChat().then(() => {
-                setRefineContext(decodeURIComponent(refinePrompt));
+        const chatId = params.get('chat');
+        // Select existing chat or create a new one
+        const chatReady = chatId && typeof selectChat === 'function'
+            ? selectChat(chatId)
+            : (typeof createNewChat === 'function' ? createNewChat() : Promise.resolve());
 
-                // Persist source image settings as the chat's generation defaults
-                if (refineSettings && typeof setRefineGenerationSettings === 'function') {
-                    setRefineGenerationSettings(refineSettings);
-                }
-
-                // Handle optional attachment
-                const attach = params.get('attach');
-                if (attach && typeof addAttachmentFromBrowser === 'function') {
-                    addAttachmentFromBrowser(attach);
-                }
-            });
-        } else {
+        chatReady.then(() => {
             setRefineContext(decodeURIComponent(refinePrompt));
-        }
+
+            // Persist source image settings as the chat's generation defaults
+            if (refineSettings && typeof setRefineGenerationSettings === 'function') {
+                setRefineGenerationSettings(refineSettings);
+            }
+
+            // Handle optional attachment
+            const attach = params.get('attach');
+            if (attach && typeof addAttachmentFromBrowser === 'function') {
+                addAttachmentFromBrowser(attach);
+            }
+        });
     }
 }
 

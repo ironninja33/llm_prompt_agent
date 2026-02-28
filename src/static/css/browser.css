@@ -150,6 +150,16 @@
     line-height: 1.3;
 }
 
+.browser-img-meta {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 2px;
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    line-height: 1.3;
+    opacity: 0.7;
+}
+
 /* ── Loading / Empty States ──────────────────────────────────── */
 .browser-loading {
     display: flex;
@@ -221,4 +231,57 @@
     background: var(--accent-dim);
     color: var(--accent);
     border-color: var(--accent);
+}
+
+/* ── Refine Chat Picker (browser-specific) ──────────────────── */
+.refine-chat-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+}
+
+.refine-chat-loading {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.refine-chat-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+}
+
+.refine-chat-option:last-child {
+    border-bottom: none;
+}
+
+.refine-chat-option:hover {
+    background: var(--bg-hover, rgba(255,255,255,0.06));
+}
+
+.refine-chat-option.new-chat {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.refine-chat-title {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.88rem;
+}
+
+.refine-chat-date {
+    flex-shrink: 0;
+    margin-left: 12px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
 }

@@ -77,16 +77,9 @@ function createBrowserImageThumbnail(imageData) {
             }
         },
         onRefine: (j, i) => {
-            // Navigate to chat with prompt + persist source settings
-            const prompt = (j.settings || {}).positive_prompt || '';
-            _storeRefineSettings(j.settings);
-            window.location.href = `/?refine=${encodeURIComponent(prompt)}`;
+            openRefineDialog(j, i);
         },
-        onRefineWithAttachment: (j, i) => {
-            const prompt = (j.settings || {}).positive_prompt || '';
-            _storeRefineSettings(j.settings);
-            window.location.href = `/?refine=${encodeURIComponent(prompt)}&attach=${j.id}/${i.id}`;
-        },
+        onRefineWithAttachment: null,  // Attachment toggle lives in the refine dialog
         onAttach: null,  // Hidden in browser context
         onDelete: async (j, i, el) => {
             try {
@@ -105,18 +98,34 @@ function createBrowserImageThumbnail(imageData) {
     wrapper.className = 'browser-img-item';
     wrapper.appendChild(item);
 
-    // Extra info below
+    // Filename
     const info = document.createElement('div');
     info.className = 'browser-img-info';
-    const parts = [];
-    if (imageData.filename) parts.push(imageData.filename);
-    if (imageData.file_size) {
-        const kb = Math.round(imageData.file_size / 1024);
-        parts.push(kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
-    }
-    info.textContent = parts.join(' · ');
+    info.textContent = imageData.filename || '';
     info.title = imageData.file_path || imageData.filename || '';
     wrapper.appendChild(info);
+
+    // File size + creation date
+    const meta = document.createElement('div');
+    meta.className = 'browser-img-meta';
+
+    const sizeEl = document.createElement('span');
+    if (imageData.file_size) {
+        const kb = Math.round(imageData.file_size / 1024);
+        sizeEl.textContent = kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
+    }
+    meta.appendChild(sizeEl);
+
+    const dateEl = document.createElement('span');
+    if (imageData.created_at) {
+        const dt = new Date(imageData.created_at.replace(' ', 'T') + 'Z');
+        if (!isNaN(dt)) {
+            dateEl.textContent = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+    }
+    meta.appendChild(dateEl);
+
+    wrapper.appendChild(meta);
 
     return wrapper;
 }

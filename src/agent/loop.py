@@ -205,15 +205,17 @@ def run_agent_turn(
             except Exception as e:
                 logger.warning("Failed to persist tool calls for message %s: %s", msg["id"], e)
 
-        # Generate chat title BEFORE yielding done, so the client gets
-        # the updated title when it refreshes the chat list.
-        _maybe_summarize_chat(chat_id)
-
-        # Emit tool call introspection summary for live streaming
+        # Emit tool call introspection summary and done event BEFORE
+        # title summarization — the done event carries the message_id
+        # that the frontend needs to associate generation bubbles.
         if tool_call_log:
             yield {"type": "tool_calls", "calls": tool_call_log}
 
         yield {"type": "done", "message_id": msg["id"]}
+
+        # Generate chat title AFTER yielding done so the client gets
+        # the message_id even if summarization fails/hangs.
+        _maybe_summarize_chat(chat_id)
 
     except Exception as e:
         logger.error(f"Agent loop error: {e}", exc_info=True)
