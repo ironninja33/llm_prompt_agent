@@ -71,9 +71,12 @@ async function openGenerationOverlay(options) {
     await _loadGenerationData();
 
     // Determine what values to fill.
-    // Priority: 1) explicit settings (regenerate), 2) defaultSettings from
-    // current chat's bubbles, 3) per-chat session memory, 4) first-time defaults.
-    // This ensures switching threads uses the correct thread's settings.
+    // Priority: 1) explicit settings (regenerate), 2) per-chat session memory,
+    // 3) defaultSettings from bubbles (fallback after reload), 4) first-time defaults.
+    // Session memory is updated on every submission so it always reflects the
+    // user's most recent choices.  Bubble-based defaultSettings only carry
+    // base_model/loras/output_folder and are useful after a page reload when
+    // session memory has been lost.
     const chatSessionSettings = _currentGenChatId
         ? _lastGenerationSettingsPerChat[_currentGenChatId] || null
         : null;
@@ -94,10 +97,16 @@ async function openGenerationOverlay(options) {
             });
         }
         _fillOverlayFields(filtered);
+    } else if (chatSessionSettings) {
+        // Session memory from this chat: always up-to-date within the session
+        // since it's written on every submission. Use new prompt + last settings.
+        const srcSeed = chatSessionSettings.seed;
+        _previousGenSeed = (srcSeed != null && srcSeed !== -1) ? srcSeed : null;
+        _fillOverlayFields({ ...chatSessionSettings, positive_prompt: prompt, seed: -1 });
     } else if (defaultSettings) {
-        // Use stored bubble settings from the current chat (base_model, loras, output_folder).
-        // This takes priority over session memory to ensure the current thread's
-        // settings are used even if the user generated in a different thread recently.
+        // Fallback after page reload: bubble DOM stores base_model, loras,
+        // output_folder from the last completed job. Session memory is lost
+        // on reload so this provides continuity for those three fields.
         _previousGenSeed = null;
         _fillOverlayFields({
             positive_prompt: prompt,
@@ -107,12 +116,6 @@ async function openGenerationOverlay(options) {
             seed: -1,
             num_images: 1,
         });
-    } else if (chatSessionSettings) {
-        // Returning user on same chat: use last settings from this chat + new prompt.
-        // Preserve the source image's seed as a clickable hint.
-        const srcSeed = chatSessionSettings.seed;
-        _previousGenSeed = (srcSeed != null && srcSeed !== -1) ? srcSeed : null;
-        _fillOverlayFields({ ...chatSessionSettings, positive_prompt: prompt, seed: -1 });
     } else {
         // First time: defaults + prompt; try to get default model from settings
         _previousGenSeed = null;
