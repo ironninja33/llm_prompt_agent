@@ -9,3 +9,4 @@ from src.views.api import chat_routes      # noqa: F401, E402
 from src.views.api import settings_routes  # noqa: F401, E402
 from src.views.api import comfyui_routes   # noqa: F401, E402
 from src.views.api import generation_routes  # noqa: F401, E402
+from src.views.api import browser_routes     # noqa: F401, E402

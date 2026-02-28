@@ -9,6 +9,7 @@ from google.genai import types
 
 from src.services import llm_service
 from src.models import settings, chat as chat_model
+from src.models import tool_calls as tool_calls_model
 from src.agent.tools import TOOL_DECLARATIONS, execute_tool
 from src.agent.state import create_initial_state, state_to_context, apply_state_update
 
@@ -197,11 +198,18 @@ def run_agent_turn(
             logger.warning("Chat %s was deleted before response could be saved; discarding.", chat_id)
             return
 
+        # Persist tool calls to DB for reload
+        if tool_call_log:
+            try:
+                tool_calls_model.save_tool_calls(msg["id"], tool_call_log)
+            except Exception as e:
+                logger.warning("Failed to persist tool calls for message %s: %s", msg["id"], e)
+
         # Generate chat title BEFORE yielding done, so the client gets
         # the updated title when it refreshes the chat list.
         _maybe_summarize_chat(chat_id)
 
-        # Emit tool call introspection summary (ephemeral — not persisted)
+        # Emit tool call introspection summary for live streaming
         if tool_call_log:
             yield {"type": "tool_calls", "calls": tool_call_log}
 

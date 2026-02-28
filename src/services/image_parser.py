@@ -26,6 +26,11 @@ class ParsedImageData:
     loras: list[str] = field(default_factory=list)
     negative_prompt: str | None = None
     raw_workflow: dict | None = None
+    sampler: str | None = None
+    cfg_scale: float | None = None
+    scheduler: str | None = None
+    steps: int | None = None
+    seed: int | None = None
 
 
 def parse_file(filepath: str) -> ParsedImageData | None:
@@ -107,7 +112,7 @@ def _parse_png_file(filepath: str) -> ParsedImageData | None:
         if "parameters" in info:
             text = info["parameters"]
             if isinstance(text, str) and len(text) > 10:
-                positive, negative, base_model, loras = _parse_a1111_metadata(text)
+                positive, negative, base_model, loras, sinfo = _parse_a1111_metadata(text)
                 if positive:
                     return ParsedImageData(
                         prompt=positive,
@@ -115,13 +120,14 @@ def _parse_png_file(filepath: str) -> ParsedImageData | None:
                         negative_prompt=negative,
                         base_model=base_model,
                         loras=loras,
+                        **sinfo,
                     )
 
         # 3. If "prompt" chunk existed but wasn't valid JSON, treat as A1111 text
         if "prompt" in info and not workflow_data:
             text = info["prompt"]
             if isinstance(text, str) and len(text) > 10:
-                positive, negative, base_model, loras = _parse_a1111_metadata(text)
+                positive, negative, base_model, loras, sinfo = _parse_a1111_metadata(text)
                 if positive:
                     return ParsedImageData(
                         prompt=positive,
@@ -129,6 +135,7 @@ def _parse_png_file(filepath: str) -> ParsedImageData | None:
                         negative_prompt=negative,
                         base_model=base_model,
                         loras=loras,
+                        **sinfo,
                     )
 
         # 4. Check any other text chunks that might contain prompt data
@@ -136,7 +143,7 @@ def _parse_png_file(filepath: str) -> ParsedImageData | None:
             if key in info:
                 text = info[key]
                 if isinstance(text, str) and len(text) > 10:
-                    positive, negative, base_model, loras = _parse_a1111_metadata(text)
+                    positive, negative, base_model, loras, sinfo = _parse_a1111_metadata(text)
                     if positive:
                         return ParsedImageData(
                             prompt=positive,
@@ -144,6 +151,7 @@ def _parse_png_file(filepath: str) -> ParsedImageData | None:
                             negative_prompt=negative,
                             base_model=base_model,
                             loras=loras,
+                            **sinfo,
                         )
 
         # 5. Fallback: try to extract from filename
@@ -246,6 +254,9 @@ def _extract_from_comfyui_workflow(
     if not positive_prompt:
         return _extract_from_filename(filepath)
 
+    # Extract sampler settings from the workflow
+    sampler_info = _extract_sampler_settings(workflow)
+
     return ParsedImageData(
         prompt=positive_prompt,
         source_file=os.path.basename(filepath),
@@ -253,7 +264,123 @@ def _extract_from_comfyui_workflow(
         loras=loras,
         negative_prompt=negative_prompt,
         raw_workflow=workflow,
+        **sampler_info,
     )
+
+
+# ---------------------------------------------------------------------------
+# Sampler settings extraction from ComfyUI workflows
+# ---------------------------------------------------------------------------
+
+def _resolve_node_value(workflow: dict, value, as_type=None):
+    """Resolve a ComfyUI workflow input value, following node references.
+
+    In ComfyUI API format, inputs that come from other nodes are stored as
+    [node_id, output_index]. This follows the reference to get the source
+    node's value (checking common keys like 'seed', 'value', 'noise_seed').
+
+    Args:
+        workflow: The full workflow dict.
+        value: The raw input value (direct value or [node_id, output_index]).
+        as_type: Optional type to cast the result to (int, float, str).
+
+    Returns:
+        The resolved value, or None if unresolvable.
+    """
+    # Direct value (not a reference)
+    if not isinstance(value, list):
+        if value is None:
+            return None
+        if as_type:
+            try:
+                return as_type(value)
+            except (ValueError, TypeError):
+                return None
+        return value
+
+    # Node reference: [node_id, output_index]
+    if len(value) != 2:
+        return None
+
+    ref_node_id = str(value[0])
+    ref_node = workflow.get(ref_node_id)
+    if not ref_node:
+        return None
+
+    ref_inputs = ref_node.get("inputs", {})
+    # Try common value keys used by primitive/seed nodes
+    for key in ("seed", "value", "noise_seed", "SEED", "Value"):
+        candidate = ref_inputs.get(key)
+        if candidate is not None and not isinstance(candidate, list):
+            if as_type:
+                try:
+                    return as_type(candidate)
+                except (ValueError, TypeError):
+                    continue
+            return candidate
+
+    return None
+
+
+def _extract_sampler_settings(workflow: dict) -> dict:
+    """Extract sampler, CFG, scheduler, steps, and seed from a ComfyUI API workflow.
+
+    Generically scans for any node whose class_type contains "ksampler" or
+    "sampler" (case-insensitive). Covers KSampler, KSamplerAdvanced, and
+    custom sampler nodes. Follows node references for seed/steps values.
+
+    Returns:
+        Dict with keys: sampler, cfg_scale, scheduler, steps, seed (None if not found).
+    """
+    result = {"sampler": None, "cfg_scale": None, "scheduler": None, "steps": None, "seed": None}
+
+    for node_id, node_data in workflow.items():
+        class_type = (node_data.get("class_type") or "").lower()
+        if "sampler" not in class_type:
+            continue
+
+        inputs = node_data.get("inputs", {})
+
+        # sampler_name is the standard key for KSampler nodes
+        if result["sampler"] is None:
+            sampler_name = inputs.get("sampler_name") or inputs.get("sampler")
+            if isinstance(sampler_name, str) and sampler_name.strip():
+                result["sampler"] = sampler_name.strip()
+
+        if result["cfg_scale"] is None:
+            cfg = inputs.get("cfg")
+            if cfg is not None:
+                resolved = _resolve_node_value(workflow, cfg, as_type=float)
+                if resolved is not None:
+                    result["cfg_scale"] = resolved
+
+        if result["scheduler"] is None:
+            scheduler = inputs.get("scheduler")
+            if isinstance(scheduler, str) and scheduler.strip():
+                result["scheduler"] = scheduler.strip()
+
+        if result["steps"] is None:
+            steps = inputs.get("steps")
+            if steps is not None:
+                resolved = _resolve_node_value(workflow, steps, as_type=int)
+                if resolved is not None:
+                    result["steps"] = resolved
+
+        if result["seed"] is None:
+            # KSampler uses "seed", KSamplerAdvanced uses "noise_seed"
+            for key in ("seed", "noise_seed"):
+                raw = inputs.get(key)
+                if raw is not None:
+                    resolved = _resolve_node_value(workflow, raw, as_type=int)
+                    if resolved is not None:
+                        result["seed"] = resolved
+                        break
+
+        # If we found everything, stop scanning
+        if all(v is not None for v in result.values()):
+            break
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +440,7 @@ def _extract_from_jpg_exif(filepath: str) -> ParsedImageData | None:
             return None
 
         # Parse the full A1111-style embedded metadata
-        positive, negative, base_model, loras = _parse_a1111_metadata(text)
+        positive, negative, base_model, loras, sinfo = _parse_a1111_metadata(text)
 
         if not positive:
             return None
@@ -324,6 +451,7 @@ def _extract_from_jpg_exif(filepath: str) -> ParsedImageData | None:
             negative_prompt=negative,
             base_model=base_model,
             loras=loras,
+            **sinfo,
         )
 
     except Exception as e:
@@ -365,22 +493,24 @@ def _decode_user_comment(raw) -> str | None:
     return raw.decode("utf-8", errors="ignore").strip()
 
 
-def _parse_a1111_metadata(text: str) -> tuple[str, str | None, str | None, list[str]]:
+def _parse_a1111_metadata(text: str) -> tuple[str, str | None, str | None, list[str], dict]:
     """Parse A1111/ComfyUI-style embedded metadata text.
 
     Format::
 
         <positive prompt>
         Negative prompt: <negative prompt>
-        Steps: 20, Sampler: ..., Model: <name>, ..., Extra info: <lora>, None, None
+        Steps: 20, Sampler: ..., CFG scale: 7.0, Scheduler: ..., Model: <name>, ..., Extra info: <lora>, None, None
 
     Returns:
-        (positive, negative, base_model, loras)
+        (positive, negative, base_model, loras, sampler_info)
+        where sampler_info is a dict with keys: sampler, cfg_scale, scheduler, steps
     """
     positive = None
     negative = None
     base_model = None
     loras: list[str] = []
+    sampler_info = {"sampler": None, "cfg_scale": None, "scheduler": None, "steps": None, "seed": None}
 
     # Split on "Negative prompt:" to get positive prompt
     neg_match = re.search(r'\nNegative prompt:\s*', text)
@@ -412,12 +542,36 @@ def _parse_a1111_metadata(text: str) -> tuple[str, str | None, str | None, list[
     else:
         params_line = rest
 
-    # Parse the parameters line for Model and Extra info (LoRAs)
+    # Parse the parameters line for Model, sampler settings, and Extra info (LoRAs)
     if params_line:
         # Extract Model name
         model_match = re.search(r'\bModel:\s*([^,]+)', params_line)
         if model_match:
             base_model = model_match.group(1).strip()
+
+        # Extract sampler settings
+        steps_match = re.search(r'\bSteps:\s*(\d+)', params_line)
+        if steps_match:
+            sampler_info["steps"] = int(steps_match.group(1))
+
+        sampler_match = re.search(r'\bSampler:\s*([^,]+)', params_line)
+        if sampler_match:
+            sampler_info["sampler"] = sampler_match.group(1).strip()
+
+        cfg_match = re.search(r'\bCFG scale:\s*([\d.]+)', params_line)
+        if cfg_match:
+            try:
+                sampler_info["cfg_scale"] = float(cfg_match.group(1))
+            except ValueError:
+                pass
+
+        scheduler_match = re.search(r'\bScheduler:\s*([^,]+)', params_line)
+        if scheduler_match:
+            sampler_info["scheduler"] = scheduler_match.group(1).strip()
+
+        seed_match = re.search(r'\bSeed:\s*(\d+)', params_line)
+        if seed_match:
+            sampler_info["seed"] = int(seed_match.group(1))
 
         # Extract LoRAs from "Extra info:" field
         # Format: "Extra info: lora_name.safetensors, None, None"
@@ -431,12 +585,12 @@ def _parse_a1111_metadata(text: str) -> tuple[str, str | None, str | None, list[
                 ):
                     loras.append(part)
 
-    return positive or "", negative, base_model, loras
+    return positive or "", negative, base_model, loras, sampler_info
 
 
 def _split_positive_negative(text: str) -> tuple[str, str | None]:
     """Simple split of text into positive and negative prompt sections."""
-    pos, neg, _, _ = _parse_a1111_metadata(text)
+    pos, neg, _, _, _ = _parse_a1111_metadata(text)
     return pos, neg
 
 

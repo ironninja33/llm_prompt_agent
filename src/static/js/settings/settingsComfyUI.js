@@ -20,6 +20,16 @@ async function loadComfyUISettings() {
         $('#setting-comfyui-url').value = settings.comfyui_base_url || 'http://localhost:8188';
         $('#setting-comfyui-negative').value = settings.comfyui_default_negative || '';
 
+        // Sampler defaults
+        const samplerEl = $('#setting-comfyui-sampler');
+        if (samplerEl) samplerEl.value = settings.comfyui_default_sampler || '';
+        const cfgEl = $('#setting-comfyui-cfg');
+        if (cfgEl) cfgEl.value = settings.comfyui_default_cfg || '';
+        const schedulerEl = $('#setting-comfyui-scheduler');
+        if (schedulerEl) schedulerEl.value = settings.comfyui_default_scheduler || '';
+        const stepsEl = $('#setting-comfyui-steps');
+        if (stepsEl) stepsEl.value = settings.comfyui_default_steps || '';
+
         // Initialize or update model dropdown
         _initModelDropdown(settings.comfyui_default_model || '');
 
@@ -320,6 +330,16 @@ async function saveComfyUISettings() {
 
     const negative = $('#setting-comfyui-negative').value;
     data.comfyui_default_negative = negative;
+
+    // Sampler defaults
+    const sampler = ($('#setting-comfyui-sampler') || {}).value || '';
+    data.comfyui_default_sampler = sampler;
+    const cfg = ($('#setting-comfyui-cfg') || {}).value || '';
+    data.comfyui_default_cfg = cfg;
+    const scheduler = ($('#setting-comfyui-scheduler') || {}).value || '';
+    data.comfyui_default_scheduler = scheduler;
+    const steps = ($('#setting-comfyui-steps') || {}).value || '';
+    data.comfyui_default_steps = steps;
 
     try {
         await API.updateSettings(data);

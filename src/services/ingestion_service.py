@@ -1,13 +1,17 @@
 """Data ingestion pipeline — scans directories, parses files, generates embeddings."""
 
+import json
 import os
 import logging
 import threading
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
-from src.services.image_parser import parse_file
+from src.services.image_parser import parse_file, ParsedImageData
 from src.services import embedding_service
 from src.models import vector_store, settings
+from src.models.database import get_db
 from src.config import EMBEDDING_BATCH_SIZE
 
 logger = logging.getLogger(__name__)
@@ -182,6 +186,13 @@ def _run_ingestion(output_only: bool = False):
                 progress.errors += 1
                 logger.warning(f"Failed to parse: {filepath}")
                 continue
+
+            # For output files, create SQLite records so the browser can query them
+            if dir_type == "output":
+                try:
+                    _ensure_sqlite_records(filepath, parsed, d)
+                except Exception as e:
+                    logger.warning(f"Failed to create SQLite records for {filepath}: {e}")
 
             metadata = {
                 "concept": concept,
@@ -390,3 +401,74 @@ def _process_batch(
 
     except Exception as e:
         logger.error(f"Error processing batch: {e}", exc_info=True)
+
+
+def _ensure_sqlite_records(filepath: str, parsed: ParsedImageData, dir_info: dict):
+    """Create generation_jobs + generation_settings + generated_images records
+    for a scanned output file, so the browser can query it.
+
+    Skips if a generated_images record with the same file_path already exists.
+    """
+    norm_path = os.path.normpath(filepath)
+
+    with get_db() as conn:
+        # Check for existing record
+        cursor = conn.execute(
+            "SELECT 1 FROM generated_images WHERE file_path = ?", (norm_path,)
+        )
+        if cursor.fetchone():
+            return  # Already registered
+
+        # Get file metadata
+        try:
+            stat = os.stat(filepath)
+            file_size = stat.st_size
+            file_mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        except OSError:
+            file_size = None
+            file_mtime = None
+
+        job_id = str(uuid.uuid4())
+
+        # Create generation_jobs record (chat_id = NULL, source = 'scan')
+        conn.execute(
+            """INSERT INTO generation_jobs (id, chat_id, message_id, prompt_id, status, source, created_at, completed_at)
+               VALUES (?, NULL, NULL, NULL, 'completed', 'scan', ?, ?)""",
+            (job_id, file_mtime, file_mtime),
+        )
+
+        # Build loras JSON
+        loras_json = json.dumps(parsed.loras) if parsed.loras else None
+
+        # Create generation_settings record
+        conn.execute(
+            """INSERT INTO generation_settings
+               (job_id, positive_prompt, negative_prompt, base_model, loras,
+                output_folder, seed, num_images, sampler, cfg_scale, scheduler, steps)
+               VALUES (?, ?, ?, ?, ?, ?, -1, 1, ?, ?, ?, ?)""",
+            (
+                job_id,
+                parsed.prompt,
+                parsed.negative_prompt,
+                parsed.base_model,
+                loras_json,
+                os.path.basename(os.path.dirname(filepath)),
+                parsed.sampler,
+                parsed.cfg_scale,
+                parsed.scheduler,
+                parsed.steps,
+            ),
+        )
+
+        # Create generated_images record
+        filename = os.path.basename(filepath)
+        subfolder = os.path.relpath(os.path.dirname(filepath), dir_info["path"])
+        if subfolder == ".":
+            subfolder = ""
+
+        conn.execute(
+            """INSERT INTO generated_images
+               (job_id, filename, subfolder, file_size, file_path)
+               VALUES (?, ?, ?, ?, ?)""",
+            (job_id, filename, subfolder, file_size, norm_path),
+        )

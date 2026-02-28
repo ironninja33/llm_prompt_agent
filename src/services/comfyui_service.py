@@ -152,15 +152,16 @@ def clear_model_cache() -> None:
 # ---------------------------------------------------------------------------
 
 def get_output_subfolders() -> list[str]:
-    """Get subdirectories from ``output``-type data directories in the database.
+    """Get all subdirectories (recursively) from ``output``-type data directories.
 
     Reads data directories with ``dir_type = 'output'`` from the
-    :mod:`src.models.settings` module and lists their immediate
-    subdirectories on disk.
+    :mod:`src.models.settings` module and walks their directory trees
+    to find all nested subdirectories.
 
     Returns:
-        Sorted, deduplicated list of subfolder names.  Returns ``[]``
-        if no output directories are configured or none exist on disk.
+        Sorted, deduplicated list of relative subfolder paths
+        (e.g. ``["base", "base/subdir"]``).  Returns ``[]`` if no
+        output directories are configured or none exist on disk.
     """
     try:
         from src.models.settings import get_data_directories
@@ -180,9 +181,11 @@ def get_output_subfolders() -> list[str]:
         if not dir_path or not os.path.isdir(dir_path):
             continue
         try:
-            for entry in os.listdir(dir_path):
-                if os.path.isdir(os.path.join(dir_path, entry)):
-                    subfolders.add(entry)
+            for dirpath, dirnames, _ in os.walk(dir_path):
+                for dirname in dirnames:
+                    full = os.path.join(dirpath, dirname)
+                    rel = os.path.relpath(full, dir_path)
+                    subfolders.add(rel)
         except OSError as exc:
             logger.warning("Error listing output directory %s: %s", dir_path, exc)
 

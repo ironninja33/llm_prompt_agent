@@ -1,6 +1,8 @@
 """Generation submit, status SSE, image serving, and deletion endpoints."""
 
+import io
 import logging
+import os
 import queue
 
 from flask import request, jsonify, Response
@@ -12,6 +14,47 @@ from src.services import comfyui_service
 from src.models import generation as gen_model, vector_store
 
 logger = logging.getLogger(__name__)
+
+
+def _read_image_bytes(image: dict) -> bytes | None:
+    """Read image bytes, preferring file_path for scanned images."""
+    file_path = image.get("file_path")
+    if file_path and os.path.isfile(file_path):
+        try:
+            with open(file_path, "rb") as fh:
+                return fh.read()
+        except OSError:
+            pass
+    # Fallback to ComfyUI output directory search
+    return comfyui_service.get_image(
+        image["filename"],
+        image.get("subfolder", ""),
+    )
+
+
+def _get_thumbnail_bytes(image: dict) -> bytes | None:
+    """Get thumbnail bytes, preferring file_path for scanned images."""
+    file_path = image.get("file_path")
+    if file_path and os.path.isfile(file_path):
+        try:
+            from PIL import Image as PILImage
+
+            with open(file_path, "rb") as fh:
+                raw = fh.read()
+            img = PILImage.open(io.BytesIO(raw))
+            img.thumbnail((256, 256), PILImage.Resampling.LANCZOS)
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
+            return buf.getvalue()
+        except Exception:
+            pass
+    # Fallback to ComfyUI output directory search
+    return comfyui_service.get_image_thumbnail(
+        image["filename"],
+        image.get("subfolder", ""),
+    )
 
 
 @api_bp.route("/generate", methods=["POST"])
@@ -123,10 +166,7 @@ def get_generated_image(job_id, image_id):
     if not image or image.get("job_id") != job_id:
         return jsonify({"error": "Image not found"}), 404
 
-    image_bytes = comfyui_service.get_image(
-        image["filename"],
-        image.get("subfolder", ""),
-    )
+    image_bytes = _read_image_bytes(image)
 
     if not image_bytes:
         _cleanup_missing_image(job_id, image_id)
@@ -212,10 +252,7 @@ def get_generated_thumbnail(job_id, image_id):
     if not image or image.get("job_id") != job_id:
         return jsonify({"error": "Image not found"}), 404
 
-    thumb_bytes = comfyui_service.get_image_thumbnail(
-        image["filename"],
-        image.get("subfolder", ""),
-    )
+    thumb_bytes = _get_thumbnail_bytes(image)
 
     if not thumb_bytes:
         _cleanup_missing_image(job_id, image_id)

@@ -7,4 +7,5 @@ docs/plans
 tests
 __pycache__
 src/agent/default_system_prompt_local.md
-claude.md
+CLAUDE.md
+

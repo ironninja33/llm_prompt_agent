@@ -10,7 +10,8 @@ from src.services import comfyui_service
 logger = logging.getLogger(__name__)
 
 
-def submit_generation(chat_id: str, message_id: int | None, settings: dict):
+def submit_generation(chat_id: str | None, message_id: int | None, settings: dict,
+                      source: str = "chat"):
     """Submit an image generation job.
 
     1. Create job record in database
@@ -36,6 +37,19 @@ def submit_generation(chat_id: str, message_id: int | None, settings: dict):
     if not settings.get("base_model"):
         settings["base_model"] = get_setting("comfyui_default_model") or ""
 
+    # Apply default sampler settings for fields not present in the submission.
+    # The overlay UI doesn't expose these yet, so they always come from defaults.
+    if settings.get("sampler") is None:
+        settings["sampler"] = get_setting("comfyui_default_sampler") or None
+    if settings.get("cfg_scale") is None:
+        default_cfg = get_setting("comfyui_default_cfg")
+        settings["cfg_scale"] = float(default_cfg) if default_cfg else None
+    if settings.get("scheduler") is None:
+        settings["scheduler"] = get_setting("comfyui_default_scheduler") or None
+    if settings.get("steps") is None:
+        default_steps = get_setting("comfyui_default_steps")
+        settings["steps"] = int(default_steps) if default_steps else None
+
     # Resolve seed: if -1, generate a random seed now so the actual value
     # is stored in the database alongside the generated images.
     seed_value = settings.get("seed", -1)
@@ -47,8 +61,12 @@ def submit_generation(chat_id: str, message_id: int | None, settings: dict):
     # Load and prepare workflow with user settings applied
     prepared_api, prepared_ui = workflow_controller.prepare_for_generation(settings)
 
+    # Determine source: if no chat_id, it's a browser generation
+    if chat_id is None:
+        source = "browser"
+
     # Create job in database
-    job = gen_model.create_job(chat_id, message_id, settings)
+    job = gen_model.create_job(chat_id, message_id, settings, source=source)
     job_id = job["id"]
 
     try:

@@ -134,6 +134,11 @@ const API = {
         return res.json();
     },
 
+    async getComfyUIStatus() {
+        const res = await fetch('/api/comfyui/status');
+        return res.json();
+    },
+
     async getComfyUIModels(modelType) {
         const res = await fetch(`/api/comfyui/models/${modelType}`);
         return res.json();
@@ -207,6 +212,43 @@ const API = {
     async deleteGenerationJob(jobId) {
         const res = await fetch(`/api/generate/job/${jobId}`, {
             method: 'DELETE',
+        });
+        return res.json();
+    },
+
+    // ── Browser endpoints ─────────────────────────────────────
+    async browserListing(path, offset, limit) {
+        const params = new URLSearchParams();
+        if (path) params.set('path', path);
+        if (offset != null) params.set('offset', offset);
+        if (limit != null) params.set('limit', limit);
+        const res = await fetch(`/api/browser/listing?${params}`);
+        return res.json();
+    },
+
+    async browserPoll(path, since) {
+        const params = new URLSearchParams();
+        if (path) params.set('path', path);
+        if (since != null) params.set('since', since);
+        const res = await fetch(`/api/browser/poll?${params}`);
+        return res.json();
+    },
+
+    async browserSearch(q, mode, offset, limit) {
+        const params = new URLSearchParams();
+        params.set('q', q);
+        if (mode) params.set('mode', mode);
+        if (offset != null) params.set('offset', offset);
+        if (limit != null) params.set('limit', limit);
+        const res = await fetch(`/api/browser/search?${params}`);
+        return res.json();
+    },
+
+    async browserGenerate(settings) {
+        const res = await fetch('/api/browser/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings }),
         });
         return res.json();
     },

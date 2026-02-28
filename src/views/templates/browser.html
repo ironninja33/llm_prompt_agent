@@ -4,12 +4,34 @@
 
 {% block body %}
         <div class="app-body">
-            <main class="browser-pane" style="flex:1; display:flex; align-items:center; justify-content:center;">
-                <div class="empty-state">
-                    <h2>Image Browser</h2>
-                    <p>Browse and manage your generated images.</p>
-                    <p class="hint">Coming soon.</p>
+            <aside id="sidebar" class="sidebar browser-sidebar hidden">
+                <!-- Reserved for future browser menu -->
+            </aside>
+
+            <main class="browser-pane">
+                <div id="browser-breadcrumb" class="browser-breadcrumb"></div>
+                <div id="browser-grid" class="browser-grid thumb-medium"></div>
+                <div id="browser-loading" class="browser-loading hidden">
+                    <div class="spinner"></div>
+                    <span>Loading...</span>
                 </div>
+                <div id="browser-empty" class="browser-empty hidden">
+                    <div class="empty-state">
+                        <h2>No Images Found</h2>
+                        <p>This directory doesn't contain any indexed images yet.</p>
+                        <p class="hint">Add output directories in Settings, then trigger a re-index.</p>
+                    </div>
+                </div>
+                <div id="browser-scroll-sentinel" class="browser-scroll-sentinel"></div>
             </main>
         </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="/static/js/browser/browserState.js"></script>
+    <script src="/static/js/browser/browserGrid.js"></script>
+    <script src="/static/js/browser/browserNav.js"></script>
+    <script src="/static/js/browser/browserSearch.js"></script>
+    <script src="/static/js/browser/browserPolling.js"></script>
+    <script src="/static/js/browser/browserPage.js"></script>
 {% endblock %}

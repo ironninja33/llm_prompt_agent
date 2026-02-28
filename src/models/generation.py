@@ -1,6 +1,7 @@
 """Generation job, image, and settings models for ComfyUI integration."""
 
 import json
+import os
 import uuid
 import logging
 from src.models.database import get_db
@@ -38,15 +39,17 @@ def _deserialize_settings(row) -> dict:
 # Job operations
 # ---------------------------------------------------------------------------
 
-def create_job(chat_id: str, message_id: int | None, settings: dict) -> dict:
+def create_job(chat_id: str | None, message_id: int | None, settings: dict,
+               source: str = "chat") -> dict:
     """Create a new generation job with its settings.
 
     Args:
-        chat_id: The chat this job belongs to.
+        chat_id: The chat this job belongs to (None for browser/scan).
         message_id: Optional associated message ID.
         settings: Dict with keys: positive_prompt, negative_prompt, base_model,
                   loras (list), output_folder, seed, num_images, workflow_name,
-                  extra_settings (dict).
+                  extra_settings (dict), sampler, cfg_scale, scheduler, steps.
+        source: One of 'chat', 'scan', 'browser'.
 
     Returns:
         The created job dict including id, chat_id, message_id, status, and settings.
@@ -57,15 +60,16 @@ def create_job(chat_id: str, message_id: int | None, settings: dict) -> dict:
 
     with get_db() as conn:
         conn.execute(
-            """INSERT INTO generation_jobs (id, chat_id, message_id, status)
-               VALUES (?, ?, ?, 'pending')""",
-            (job_id, chat_id, message_id),
+            """INSERT INTO generation_jobs (id, chat_id, message_id, status, source)
+               VALUES (?, ?, ?, 'pending', ?)""",
+            (job_id, chat_id, message_id, source),
         )
         conn.execute(
             """INSERT INTO generation_settings
                (job_id, positive_prompt, negative_prompt, base_model, loras,
-                output_folder, seed, num_images, workflow_name, extra_settings)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                output_folder, seed, num_images, workflow_name, extra_settings,
+                sampler, cfg_scale, scheduler, steps)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 job_id,
                 settings.get("positive_prompt", ""),
@@ -77,6 +81,10 @@ def create_job(chat_id: str, message_id: int | None, settings: dict) -> dict:
                 settings.get("num_images", 1),
                 settings.get("workflow_name"),
                 extra_json,
+                settings.get("sampler"),
+                settings.get("cfg_scale"),
+                settings.get("scheduler"),
+                settings.get("steps"),
             ),
         )
 
@@ -85,6 +93,7 @@ def create_job(chat_id: str, message_id: int | None, settings: dict) -> dict:
         "chat_id": chat_id,
         "message_id": message_id,
         "status": "pending",
+        "source": source,
         "prompt_id": None,
         "created_at": None,
         "completed_at": None,
@@ -98,6 +107,10 @@ def create_job(chat_id: str, message_id: int | None, settings: dict) -> dict:
             "num_images": settings.get("num_images", 1),
             "workflow_name": settings.get("workflow_name"),
             "extra_settings": settings.get("extra_settings", {}),
+            "sampler": settings.get("sampler"),
+            "cfg_scale": settings.get("cfg_scale"),
+            "scheduler": settings.get("scheduler"),
+            "steps": settings.get("steps"),
         },
     }
 
@@ -106,7 +119,7 @@ def get_job(job_id: str) -> dict | None:
     """Get a single generation job by ID, including its settings."""
     with get_db() as conn:
         cursor = conn.execute(
-            """SELECT id, chat_id, message_id, prompt_id, status, created_at, completed_at
+            """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
                FROM generation_jobs WHERE id = ?""",
             (job_id,),
         )
@@ -119,7 +132,8 @@ def get_job(job_id: str) -> dict | None:
         # Attach settings
         sc = conn.execute(
             """SELECT positive_prompt, negative_prompt, base_model, loras,
-                      output_folder, seed, num_images, workflow_name, extra_settings
+                      output_folder, seed, num_images, workflow_name, extra_settings,
+                      sampler, cfg_scale, scheduler, steps
                FROM generation_settings WHERE job_id = ?""",
             (job_id,),
         )
@@ -169,13 +183,13 @@ def get_jobs_for_chat(chat_id: str) -> list[dict]:
     """Get all generation jobs for a chat, including settings and images.
 
     Ordered by created_at ASC. Each job dict includes:
-    - job fields (id, chat_id, message_id, prompt_id, status, created_at, completed_at)
+    - job fields (id, chat_id, message_id, prompt_id, status, source, created_at, completed_at)
     - settings (nested dict)
     - images (list of dicts)
     """
     with get_db() as conn:
         cursor = conn.execute(
-            """SELECT id, chat_id, message_id, prompt_id, status, created_at, completed_at
+            """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
                FROM generation_jobs WHERE chat_id = ? ORDER BY created_at ASC""",
             (chat_id,),
         )
@@ -186,7 +200,8 @@ def get_jobs_for_chat(chat_id: str) -> list[dict]:
             # Attach settings
             sc = conn.execute(
                 """SELECT positive_prompt, negative_prompt, base_model, loras,
-                          output_folder, seed, num_images, workflow_name, extra_settings
+                          output_folder, seed, num_images, workflow_name, extra_settings,
+                          sampler, cfg_scale, scheduler, steps
                    FROM generation_settings WHERE job_id = ?""",
                 (job["id"],),
             )
@@ -195,7 +210,8 @@ def get_jobs_for_chat(chat_id: str) -> list[dict]:
 
             # Attach images
             ic = conn.execute(
-                """SELECT id, job_id, filename, subfolder, width, height, created_at
+                """SELECT id, job_id, filename, subfolder, width, height, created_at,
+                          file_size, file_path
                    FROM generated_images WHERE job_id = ? ORDER BY id ASC""",
                 (job["id"],),
             )
@@ -259,7 +275,8 @@ def get_image(image_id: int) -> dict | None:
     """Get a single image by ID."""
     with get_db() as conn:
         cursor = conn.execute(
-            """SELECT id, job_id, filename, subfolder, width, height, created_at
+            """SELECT id, job_id, filename, subfolder, width, height,
+                      file_size, file_path, created_at
                FROM generated_images WHERE id = ?""",
             (image_id,),
         )
@@ -296,7 +313,8 @@ def get_job_settings(job_id: str) -> dict | None:
     with get_db() as conn:
         cursor = conn.execute(
             """SELECT positive_prompt, negative_prompt, base_model, loras,
-                      output_folder, seed, num_images, workflow_name, extra_settings
+                      output_folder, seed, num_images, workflow_name, extra_settings,
+                      sampler, cfg_scale, scheduler, steps
                FROM generation_settings WHERE job_id = ?""",
             (job_id,),
         )
@@ -318,7 +336,7 @@ def get_generation_data_for_chat(chat_id: str) -> list[dict]:
     """
     with get_db() as conn:
         cursor = conn.execute(
-            """SELECT id, chat_id, message_id, prompt_id, status, created_at, completed_at
+            """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
                FROM generation_jobs WHERE chat_id = ?
                ORDER BY message_id ASC, created_at ASC""",
             (chat_id,),
@@ -330,7 +348,8 @@ def get_generation_data_for_chat(chat_id: str) -> list[dict]:
             # Attach settings
             sc = conn.execute(
                 """SELECT positive_prompt, negative_prompt, base_model, loras,
-                          output_folder, seed, num_images, workflow_name, extra_settings
+                          output_folder, seed, num_images, workflow_name, extra_settings,
+                          sampler, cfg_scale, scheduler, steps
                    FROM generation_settings WHERE job_id = ?""",
                 (job["id"],),
             )
@@ -339,7 +358,8 @@ def get_generation_data_for_chat(chat_id: str) -> list[dict]:
 
             # Attach images
             ic = conn.execute(
-                """SELECT id, job_id, filename, subfolder, width, height, created_at
+                """SELECT id, job_id, filename, subfolder, width, height, created_at,
+                          file_size, file_path
                    FROM generated_images WHERE job_id = ? ORDER BY id ASC""",
                 (job["id"],),
             )
@@ -356,7 +376,7 @@ def get_active_jobs() -> list[dict]:
     """
     with get_db() as conn:
         cursor = conn.execute(
-            """SELECT id, chat_id, message_id, prompt_id, status, created_at, completed_at
+            """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
                FROM generation_jobs WHERE status IN ('pending', 'queued', 'running')
                ORDER BY created_at ASC""",
         )
@@ -367,7 +387,8 @@ def get_active_jobs() -> list[dict]:
             # Attach settings
             sc = conn.execute(
                 """SELECT positive_prompt, negative_prompt, base_model, loras,
-                          output_folder, seed, num_images, workflow_name, extra_settings
+                          output_folder, seed, num_images, workflow_name, extra_settings,
+                          sampler, cfg_scale, scheduler, steps
                    FROM generation_settings WHERE job_id = ?""",
                 (job["id"],),
             )
@@ -376,3 +397,199 @@ def get_active_jobs() -> list[dict]:
 
             jobs.append(job)
         return jobs
+
+
+# ---------------------------------------------------------------------------
+# Browser queries
+# ---------------------------------------------------------------------------
+
+def get_image_by_filepath(file_path: str) -> dict | None:
+    """Get a generated_images record by its file_path."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            """SELECT gi.id, gi.job_id, gi.filename, gi.subfolder,
+                      gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path
+               FROM generated_images gi WHERE gi.file_path = ?""",
+            (file_path,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def get_images_for_directory(path_prefix: str, offset: int = 0, limit: int = 50,
+                             sort: str = "date") -> dict:
+    """Get images whose file_path is directly inside the given directory.
+
+    Only matches direct children — files in subdirectories are excluded.
+
+    Sort modes:
+        "date" (default): newest first (created_at DESC)
+        "name": alphabetical by filename (filename ASC)
+
+    Returns dict with keys: images (list of job+settings+image dicts),
+    total_count, has_more.
+    """
+    # Ensure prefix ends with separator for exact directory match
+    if not path_prefix.endswith(os.sep):
+        path_prefix = path_prefix + os.sep
+    # Match files directly in this dir: path_prefix + "%" but NOT path_prefix + "%/%"
+    like_pattern = path_prefix + "%"
+    not_like_pattern = path_prefix + "%/%"
+
+    with get_db() as conn:
+        # Count total (direct children only)
+        cursor = conn.execute(
+            """SELECT COUNT(*) as cnt FROM generated_images
+               WHERE file_path LIKE ? AND file_path NOT LIKE ?""",
+            (like_pattern, not_like_pattern),
+        )
+        total_count = cursor.fetchone()["cnt"]
+
+        # Fetch paginated images with their job + settings
+        if sort == "name":
+            order_clause = "ORDER BY gi.filename ASC"
+        else:  # "date" (default)
+            order_clause = "ORDER BY gj.created_at DESC"
+
+        cursor = conn.execute(
+            f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
+                      gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path,
+                      gi.metadata_status,
+                      gj.status, gj.source,
+                      gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
+                      gs.output_folder, gs.seed, gs.num_images, gs.sampler, gs.cfg_scale,
+                      gs.scheduler, gs.steps
+               FROM generated_images gi
+               JOIN generation_jobs gj ON gi.job_id = gj.id
+               LEFT JOIN generation_settings gs ON gi.job_id = gs.job_id
+               WHERE gi.file_path LIKE ? AND gi.file_path NOT LIKE ?
+               {order_clause}
+               LIMIT ? OFFSET ?""",
+            (like_pattern, not_like_pattern, limit, offset),
+        )
+
+        images = _rows_to_image_list(cursor.fetchall())
+
+        return {
+            "images": images,
+            "total_count": total_count,
+            "has_more": offset + limit < total_count,
+        }
+
+
+def search_by_keywords(keywords: list[str], offset: int = 0, limit: int = 50) -> dict:
+    """Search images by keyword matching against positive_prompt.
+
+    Each keyword is matched via SQL LIKE (case-insensitive).
+    Returns same format as get_images_for_directory.
+    """
+    if not keywords:
+        return {"images": [], "total_count": 0, "has_more": False}
+
+    conditions = []
+    params = []
+    for kw in keywords:
+        conditions.append("gs.positive_prompt LIKE ?")
+        params.append(f"%{kw}%")
+
+    where_clause = " AND ".join(conditions)
+
+    with get_db() as conn:
+        cursor = conn.execute(
+            f"""SELECT COUNT(*) as cnt
+                FROM generated_images gi
+                JOIN generation_settings gs ON gi.job_id = gs.job_id
+                WHERE {where_clause}""",
+            params,
+        )
+        total_count = cursor.fetchone()["cnt"]
+
+        cursor = conn.execute(
+            f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
+                       gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path,
+                       gj.status, gj.source,
+                       gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
+                       gs.output_folder, gs.seed, gs.num_images, gs.sampler, gs.cfg_scale,
+                       gs.scheduler, gs.steps
+                FROM generated_images gi
+                JOIN generation_jobs gj ON gi.job_id = gj.id
+                JOIN generation_settings gs ON gi.job_id = gs.job_id
+                WHERE {where_clause}
+                ORDER BY gi.created_at DESC
+                LIMIT ? OFFSET ?""",
+            params + [limit, offset],
+        )
+
+        images = _rows_to_image_list(cursor.fetchall())
+
+        return {
+            "images": images,
+            "total_count": total_count,
+            "has_more": offset + limit < total_count,
+        }
+
+
+def get_images_by_job_ids(job_ids: list[str]) -> list[dict]:
+    """Get images for a list of job IDs, with their settings."""
+    if not job_ids:
+        return []
+
+    placeholders = ",".join(["?"] * len(job_ids))
+    with get_db() as conn:
+        cursor = conn.execute(
+            f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
+                       gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path,
+                       gj.status, gj.source,
+                       gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
+                       gs.output_folder, gs.seed, gs.num_images, gs.sampler, gs.cfg_scale,
+                       gs.scheduler, gs.steps
+                FROM generated_images gi
+                JOIN generation_jobs gj ON gi.job_id = gj.id
+                LEFT JOIN generation_settings gs ON gi.job_id = gs.job_id
+                WHERE gi.job_id IN ({placeholders})
+                ORDER BY gi.created_at DESC""",
+            job_ids,
+        )
+
+        return _rows_to_image_list(cursor.fetchall())
+
+
+def _rows_to_image_list(rows) -> list[dict]:
+    """Convert joined query rows to a list of image dicts with nested settings."""
+    images = []
+    for row in rows:
+        r = dict(row)
+        loras = []
+        if r.get("loras"):
+            try:
+                loras = json.loads(r["loras"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        images.append({
+            "id": r["image_id"],
+            "job_id": r["job_id"],
+            "filename": r["filename"],
+            "subfolder": r["subfolder"],
+            "width": r["width"],
+            "height": r["height"],
+            "created_at": r["created_at"],
+            "file_size": r["file_size"],
+            "file_path": r["file_path"],
+            "metadata_status": r.get("metadata_status", "complete"),
+            "status": r["status"],
+            "source": r["source"],
+            "settings": {
+                "positive_prompt": r.get("positive_prompt", ""),
+                "negative_prompt": r.get("negative_prompt"),
+                "base_model": r.get("base_model"),
+                "loras": loras,
+                "output_folder": r.get("output_folder"),
+                "seed": r.get("seed"),
+                "num_images": r.get("num_images"),
+                "sampler": r.get("sampler"),
+                "cfg_scale": r.get("cfg_scale"),
+                "scheduler": r.get("scheduler"),
+                "steps": r.get("steps"),
+            },
+        })
+    return images

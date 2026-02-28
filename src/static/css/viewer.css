@@ -127,3 +127,35 @@
     max-height: 100px;
     overflow-y: auto;
 }
+
+/* ── Sidebar Toggle Button ────────────────────────────────── */
+.viewer-sidebar-toggle {
+    position: absolute;
+    right: 280px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-right: none;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding: 12px 4px;
+    border-radius: 4px 0 0 4px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, right 0.3s;
+}
+
+.viewer-sidebar-toggle:hover {
+    background: var(--accent-dim);
+    color: var(--accent);
+}
+
+/* When sidebar is hidden */
+.viewer-sidebar.viewer-sidebar-hidden {
+    display: none;
+}
+
+.viewer-sidebar-toggle.sidebar-collapsed {
+    right: 0;
+}

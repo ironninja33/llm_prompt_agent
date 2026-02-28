@@ -122,6 +122,98 @@ MIGRATIONS = [
         """CREATE INDEX IF NOT EXISTS idx_gen_images_job ON generated_images(job_id)""",
         """CREATE INDEX IF NOT EXISTS idx_gen_settings_job ON generation_settings(job_id)""",
     ]),
+    (4, "Browser support: nullable chat_id, source column, sampler settings, tool calls, thumbnail cache", [
+        # -- Recreate generation_jobs with nullable chat_id + source column --
+        """CREATE TABLE generation_jobs_new (
+            id TEXT PRIMARY KEY,
+            chat_id TEXT REFERENCES chats(id) ON DELETE SET NULL,
+            message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+            prompt_id TEXT,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'queued', 'running', 'completed', 'failed')),
+            source TEXT NOT NULL DEFAULT 'chat'
+                CHECK (source IN ('chat', 'scan', 'browser')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP
+        )""",
+        """INSERT INTO generation_jobs_new (id, chat_id, message_id, prompt_id, status, source, created_at, completed_at)
+            SELECT id, chat_id, message_id, prompt_id, status, 'chat', created_at, completed_at
+            FROM generation_jobs""",
+        """DROP TABLE generation_jobs""",
+        """ALTER TABLE generation_jobs_new RENAME TO generation_jobs""",
+        """CREATE INDEX idx_gen_jobs_chat ON generation_jobs(chat_id)""",
+        """CREATE INDEX idx_gen_jobs_message ON generation_jobs(message_id)""",
+        """CREATE INDEX idx_gen_jobs_source ON generation_jobs(source)""",
+        """CREATE INDEX idx_gen_jobs_status ON generation_jobs(status)""",
+        # -- Add sampler/CFG/scheduler/steps columns to generation_settings --
+        """ALTER TABLE generation_settings ADD COLUMN sampler TEXT""",
+        """ALTER TABLE generation_settings ADD COLUMN cfg_scale REAL""",
+        """ALTER TABLE generation_settings ADD COLUMN scheduler TEXT""",
+        """ALTER TABLE generation_settings ADD COLUMN steps INTEGER""",
+        # -- Add file metadata columns to generated_images --
+        """ALTER TABLE generated_images ADD COLUMN file_size INTEGER""",
+        """ALTER TABLE generated_images ADD COLUMN file_path TEXT""",
+        # -- Add tool_calls table --
+        """CREATE TABLE tool_calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            tool_name TEXT NOT NULL,
+            parameters TEXT,
+            response_summary TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE INDEX idx_tool_calls_message ON tool_calls(message_id)""",
+        # -- Add thumbnail_cache table --
+        """CREATE TABLE thumbnail_cache (
+            file_path TEXT PRIMARY KEY,
+            thumbnail BLOB NOT NULL,
+            width INTEGER,
+            height INTEGER,
+            source_mtime REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+    ]),
+    (5, "Lazy loading: metadata_status column and unique file_path index", [
+        """ALTER TABLE generated_images ADD COLUMN metadata_status TEXT NOT NULL DEFAULT 'complete'""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_gen_images_file_path ON generated_images(file_path)""",
+    ]),
+    (6, "Re-parse scanned images to extract seeds from metadata", [
+        """DELETE FROM generation_settings WHERE job_id IN (
+            SELECT id FROM generation_jobs WHERE source = 'scan'
+        )""",
+        """UPDATE generated_images SET metadata_status = 'pending' WHERE job_id IN (
+            SELECT id FROM generation_jobs WHERE source = 'scan'
+        )""",
+    ]),
+    (7, "Fix duplicate image records: merge scan duplicates into generation originals", [
+        # For images generated through the app, add_generated_image left file_path NULL.
+        # fast_register_images then created scan duplicates with file_path set.
+        # Fix: copy file_path/file_size from scan duplicate to the generation original,
+        # then delete the scan duplicate and its orphan job.
+        # Step 1: Delete scan duplicate image records (frees unique file_path)
+        """DELETE FROM generated_images WHERE id IN (
+            SELECT b.id
+            FROM generated_images a
+            JOIN generated_images b ON a.filename = b.filename
+            JOIN generation_jobs gj ON b.job_id = gj.id
+            WHERE a.file_path IS NULL AND b.file_path IS NOT NULL AND gj.source = 'scan'
+        )""",
+        # Step 2: Update generation originals with file_path from a fresh filesystem scan
+        # (handled by fast_register_images on next browse — it detects NULL file_path records)
+        # Step 3: Clean up orphan scan jobs (no images left)
+        """DELETE FROM generation_jobs WHERE source = 'scan'
+           AND id NOT IN (SELECT job_id FROM generated_images)""",
+    ]),
+    (8, "Normalize timestamps: convert float epoch values to ISO-8601 text", [
+        # created_at: convert real (float epoch) values to ISO-8601 text
+        """UPDATE generation_jobs
+           SET created_at = datetime(created_at, 'unixepoch')
+           WHERE typeof(created_at) = 'real'""",
+        # completed_at: same treatment
+        """UPDATE generation_jobs
+           SET completed_at = datetime(completed_at, 'unixepoch')
+           WHERE typeof(completed_at) = 'real'""",
+    ]),
 ]
 
 
@@ -209,6 +301,14 @@ def _insert_default_settings(conn: sqlite3.Connection):
         "comfyui_workflow_hash": "",
         "comfyui_workflow_api_cache": "",
         "comfyui_object_info_cache": "",
+        "thumbnail_size_chat": "large",
+        "thumbnail_size_browser": "medium",
+        "search_mode": "keyword",
+        "viewer_sidebar_visible": "true",
+        "comfyui_default_sampler": "",
+        "comfyui_default_cfg": "",
+        "comfyui_default_scheduler": "",
+        "comfyui_default_steps": "",
     }
 
     for key, value in defaults.items():

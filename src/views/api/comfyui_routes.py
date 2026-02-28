@@ -19,6 +19,22 @@ def comfyui_health():
     return jsonify(result)
 
 
+@api_bp.route("/comfyui/status", methods=["GET"])
+def comfyui_status():
+    """Combined health + queue size for header status indicator."""
+    health = comfyui_service.check_health()
+    queue_size = 0
+    if health.get("ok"):
+        queue = comfyui_service.get_queue_status()
+        running = len(queue.get("queue_running", []))
+        pending = len(queue.get("queue_pending", []))
+        queue_size = running + pending
+    return jsonify({
+        "ok": health.get("ok", False),
+        "queue_size": queue_size,
+    })
+
+
 @api_bp.route("/comfyui/models/<model_type>", methods=["GET"])
 def comfyui_models(model_type):
     """List available ComfyUI models. model_type: 'loras' or 'diffusion_models'."""

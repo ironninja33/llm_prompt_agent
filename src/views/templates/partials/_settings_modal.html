@@ -10,8 +10,9 @@
                 <button class="tab active" data-tab="tab-api" onclick="switchTab(this)">API &amp; Models</button>
                 <button class="tab" data-tab="tab-prompt" onclick="switchTab(this)">System Prompt</button>
                 <button class="tab" data-tab="tab-dirs" onclick="switchTab(this)">Data Directories</button>
-                <button class="tab" data-tab="tab-params" onclick="switchTab(this)">Parameters</button>
+                <button class="tab" data-tab="tab-params" onclick="switchTab(this)">Clustering</button>
                 <button class="tab" data-tab="tab-comfyui" onclick="switchTab(this)">ComfyUI</button>
+                <button class="tab" data-tab="tab-look" onclick="switchTab(this)">Look &amp; Feel</button>
             </div>
             <div class="modal-body">
                 <!-- API & Models tab -->
@@ -100,6 +101,22 @@
                         <textarea id="setting-comfyui-negative" rows="4" placeholder="Default negative prompt..."></textarea>
                     </label>
 
+                    <label>Default Sampler
+                        <input type="text" id="setting-comfyui-sampler" placeholder="e.g. euler, dpmpp_2m">
+                    </label>
+
+                    <label>Default CFG Scale
+                        <input type="number" id="setting-comfyui-cfg" step="0.5" min="0" placeholder="e.g. 7.0">
+                    </label>
+
+                    <label>Default Scheduler
+                        <input type="text" id="setting-comfyui-scheduler" placeholder="e.g. normal, karras">
+                    </label>
+
+                    <label>Default Steps
+                        <input type="number" id="setting-comfyui-steps" min="1" step="1" placeholder="e.g. 20">
+                    </label>
+
                     <label>API Workflow JSON
                         <div class="workflow-upload-area">
                             <span id="workflow-api-filename" class="workflow-filename">No API workflow uploaded</span>
@@ -129,7 +146,32 @@
                     </div>
                 </div>
 
-                <!-- Parameters tab -->
+                <!-- Look & Feel tab -->
+                <div id="tab-look" class="tab-pane hidden">
+                    <label>Chat Thumbnails
+                        <select id="setting-thumb-chat">
+                            <option value="small">Small</option>
+                            <option value="medium">Medium</option>
+                            <option value="large">Large</option>
+                        </select>
+                        <span class="setting-help">Size of image thumbnails in chat messages</span>
+                    </label>
+
+                    <label>Browser Thumbnails
+                        <select id="setting-thumb-browser">
+                            <option value="small">Small</option>
+                            <option value="medium">Medium</option>
+                            <option value="large">Large</option>
+                        </select>
+                        <span class="setting-help">Size of image thumbnails in the browser grid</span>
+                    </label>
+
+                    <div class="btn-row">
+                        <button class="btn-primary" onclick="saveLookFeelSettings()">Save</button>
+                    </div>
+                </div>
+
+                <!-- Clustering tab -->
                 <div id="tab-params" class="tab-pane hidden">
                     <h3 class="settings-group-title">Query Parameters</h3>
                     <p class="settings-group-desc">Controls how many results the agent retrieves when searching the dataset.</p>

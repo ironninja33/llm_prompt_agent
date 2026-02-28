@@ -60,6 +60,10 @@ function switchTab(btn) {
     if (tabId === 'tab-comfyui' && typeof loadComfyUISettings === 'function') {
         loadComfyUISettings();
     }
+    // Lazy-load Look & Feel settings
+    if (tabId === 'tab-look' && typeof loadLookFeelSettings === 'function') {
+        loadLookFeelSettings();
+    }
 }
 
 function toggleApiKeyVisibility() {
@@ -176,4 +180,35 @@ async function refreshOutput() {
     await API.refreshOutput();
     closeSettings();
     monitorIngestion();
+}
+
+// ── Look & Feel Settings ─────────────────────────────────────────────────
+
+async function loadLookFeelSettings() {
+    try {
+        const settings = await API.getSettings();
+        const thumbChat = $('#setting-thumb-chat');
+        const thumbBrowser = $('#setting-thumb-browser');
+        if (thumbChat) thumbChat.value = settings.thumbnail_size_chat || 'large';
+        if (thumbBrowser) thumbBrowser.value = settings.thumbnail_size_browser || 'medium';
+    } catch (err) {
+        console.warn('Failed to load look & feel settings:', err);
+    }
+}
+
+async function saveLookFeelSettings() {
+    const thumbChat = ($('#setting-thumb-chat') || {}).value || 'large';
+    const thumbBrowser = ($('#setting-thumb-browser') || {}).value || 'medium';
+
+    await API.updateSettings({
+        thumbnail_size_chat: thumbChat,
+        thumbnail_size_browser: thumbBrowser,
+    });
+
+    // Dispatch event so active pages can update their grid CSS
+    window.dispatchEvent(new CustomEvent('thumbnail-size-changed', {
+        detail: { chat: thumbChat, browser: thumbBrowser },
+    }));
+
+    alert('Look & Feel settings saved');
 }

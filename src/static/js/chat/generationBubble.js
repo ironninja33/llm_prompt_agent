@@ -201,6 +201,9 @@ function _appendJobItems(grid, job) {
         // Store this completed job's settings on the bubble for later use as defaults
         const bubble = grid.closest('.message.generation');
         if (bubble) _storeLastJobSettings(bubble, job);
+    } else if (job.status === 'completed' && (!job.images || job.images.length === 0)) {
+        // Completed but images are gone (e.g. migration data loss) — skip silently
+        return;
     } else if (job.status === 'failed') {
         grid.appendChild(createFailedCard(job, _chatFailedOptions(job)));
     } else {
@@ -509,6 +512,14 @@ async function loadGenerationBubbles(chatId) {
                 );
                 if (existing) continue;
             }
+
+            // Skip groups where all jobs are completed with no images
+            const hasContent = groupJobs.some(j =>
+                (j.status === 'completed' && j.images && j.images.length > 0) ||
+                j.status === 'failed' ||
+                (j.status !== 'completed' && j.status !== 'failed')
+            );
+            if (!hasContent) continue;
 
             // Single job → use simple bubble; multiple → merged bubble
             const bubble = groupJobs.length === 1

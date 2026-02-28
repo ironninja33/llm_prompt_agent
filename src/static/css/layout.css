@@ -63,6 +63,39 @@
     opacity: 0.5;
 }
 
+/* ── ComfyUI Status Indicator ────────────────────────────────── */
+.comfyui-status {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    cursor: default;
+}
+
+.comfyui-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    opacity: 0.4;
+    transition: background 0.3s, opacity 0.3s;
+}
+
+.comfyui-status.online .comfyui-dot {
+    background: #4caf50;
+    opacity: 1;
+}
+
+.comfyui-status.offline .comfyui-dot {
+    background: #f44336;
+    opacity: 1;
+}
+
+.comfyui-queue {
+    white-space: nowrap;
+}
+
 /* ── Header Nav ──────────────────────────────────────────────── */
 .header-nav {
     display: flex;

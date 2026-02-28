@@ -107,6 +107,23 @@ function _renderAttachmentBar() {
 }
 
 /**
+ * Add an attachment from the browser page via URL params.
+ * @param {string} ref - "jobId/imageId" string
+ */
+function addAttachmentFromBrowser(ref) {
+    const parts = ref.split('/');
+    if (parts.length !== 2) return;
+    const [jobId, imageId] = parts;
+    addAttachment({
+        type: 'generated',
+        jobId,
+        imageId,
+        thumbnailUrl: `/api/generate/thumbnail/${jobId}/${imageId}`,
+        fullUrl: `/api/generate/image/${jobId}/${imageId}`,
+    });
+}
+
+/**
  * Open file picker for manual image upload.
  */
 function openAttachmentPicker() {

@@ -7,10 +7,19 @@
                     <a href="/" class="header-nav-link {% if active_page == 'chat' %}active{% endif %}">Chat</a>
                     <a href="/browser" class="header-nav-link {% if active_page == 'browser' %}active{% endif %}">Browser</a>
                 </nav>
-                <div id="header-stats" class="header-stats"></div>
+                {% if active_page == 'browser' %}
+                <div class="header-search">
+                    <input type="text" id="browser-search-input" class="header-search-input" placeholder="Search images...">
+                    <button id="browser-search-mode" class="header-search-mode" onclick="toggleSearchMode()" title="Toggle search mode">KW</button>
+                </div>
+                {% endif %}
             </div>
             <div class="header-right">
-                <span id="db-stats" class="stats"></span>
+                <div id="comfyui-status" class="comfyui-status" title="ComfyUI: checking…">
+                    <span class="comfyui-dot"></span>
+                    <span class="comfyui-queue hidden"></span>
+                </div>
+                <div id="header-stats" class="header-stats"></div>
                 <button class="btn-icon" onclick="triggerClustering()" title="Re-cluster Dataset">🔄</button>
                 <button class="btn-icon" onclick="openDatasetMap()" title="Dataset Map">🗂️</button>
                 <button class="btn-icon" onclick="openSettings()" title="Settings">⚙</button>

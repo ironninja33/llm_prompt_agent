@@ -55,6 +55,12 @@ function createMessageElement(msg, isLastUserMsg = false) {
 
     if (msg.role === 'assistant') {
         div.innerHTML = renderMarkdown(msg.content);
+
+        // Render persisted tool calls (loaded from DB on reload)
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+            const section = buildToolCallsSection(msg.tool_calls);
+            div.insertBefore(section, div.firstChild);
+        }
     } else {
         div.textContent = msg.content;
     }

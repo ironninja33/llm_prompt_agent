@@ -20,6 +20,8 @@
  * @param {Function|null} [options.onRefineWithAttachment] - (job, img) => void; null hides menu option
  * @param {Function|null} [options.onAttach]              - (job, img) => void; null hides button
  * @param {Function|null} [options.onDelete]              - (job, img, item) => void; null hides button
+ * @param {string|null}   [options.thumbnailUrl]           - Custom thumbnail URL override
+ * @param {string|null}   [options.extraInfo]              - Extra info HTML rendered below actions
  * @returns {HTMLElement}
  */
 function createThumbnailItem(job, img, options = {}) {
@@ -35,7 +37,7 @@ function createThumbnailItem(job, img, options = {}) {
     // Thumbnail image (clickable for full-size view)
     const thumb = document.createElement('img');
     thumb.className = 'gen-thumbnail-img';
-    thumb.src = `/api/generate/thumbnail/${job.id}/${img.id}`;
+    thumb.src = options.thumbnailUrl || `/api/generate/thumbnail/${job.id}/${img.id}`;
     thumb.alt = 'Generated image';
     thumb.loading = 'lazy';
     thumb.onclick = () => {

@@ -66,7 +66,8 @@ async function openGenerationOverlay(options) {
     // Initialise widgets on first open
     _initGenWidgets();
 
-    // Load model/lora/folder lists (cached after first fetch)
+    // Load model/lora/folder lists (folders always refreshed, models/loras cached)
+    _cachedFolders = null;
     await _loadGenerationData();
 
     // Determine what values to fill.
@@ -81,7 +82,18 @@ async function openGenerationOverlay(options) {
         // Regenerate mode: remember the actual seed but default input to -1
         const actualSeed = settings.seed != null ? settings.seed : null;
         _previousGenSeed = (actualSeed != null && actualSeed !== -1) ? actualSeed : null;
-        _fillOverlayFields({ ...settings, seed: -1 });
+        // Filter unavailable models/loras against cached lists
+        const filtered = { ...settings, seed: -1 };
+        if (filtered.base_model && _cachedModels && !_cachedModels.includes(filtered.base_model)) {
+            filtered.base_model = '';
+        }
+        if (Array.isArray(filtered.loras) && _cachedLoras) {
+            filtered.loras = filtered.loras.filter(l => {
+                const name = typeof l === 'object' ? l.name : l;
+                return _cachedLoras.includes(name);
+            });
+        }
+        _fillOverlayFields(filtered);
     } else if (defaultSettings) {
         // Use stored bubble settings from the current chat (base_model, loras, output_folder).
         // This takes priority over session memory to ensure the current thread's
@@ -96,8 +108,10 @@ async function openGenerationOverlay(options) {
             num_images: 1,
         });
     } else if (chatSessionSettings) {
-        // Returning user on same chat: use last settings from this chat + new prompt
-        _previousGenSeed = null;
+        // Returning user on same chat: use last settings from this chat + new prompt.
+        // Preserve the source image's seed as a clickable hint.
+        const srcSeed = chatSessionSettings.seed;
+        _previousGenSeed = (srcSeed != null && srcSeed !== -1) ? srcSeed : null;
         _fillOverlayFields({ ...chatSessionSettings, positive_prompt: prompt, seed: -1 });
     } else {
         // First time: defaults + prompt; try to get default model from settings
@@ -111,6 +125,25 @@ async function openGenerationOverlay(options) {
     // Focus the prompt textarea
     const textarea = $('#gen-prompt');
     if (textarea) textarea.focus();
+}
+
+// ── Refine settings from browser ─────────────────────────────────────────
+
+/**
+ * Store source image settings as the current chat's generation defaults.
+ * Called from app.js when navigating from browser refine/refine+attach.
+ * These settings are used when the user later opens the generation overlay
+ * from a prompt block in this chat.
+ */
+function setRefineGenerationSettings(settings) {
+    const chatId = typeof currentChatId !== 'undefined' ? currentChatId : null;
+    if (!chatId || !settings) return;
+    _lastGenerationSettingsPerChat[chatId] = {
+        base_model: settings.base_model || '',
+        loras: settings.loras || [],
+        output_folder: settings.output_folder || '',
+        seed: settings.seed != null ? settings.seed : -1,
+    };
 }
 
 // ── Close the overlay ───────────────────────────────────────────────────
@@ -178,12 +211,13 @@ async function submitGeneration() {
         const chatId = _currentGenChatId;
         const messageId = _currentGenMessageId;
 
+        let result;
         if (!chatId) {
-            console.warn('No chat ID available for generation');
-            return;
+            // Browser mode: no chat context
+            result = await API.browserGenerate(settings);
+        } else {
+            result = await API.submitGeneration(chatId, messageId, settings);
         }
-
-        const result = await API.submitGeneration(chatId, messageId, settings);
 
         // Close overlay
         closeGenerationOverlay();
@@ -320,11 +354,28 @@ async function _fillOverlayDefaults(prompt) {
     const textarea = $('#gen-prompt');
     if (textarea) textarea.value = prompt || '';
 
-    // Try to get the default model from app settings
+    // Try to get the default model and sampler settings from app settings
     try {
         const appSettings = await API.getSettings();
         if (_genModelDropdown && appSettings.comfyui_default_model) {
             _genModelDropdown.setValue(appSettings.comfyui_default_model);
+        }
+        // Apply default sampler settings if fields exist
+        const samplerInput = $('#gen-sampler');
+        if (samplerInput && appSettings.comfyui_default_sampler) {
+            samplerInput.value = appSettings.comfyui_default_sampler;
+        }
+        const cfgInput = $('#gen-cfg');
+        if (cfgInput && appSettings.comfyui_default_cfg) {
+            cfgInput.value = appSettings.comfyui_default_cfg;
+        }
+        const schedulerInput = $('#gen-scheduler');
+        if (schedulerInput && appSettings.comfyui_default_scheduler) {
+            schedulerInput.value = appSettings.comfyui_default_scheduler;
+        }
+        const stepsInput = $('#gen-steps');
+        if (stepsInput && appSettings.comfyui_default_steps) {
+            stepsInput.value = appSettings.comfyui_default_steps;
         }
     } catch (_) {
         // Non-critical

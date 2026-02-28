@@ -25,8 +25,54 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', async () => {
     if (typeof loadChats === 'function') await loadChats();
     loadStats();
+    startComfyUIPolling();
     monitorIngestion();
+
+    // Handle browser-to-chat refine URL params: ?refine=<prompt>&attach=<jobId/imgId>
+    _handleRefineParams();
 });
+
+function _handleRefineParams() {
+    const params = new URLSearchParams(window.location.search);
+    const refinePrompt = params.get('refine');
+    if (!refinePrompt) return;
+
+    // Clear URL params without reload
+    history.replaceState(null, '', window.location.pathname);
+
+    // Read source image settings stashed by the browser page
+    let refineSettings = null;
+    try {
+        const raw = sessionStorage.getItem('refineSettings');
+        if (raw) {
+            refineSettings = JSON.parse(raw);
+            sessionStorage.removeItem('refineSettings');
+        }
+    } catch (e) { /* ignore */ }
+
+    // Set refine context if the function exists (chat page only)
+    if (typeof setRefineContext === 'function') {
+        // Create a new chat for the refinement
+        if (typeof createNewChat === 'function') {
+            createNewChat().then(() => {
+                setRefineContext(decodeURIComponent(refinePrompt));
+
+                // Persist source image settings as the chat's generation defaults
+                if (refineSettings && typeof setRefineGenerationSettings === 'function') {
+                    setRefineGenerationSettings(refineSettings);
+                }
+
+                // Handle optional attachment
+                const attach = params.get('attach');
+                if (attach && typeof addAttachmentFromBrowser === 'function') {
+                    addAttachmentFromBrowser(attach);
+                }
+            });
+        } else {
+            setRefineContext(decodeURIComponent(refinePrompt));
+        }
+    }
+}
 
 // ── Tab Visibility Recovery ──────────────────────────────────────────────
 // Browsers throttle/drop SSE and fetch streams for background tabs.
@@ -42,28 +88,71 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+// ── ComfyUI Status ──────────────────────────────────────────────────────
+
+let _comfyStatusInterval = null;
+
+async function pollComfyUIStatus() {
+    const container = $('#comfyui-status');
+    if (!container) return;
+    const dot = container.querySelector('.comfyui-dot');
+    const queueEl = container.querySelector('.comfyui-queue');
+    if (!dot || !queueEl) return;
+
+    try {
+        const status = await API.getComfyUIStatus();
+        if (status.ok) {
+            container.classList.add('online');
+            container.classList.remove('offline');
+            if (status.queue_size > 0) {
+                queueEl.textContent = status.queue_size;
+                queueEl.classList.remove('hidden');
+                container.title = `ComfyUI: ${status.queue_size} job${status.queue_size !== 1 ? 's' : ''} queued`;
+            } else {
+                queueEl.classList.add('hidden');
+                container.title = 'ComfyUI: connected, queue empty';
+            }
+        } else {
+            container.classList.add('offline');
+            container.classList.remove('online');
+            queueEl.classList.add('hidden');
+            container.title = 'ComfyUI: offline';
+        }
+    } catch (_) {
+        container.classList.add('offline');
+        container.classList.remove('online');
+        queueEl.classList.add('hidden');
+        container.title = 'ComfyUI: offline';
+    }
+}
+
+function startComfyUIPolling() {
+    pollComfyUIStatus();
+    if (!_comfyStatusInterval) {
+        _comfyStatusInterval = setInterval(pollComfyUIStatus, 10000);
+    }
+}
+
 // ── Stats ───────────────────────────────────────────────────────────────
 
 async function loadStats() {
     try {
         const stats = await API.getStats();
-        const el = $('#db-stats');
-        if (el) {
-            const total = (stats.training_prompts || 0) + (stats.generated_prompts || 0);
-            el.textContent = total > 0
-                ? `${stats.training_prompts} training · ${stats.generated_prompts} generated`
-                : '';
-        }
 
         const statsEl = document.getElementById("header-stats");
         if (statsEl) {
             const parts = [];
-            const totalDocs = (stats.training_prompts || 0) + (stats.generated_prompts || 0);
+            const training = stats.training_prompts || 0;
+            const generated = stats.generated_prompts || 0;
+            const totalDocs = training + generated;
             if (totalDocs > 0) {
-                parts.push(`<span class="stat-item" title="Training: ${stats.training_prompts || 0}, Generated: ${stats.generated_prompts || 0}">📄 ${totalDocs}</span>`);
+                parts.push(`<span class="stat-item" title="Training images: ${training}\nGenerated images: ${generated}">🖼️ ${totalDocs}</span>`);
             }
-            if (stats.total_clusters > 0) {
-                parts.push(`<span class="stat-item" title="${stats.total_clusters} theme clusters">🏷️ ${stats.total_clusters}</span>`);
+            const crossClusters = stats.cross_folder_clusters || 0;
+            const intraClusters = stats.intra_folder_clusters || 0;
+            const totalClusters = crossClusters + intraClusters;
+            if (totalClusters > 0) {
+                parts.push(`<span class="stat-item" title="Cross-cutting clusters: ${crossClusters}\nIntra-folder clusters: ${intraClusters}">🏷️ ${totalClusters}</span>`);
             }
             statsEl.innerHTML = parts.join('<span class="stat-sep">·</span>');
         }

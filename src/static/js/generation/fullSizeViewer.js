@@ -9,6 +9,7 @@
 let _viewerItems = [];       // Array of {job, img} entries
 let _viewerImageIndex = 0;   // Current index into _viewerItems
 let _viewerMissingSet = new Set();  // Track indices of missing images
+let _viewerSidebarVisible = true;   // Sidebar visibility state
 
 /**
  * Open the full-size viewer.
@@ -47,6 +48,9 @@ function openFullSizeViewer(itemsOrJob, initialIndexOrImg) {
 
     const overlay = document.getElementById('fullsize-viewer');
     overlay.classList.remove('hidden');
+
+    // Apply saved sidebar visibility
+    _applyViewerSidebarState();
 
     _renderViewerImage();
     _renderViewerSidebar();
@@ -169,6 +173,28 @@ function _showViewerMissingPlaceholder(imgEl) {
     container.appendChild(placeholder);
 }
 
+/**
+ * Toggle viewer sidebar visibility and persist preference.
+ */
+function toggleViewerSidebar() {
+    _viewerSidebarVisible = !_viewerSidebarVisible;
+    _applyViewerSidebarState();
+    API.updateSettings({ viewer_sidebar_visible: _viewerSidebarVisible ? 'true' : 'false' }).catch(() => {});
+}
+
+function _applyViewerSidebarState() {
+    const sidebar = document.querySelector('#fullsize-viewer .viewer-sidebar');
+    const toggleBtn = document.getElementById('viewer-sidebar-toggle');
+    if (sidebar) {
+        sidebar.classList.toggle('viewer-sidebar-hidden', !_viewerSidebarVisible);
+    }
+    if (toggleBtn) {
+        toggleBtn.textContent = _viewerSidebarVisible ? '▶' : '◀';
+        toggleBtn.title = _viewerSidebarVisible ? 'Hide sidebar' : 'Show sidebar';
+        toggleBtn.classList.toggle('sidebar-collapsed', !_viewerSidebarVisible);
+    }
+}
+
 function _renderViewerSidebar() {
     const sidebar = document.getElementById('viewer-sidebar-content');
     if (!sidebar || _viewerItems.length === 0) return;
@@ -210,6 +236,30 @@ function _renderViewerSidebar() {
         html += `<tr><td class="viewer-value">${loraList}</td></tr>`;
     }
 
+    // Sampler
+    if (s.sampler) {
+        html += `<tr><td class="viewer-label">Sampler</td></tr>`;
+        html += `<tr><td class="viewer-value">${escapeHtml(s.sampler)}</td></tr>`;
+    }
+
+    // Scheduler
+    if (s.scheduler) {
+        html += `<tr><td class="viewer-label">Scheduler</td></tr>`;
+        html += `<tr><td class="viewer-value">${escapeHtml(s.scheduler)}</td></tr>`;
+    }
+
+    // CFG Scale
+    if (s.cfg_scale != null) {
+        html += `<tr><td class="viewer-label">CFG Scale</td></tr>`;
+        html += `<tr><td class="viewer-value">${s.cfg_scale}</td></tr>`;
+    }
+
+    // Steps
+    if (s.steps != null) {
+        html += `<tr><td class="viewer-label">Steps</td></tr>`;
+        html += `<tr><td class="viewer-value">${s.steps}</td></tr>`;
+    }
+
     // Output folder
     if (s.output_folder) {
         html += `<tr><td class="viewer-label">Folder</td></tr>`;
@@ -234,3 +284,13 @@ function _updateViewerNavigation() {
     if (prevBtn) prevBtn.disabled = _findNextValidIndex(_viewerImageIndex, -1) < 0;
     if (nextBtn) nextBtn.disabled = _findNextValidIndex(_viewerImageIndex, 1) < 0;
 }
+
+// Load sidebar visibility preference on page load
+(async function _initViewerSidebarPref() {
+    try {
+        const settings = await API.getSettings();
+        if (settings.viewer_sidebar_visible === 'false') {
+            _viewerSidebarVisible = false;
+        }
+    } catch (_) {}
+})();

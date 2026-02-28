@@ -1177,9 +1177,22 @@ def get_clustering_stats() -> dict:
         cursor = conn.execute("SELECT COUNT(*) as cnt FROM clusters")
         total_clusters = cursor.fetchone()["cnt"]
 
+        # Separate cluster counts by type
+        cursor = conn.execute(
+            "SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'cross_folder'"
+        )
+        cross_folder_clusters = cursor.fetchone()["cnt"]
+
+        cursor = conn.execute(
+            "SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'intra_folder'"
+        )
+        intra_folder_clusters = cursor.fetchone()["cnt"]
+
     return {
         "new_since_last_cross_cluster": max(0, total_chromadb_docs - cross_assigned),
         "assigned_to_existing_intra": intra_assigned,
         "last_cross_cluster_run": last_cross_run,
         "total_clusters": total_clusters,
+        "cross_folder_clusters": cross_folder_clusters,
+        "intra_folder_clusters": intra_folder_clusters,
     }

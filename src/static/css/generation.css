@@ -241,6 +241,11 @@
     gap: 8px;
 }
 
+/* Thumbnail size variants for chat context */
+.gen-thumbnail-grid.thumb-small { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.gen-thumbnail-grid.thumb-medium { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.gen-thumbnail-grid.thumb-large { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
 .gen-thumbnail-item {
     position: relative;
     border-radius: var(--radius);

@@ -2,6 +2,7 @@
 
 import logging
 from src.models import chat as chat_model
+from src.models import tool_calls as tool_calls_model
 from src.agent.loop import run_agent_turn
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ def delete_chat(chat_id: str) -> bool:
 
 
 def get_messages(chat_id: str) -> list[dict]:
-    """Get all messages for a chat, with attachment_urls extracted from metadata."""
+    """Get all messages for a chat, with attachment_urls and tool_calls extracted."""
     messages = chat_model.get_messages(chat_id)
     for msg in messages:
         # Extract attachment_urls from metadata to top-level for frontend
@@ -36,6 +37,15 @@ def get_messages(chat_id: str) -> list[dict]:
             urls = msg["metadata"].get("attachment_urls")
             if urls:
                 msg["attachment_urls"] = urls
+
+        # Attach persisted tool calls for assistant messages
+        if msg.get("role") == "assistant" and msg.get("id"):
+            try:
+                calls = tool_calls_model.get_tool_calls(msg["id"])
+                if calls:
+                    msg["tool_calls"] = calls
+            except Exception:
+                pass  # Graceful fallback for old chats
     return messages
 
 

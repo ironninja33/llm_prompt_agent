@@ -1,0 +1,224 @@
+/* ── Browser Page ─────────────────────────────────────────────── */
+
+.browser-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 16px 20px;
+    gap: 12px;
+}
+
+.browser-sidebar {
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+}
+
+/* ── Breadcrumb ──────────────────────────────────────────────── */
+.browser-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0;
+    font-size: 0.85rem;
+    flex-wrap: wrap;
+}
+
+.breadcrumb-segment {
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+}
+
+.breadcrumb-segment:hover {
+    background: var(--bg-hover, rgba(255,255,255,0.06));
+    color: var(--text-primary);
+}
+
+.breadcrumb-segment.active {
+    color: var(--text-primary);
+    font-weight: 600;
+    cursor: default;
+}
+
+.breadcrumb-segment.active:hover {
+    background: none;
+}
+
+.breadcrumb-sep {
+    color: var(--text-muted);
+    opacity: 0.5;
+    font-size: 0.75rem;
+}
+
+/* ── Browser Grid ────────────────────────────────────────────── */
+.browser-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.browser-grid.thumb-small {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+.browser-grid.thumb-medium {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.browser-grid.thumb-large {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+/* ── Directory Thumbnail Card ────────────────────────────────── */
+.browser-dir-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.browser-dir-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 12px rgba(79, 195, 247, 0.15);
+}
+
+.browser-dir-preview {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    aspect-ratio: 1;
+    background: rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.browser-dir-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.browser-dir-preview .dir-preview-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    opacity: 0.4;
+    font-size: 1.5rem;
+}
+
+.browser-dir-info {
+    padding: 8px 10px;
+}
+
+.browser-dir-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.browser-dir-meta {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+/* ── Browser Image Item ──────────────────────────────────────── */
+.browser-img-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.browser-img-info {
+    padding: 4px 2px 0;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+
+/* ── Loading / Empty States ──────────────────────────────────── */
+.browser-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.browser-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+}
+
+.browser-scroll-sentinel {
+    height: 1px;
+    width: 100%;
+}
+
+/* ── Header Search (browser only) ────────────────────────────── */
+.header-search {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 12px;
+}
+
+.header-search-input {
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px 10px;
+    font-size: 0.82rem;
+    width: 200px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.header-search-input:focus {
+    border-color: var(--accent);
+}
+
+.header-search-mode {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    min-width: 30px;
+    text-align: center;
+}
+
+.header-search-mode:hover {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.header-search-mode.active-embedding {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border-color: var(--accent);
+}
