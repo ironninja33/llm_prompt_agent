@@ -475,14 +475,28 @@ function getLastChatGenerationSettings() {
 // ── Streaming bubble helpers ─────────────────────────────────────────────
 
 /**
- * Create a generation bubble during streaming (agent tool call).
- * These bubbles don't have a message_id yet — they're positioned after
- * #streaming-message and tagged with a 'streaming-gen' class so they can
- * be finalized later.
+ * Handle a generation_submitted SSE event during agent streaming.
+ * If a streaming-gen bubble already exists (from an earlier generate_image
+ * call in the same turn), appends spinners to it. Otherwise creates a new
+ * bubble positioned after #streaming-message.
  * @param {Object} job - Partial job object from generation_submitted SSE event
- * @returns {HTMLElement}
  */
-function createStreamingGenerationBubble(job) {
+function handleStreamingGeneration(job) {
+    const existing = document.querySelector('.message.generation.streaming-gen');
+
+    if (existing) {
+        // Append to existing streaming bubble
+        const grid = existing.querySelector('.gen-thumbnail-grid');
+        if (grid) {
+            _appendProgressSpinners(grid, job);
+            _startProgressPolling(job.id);
+            _updateBubbleStatusFromGrid(grid);
+            scrollToBottom();
+        }
+        return;
+    }
+
+    // Create new streaming bubble
     const bubble = document.createElement('div');
     bubble.className = 'message generation streaming-gen';
     bubble.dataset.jobId = job.id;
@@ -501,30 +515,13 @@ function createStreamingGenerationBubble(job) {
     _startProgressPolling(job.id);
     _updateBubbleStatusFromGrid(grid);
 
-    return bubble;
-}
-
-/**
- * Insert a streaming generation bubble after #streaming-message (or the
- * last streaming-gen bubble if multiple jobs are submitted in one turn).
- * @param {HTMLElement} bubble
- */
-function insertStreamingGenerationBubble(bubble) {
-    const container = $('#messages');
-    if (!container) return;
-
-    // Insert after the last streaming-gen bubble, or after #streaming-message
-    const existingStreamingGens = container.querySelectorAll('.streaming-gen');
-    if (existingStreamingGens.length > 0) {
-        existingStreamingGens[existingStreamingGens.length - 1].after(bubble);
+    // Insert after #streaming-message
+    const streamingMsg = $('#streaming-message');
+    if (streamingMsg) {
+        streamingMsg.after(bubble);
     } else {
-        const streamingMsg = $('#streaming-message');
-        if (streamingMsg) {
-            streamingMsg.after(bubble);
-        } else {
-            // Fallback: append at end
-            container.appendChild(bubble);
-        }
+        const container = $('#messages');
+        if (container) container.appendChild(bubble);
     }
     scrollToBottom();
 }

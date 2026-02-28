@@ -472,6 +472,9 @@ def get_generation_data_for_chat(chat_id: str) -> list[dict]:
     Used when reloading a chat to reconstruct the generation UI.
     """
     with get_db() as conn:
+        # Auto-fix orphan jobs that lost their message_id
+        _backfill_orphan_message_ids(conn, chat_id)
+
         cursor = conn.execute(
             """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
                FROM generation_jobs WHERE chat_id = ?

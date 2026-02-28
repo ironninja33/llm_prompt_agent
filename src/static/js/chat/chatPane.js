@@ -511,8 +511,7 @@ async function sendMessage() {
             },
             generation_submitted(data) {
                 if (currentChatId === sendChatId && data.job) {
-                    const bubble = createStreamingGenerationBubble(data.job);
-                    insertStreamingGenerationBubble(bubble);
+                    handleStreamingGeneration(data.job);
                 }
             },
             error(data) {
@@ -654,8 +653,7 @@ async function submitEditedMessage(messageId) {
             },
             generation_submitted(data) {
                 if (currentChatId === sendChatId && data.job) {
-                    const bubble = createStreamingGenerationBubble(data.job);
-                    insertStreamingGenerationBubble(bubble);
+                    handleStreamingGeneration(data.job);
                 }
             },
             error(data) {
