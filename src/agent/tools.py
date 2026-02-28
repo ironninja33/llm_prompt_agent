@@ -185,15 +185,8 @@ TOOL_DECLARATIONS = [
                     ),
                     "loras": types.Schema(
                         type="ARRAY",
-                        description="LoRA stack — list of objects with 'name' (filename) and 'strength' (float, default 1.0)",
-                        items=types.Schema(
-                            type="OBJECT",
-                            properties={
-                                "name": types.Schema(type="STRING", description="LoRA filename"),
-                                "strength": types.Schema(type="NUMBER", description="LoRA strength (default 1.0)"),
-                            },
-                            required=["name"],
-                        ),
+                        description="LoRA filenames to apply (strength defaults to 1.0)",
+                        items=types.Schema(type="STRING", description="LoRA filename"),
                         nullable=True,
                     ),
                     "output_folder": types.Schema(
@@ -629,19 +622,13 @@ def _generate_image(args: dict, context: dict) -> dict:
     # Handle loras: validate against available loras
     if args.get("loras"):
         available = comfyui_service.get_available_models("loras")
-        lora_list = []
-        for lora in args["loras"]:
-            name = lora.get("name", "")
+        for name in args["loras"]:
             if name not in available:
                 return {
                     "error": f"LoRA '{name}' not found",
                     "valid_options": available,
                 }
-            lora_list.append({
-                "name": name,
-                "strength": lora.get("strength", 1.0),
-            })
-        settings["loras"] = lora_list
+        settings["loras"] = list(args["loras"])
 
     chat_id = context.get("chat_id")
     job = generation_controller.submit_generation(

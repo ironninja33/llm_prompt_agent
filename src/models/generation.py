@@ -348,6 +348,16 @@ def delete_image(image_id: int) -> bool:
         return cursor.rowcount > 0
 
 
+def get_images_by_filename(filename: str) -> list[dict]:
+    """Get all image records matching a filename."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            "SELECT id, job_id, filename, file_path FROM generated_images WHERE filename = ?",
+            (filename,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def delete_images_by_filename(filename: str) -> int:
     """Delete all image records matching a filename. Returns count deleted.
 

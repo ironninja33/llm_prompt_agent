@@ -337,7 +337,10 @@ function _fillOverlayFields(settings) {
     }
 
     if (_genLoraInput) {
-        _genLoraInput.setValue(Array.isArray(settings.loras) ? settings.loras : []);
+        const rawLoras = Array.isArray(settings.loras) ? settings.loras : [];
+        // Normalize: agent tool stores {name, strength} objects, overlay uses strings
+        const normalized = rawLoras.map(l => typeof l === 'object' ? l.name : l);
+        _genLoraInput.setValue(normalized);
     }
 
     const folderInput = $('#gen-output-folder');

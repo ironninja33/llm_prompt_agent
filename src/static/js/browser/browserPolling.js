@@ -11,7 +11,7 @@ function startBrowserPolling() {
     stopBrowserPolling();
 
     BrowserState.pollTimer = setInterval(async () => {
-        if (BrowserState.isSearchActive || BrowserState.isLoading) return;
+        if (BrowserState.isSearchActive || BrowserState.isLoading || BrowserState.deletePending) return;
 
         try {
             const result = await API.browserPoll(
@@ -22,6 +22,7 @@ function startBrowserPolling() {
             if (result.has_new_files) {
                 // Reload the full listing to show new files in correct sort order
                 BrowserState.offset = 0;
+                BrowserState.pollTimestamp = Date.now() / 1000;
                 await loadBrowserContents();
             }
         } catch (err) {

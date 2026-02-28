@@ -14,5 +14,6 @@ const BrowserState = {
     searchMode: 'keyword',  // 'keyword' or 'embedding'
     searchQuery: '',
     isSearchActive: false,
+    deletePending: false,
     thumbnailSize: 'medium',
 };

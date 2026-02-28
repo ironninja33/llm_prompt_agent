@@ -82,13 +82,20 @@ function createBrowserImageThumbnail(imageData) {
         onRefineWithAttachment: null,  // Attachment toggle lives in the refine dialog
         onAttach: null,  // Hidden in browser context
         onDelete: async (j, i, el) => {
+            BrowserState.deletePending = true;
             try {
-                await API.deleteGeneratedImage(j.id, i.id);
+                const result = await API.deleteGeneratedImage(j.id, i.id);
+                if (result.error) {
+                    console.error('Failed to delete image:', result.error);
+                    return;
+                }
                 // Remove the .browser-img-item wrapper so the grid reflows
                 const wrapper = el.closest('.browser-img-item');
                 (wrapper || el).remove();
             } catch (err) {
                 console.error('Failed to delete image:', err);
+            } finally {
+                BrowserState.deletePending = false;
             }
         },
     });

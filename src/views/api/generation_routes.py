@@ -228,19 +228,52 @@ def delete_generated_image(job_id, image_id):
     if not image or image.get("job_id") != job_id:
         return jsonify({"error": "Image not found"}), 404
 
-    # Delete the actual file from disk
-    comfyui_service.delete_image_file(
-        image["filename"],
-        image.get("subfolder", ""),
-    )
+    # Find all records with the same filename (scan + generation duplicates).
+    # One of them should have the correct file_path for disk deletion.
+    duplicates = gen_model.get_images_by_filename(image["filename"])
+    duplicate_job_ids = {dup["job_id"] for dup in duplicates if dup["id"] != image_id}
+
+    # Resolve the file on disk: try file_path from this record, then from
+    # any duplicate, then fall back to the subfolder-based resolver.
+    file_path = image.get("file_path")
+    if not file_path or not os.path.isfile(file_path):
+        for dup in duplicates:
+            if dup.get("file_path") and os.path.isfile(dup["file_path"]):
+                file_path = dup["file_path"]
+                break
+
+    if file_path and os.path.isfile(file_path):
+        try:
+            os.remove(file_path)
+            logger.info("Deleted image file: %s", file_path)
+        except OSError as exc:
+            logger.warning("Error deleting image file %s: %s", file_path, exc)
+            return jsonify({"error": "Failed to delete image file from disk"}), 500
+    else:
+        deleted_from_disk = comfyui_service.delete_image_file(
+            image["filename"],
+            image.get("subfolder", ""),
+        )
+        if not deleted_from_disk:
+            return jsonify({"error": "Failed to delete image file from disk"}), 500
 
     # Clean up DB records (image row, vector store if no images remain)
     _cleanup_missing_image(job_id, image_id)
 
-    # If the job has no remaining images, remove the job too
+    # Remove duplicate records — the file is gone so these are orphaned
+    if duplicate_job_ids:
+        gen_model.delete_images_by_filename(image["filename"])
+
+    # If the original job has no remaining images, remove it too
     remaining = gen_model.get_job_images(job_id)
     if not remaining:
         gen_model.delete_job(job_id)
+
+    # Clean up orphan jobs from duplicates
+    for dup_job_id in duplicate_job_ids:
+        remaining = gen_model.get_job_images(dup_job_id)
+        if not remaining:
+            gen_model.delete_job(dup_job_id)
 
     return jsonify({"ok": True})
 

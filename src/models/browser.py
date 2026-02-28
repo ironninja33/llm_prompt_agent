@@ -104,6 +104,35 @@ def fast_register_images(dir_path: str) -> int:
         if ext in IMAGE_EXTS:
             image_files.append((fname, os.path.normpath(os.path.join(dir_path, fname))))
 
+    disk_paths = set(fp for _, fp in image_files)
+
+    # Remove DB records for files that were deleted from disk.
+    # Query all DB records under this directory and check against the disk listing.
+    norm_dir = os.path.normpath(dir_path) + os.sep
+    with get_db() as conn:
+        cursor = conn.execute(
+            """SELECT gi.id, gi.job_id, gi.file_path
+               FROM generated_images gi
+               WHERE gi.file_path LIKE ? AND gi.file_path NOT LIKE ?""",
+            (norm_dir + "%", norm_dir + "%/%"),
+        )
+        for row in cursor.fetchall():
+            if row["file_path"] not in disk_paths:
+                conn.execute("DELETE FROM generated_images WHERE id = ?", (row["id"],))
+                # Clean up orphan job if no images remain
+                remaining = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM generated_images WHERE job_id = ?",
+                    (row["job_id"],),
+                ).fetchone()["cnt"]
+                if remaining == 0:
+                    conn.execute("DELETE FROM generation_jobs WHERE id = ?", (row["job_id"],))
+                logger.debug("Removed stale DB record for deleted file: %s", row["file_path"])
+
+    # If the directory is now empty (no images, no subdirs), remove it from disk.
+    # Skip root output directories — only clean up subdirectories.
+    if not image_files:
+        _maybe_remove_empty_dir(dir_path)
+
     if not image_files:
         return 0
 
@@ -318,6 +347,30 @@ def get_latest_image_timestamp(dir_path: str) -> str | None:
         )
         row = cursor.fetchone()
         return row["latest"] if row else None
+
+
+def _maybe_remove_empty_dir(dir_path: str):
+    """Remove empty subdirectories, walking up to (but not including) root output dirs.
+
+    Only deletes if the directory contains no files and no subdirectories.
+    Root output directories (configured in data_directories) are never removed.
+    Walks up the tree so nested empty directories are cleaned up, e.g.
+    output/subject/photoshoot/ → remove photoshoot, then subject if also empty.
+    """
+    roots = get_root_directories()
+    root_paths = {os.path.normpath(r["path"]) for r in roots}
+
+    current = os.path.normpath(dir_path)
+    while current not in root_paths:
+        try:
+            if not os.listdir(current):
+                os.rmdir(current)
+                logger.info("Removed empty directory: %s", current)
+                current = os.path.dirname(current)
+            else:
+                break  # Not empty, stop walking up
+        except OSError:
+            break  # Permission error or not a directory — stop
 
 
 def _count_images_in_dir(dir_path: str) -> int:
