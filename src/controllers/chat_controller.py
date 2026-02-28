@@ -37,6 +37,8 @@ def get_messages(chat_id: str) -> list[dict]:
             urls = msg["metadata"].get("attachment_urls")
             if urls:
                 msg["attachment_urls"] = urls
+            if msg["metadata"].get("is_error"):
+                msg["is_error"] = True
 
         # Attach persisted tool calls for assistant messages
         if msg.get("role") == "assistant" and msg.get("id"):

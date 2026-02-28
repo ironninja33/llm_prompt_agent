@@ -86,7 +86,13 @@ def run_agent_turn(
                     tools=TOOL_DECLARATIONS,
                 )
             except Exception as e:
-                yield {"type": "error", "message": f"LLM error: {str(e)}"}
+                error_text = f"LLM error: {str(e)}"
+                yield {"type": "error", "message": error_text}
+                try:
+                    chat_model.add_message(chat_id, "assistant", error_text,
+                                           metadata={"is_error": True})
+                except Exception:
+                    pass
                 return
 
             # Process the stream
@@ -113,7 +119,13 @@ def run_agent_turn(
                             function_call_parts.append(part)
 
             except Exception as e:
-                yield {"type": "error", "message": f"Streaming error: {str(e)}"}
+                error_text = f"Streaming error: {str(e)}"
+                yield {"type": "error", "message": error_text}
+                try:
+                    chat_model.add_message(chat_id, "assistant", error_text,
+                                           metadata={"is_error": True})
+                except Exception:
+                    pass
                 return
 
             # If there were tool calls, execute them and continue the loop
@@ -219,7 +231,13 @@ def run_agent_turn(
 
     except Exception as e:
         logger.error(f"Agent loop error: {e}", exc_info=True)
-        yield {"type": "error", "message": f"Internal error: {str(e)}"}
+        error_text = f"Internal error: {str(e)}"
+        yield {"type": "error", "message": error_text}
+        try:
+            chat_model.add_message(chat_id, "assistant", error_text,
+                                   metadata={"is_error": True})
+        except Exception:
+            pass
 
 
 def _inject_attachments(messages: list[dict], attachments: list[dict]):
@@ -271,6 +289,10 @@ def _build_message_history(chat_id: str) -> list[dict]:
     for msg in db_messages:
         role = msg["role"]
         content = msg["content"]
+
+        # Skip persisted error messages — they shouldn't be sent to the LLM
+        if role == "assistant" and isinstance(msg.get("metadata"), dict) and msg["metadata"].get("is_error"):
+            continue
 
         if role == "user":
             messages.append({"role": "user", "content": content})

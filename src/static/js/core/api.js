@@ -66,6 +66,10 @@ const API = {
         });
     },
 
+    deleteMessage(chatId, messageId) {
+        return this.cancelMessage(chatId, messageId);
+    },
+
     // ── Settings endpoints ──────────────────────────────────────
     async getSettings() {
         const res = await fetch('/api/settings');

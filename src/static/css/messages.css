@@ -78,10 +78,10 @@
     max-width: 90%;
 }
 
-.message .edit-btn {
+.message .edit-btn,
+.message .delete-btn {
     position: absolute;
     top: 4px;
-    right: -28px;
     opacity: 0;
     background: none;
     border: none;
@@ -93,12 +93,25 @@
     transition: opacity 0.15s;
 }
 
-.message:hover .edit-btn {
+.message .edit-btn {
+    right: -28px;
+}
+
+.message .delete-btn {
+    left: -28px;
+}
+
+.message:hover .edit-btn,
+.message:hover .delete-btn {
     opacity: 1;
 }
 
 .message .edit-btn:hover {
     color: var(--accent);
+}
+
+.message .delete-btn:hover {
+    color: var(--danger);
 }
 
 /* Streaming cursor indicator */

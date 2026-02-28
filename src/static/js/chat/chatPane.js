@@ -28,7 +28,12 @@ function renderMessages(messages) {
 
     container.innerHTML = '';
     messages.forEach((msg, idx) => {
-        const el = createMessageElement(msg, idx === messages.length - 1 && msg.role === 'user');
+        // Determine if this user message should show a delete button:
+        // it's the last user msg AND either the very last message or followed by an error
+        const isLastUserMsg = msg.role === 'user'
+            && (idx === messages.length - 1
+                || (idx === messages.length - 2 && messages[idx + 1].is_error));
+        const el = createMessageElement(msg, isLastUserMsg);
         container.appendChild(el);
     });
 
@@ -50,8 +55,16 @@ function renderEmptyState() {
 
 function createMessageElement(msg, isLastUserMsg = false) {
     const div = document.createElement('div');
-    div.className = `message ${msg.role}`;
     div.dataset.messageId = msg.id;
+
+    // Error messages (persisted from agent loop failures)
+    if (msg.is_error) {
+        div.className = 'message error';
+        div.textContent = msg.content;
+        return div;
+    }
+
+    div.className = `message ${msg.role}`;
 
     if (msg.role === 'assistant') {
         div.innerHTML = renderMarkdown(msg.content);
@@ -85,8 +98,15 @@ function createMessageElement(msg, isLastUserMsg = false) {
         div.appendChild(attDiv);
     }
 
-    // Edit button on the last user message
+    // Delete button on the last user message (when dangling or followed by error)
     if (isLastUserMsg && msg.role === 'user') {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-btn';
+        deleteBtn.textContent = '✕';
+        deleteBtn.title = 'Delete message';
+        deleteBtn.onclick = () => deleteLastUserMessage(msg.id);
+        div.appendChild(deleteBtn);
+
         const editBtn = document.createElement('button');
         editBtn.className = 'edit-btn';
         editBtn.textContent = '✎';
@@ -150,6 +170,8 @@ function finalizeStreamingAsError(errorText) {
     } else {
         addErrorMessage(errorText);
     }
+    // Add delete button to the preceding user message
+    addDeleteButtonToLastUserMessage();
 }
 
 function addEditButtonToLastUserMessage() {
@@ -169,6 +191,22 @@ function addEditButtonToLastUserMessage() {
         }
     };
     lastUser.appendChild(editBtn);
+}
+
+function addDeleteButtonToLastUserMessage() {
+    const msgs = $$('.message.user');
+    const lastUser = msgs[msgs.length - 1];
+    if (!lastUser || lastUser.querySelector('.delete-btn')) return;
+
+    const msgId = lastUser.dataset.messageId;
+    if (!msgId) return;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.textContent = '✕';
+    deleteBtn.title = 'Delete message';
+    deleteBtn.onclick = () => deleteLastUserMessage(parseInt(msgId));
+    lastUser.appendChild(deleteBtn);
 }
 
 function buildToolCallsSection(toolCalls) {
@@ -251,6 +289,28 @@ function addErrorMessage(text) {
     div.textContent = text;
     container.appendChild(div);
     scrollToBottom();
+}
+
+async function deleteLastUserMessage(messageId) {
+    if (!currentChatId) return;
+    await API.deleteMessage(currentChatId, messageId);
+
+    // Remove the user message element from DOM
+    const userEl = document.querySelector(`.message[data-message-id="${messageId}"]`);
+    if (userEl) {
+        // Also remove any following error message
+        const next = userEl.nextElementSibling;
+        if (next && next.classList.contains('error')) {
+            next.remove();
+        }
+        userEl.remove();
+    }
+
+    // If no messages remain, show the empty state
+    const remaining = $$('.message');
+    if (remaining.length === 0) {
+        renderEmptyState();
+    }
 }
 
 // ── Send Message ────────────────────────────────────────────────────────
@@ -393,7 +453,6 @@ async function sendMessage() {
             StreamRegistry.setError(sendChatId);
             if (currentChatId === sendChatId) {
                 finalizeStreamingAsError(err.error || 'Failed to send message');
-                addEditButtonToLastUserMessage();
                 setStreaming(false);
             }
             StreamRegistry.cleanup(sendChatId);
@@ -441,7 +500,6 @@ async function sendMessage() {
                 if (currentChatId === sendChatId) {
                     removeStatusMessages();
                     finalizeStreamingAsError(data.message || 'An error occurred');
-                    addEditButtonToLastUserMessage();
                 }
                 StreamRegistry.cleanup(sendChatId);
                 renderChatList();
@@ -464,7 +522,6 @@ async function sendMessage() {
         if (currentChatId === sendChatId) {
             removeStatusMessages();
             finalizeStreamingAsError(`Network error: ${err.message}`);
-            addEditButtonToLastUserMessage();
         }
         StreamRegistry.cleanup(sendChatId);
         renderChatList();
@@ -523,7 +580,6 @@ async function submitEditedMessage(messageId) {
             StreamRegistry.setError(sendChatId);
             if (currentChatId === sendChatId) {
                 finalizeStreamingAsError(err.error || 'Failed to edit message');
-                addEditButtonToLastUserMessage();
                 setStreaming(false);
             }
             StreamRegistry.cleanup(sendChatId);
@@ -575,7 +631,6 @@ async function submitEditedMessage(messageId) {
                 if (currentChatId === sendChatId) {
                     removeStatusMessages();
                     finalizeStreamingAsError(data.message || 'An error occurred');
-                    addEditButtonToLastUserMessage();
                 }
                 StreamRegistry.cleanup(sendChatId);
                 renderChatList();
@@ -597,7 +652,6 @@ async function submitEditedMessage(messageId) {
         if (currentChatId === sendChatId) {
             removeStatusMessages();
             finalizeStreamingAsError(`Network error: ${err.message}`);
-            addEditButtonToLastUserMessage();
         }
         StreamRegistry.cleanup(sendChatId);
         renderChatList();
