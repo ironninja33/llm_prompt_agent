@@ -23,13 +23,27 @@ function escapeHtml(text) {
 
 // ── Initialization ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-    if (typeof loadChats === 'function') await loadChats();
-    loadStats();
-    startComfyUIPolling();
-    monitorIngestion();
+    // Each init task is independent — one failure must not block the others.
+    // loadChats() is critical for page render so it gets retry with backoff.
+    if (typeof loadChats === 'function') {
+        let loaded = false;
+        for (let attempt = 1; attempt <= 3 && !loaded; attempt++) {
+            try {
+                await loadChats();
+                loaded = true;
+            } catch (err) {
+                console.warn(`loadChats attempt ${attempt}/3 failed:`, err);
+                if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
+        }
+    }
+
+    try { loadStats(); } catch (e) { console.warn('loadStats failed:', e); }
+    try { startComfyUIPolling(); } catch (e) { console.warn('startComfyUIPolling failed:', e); }
+    try { monitorIngestion(); } catch (e) { console.warn('monitorIngestion failed:', e); }
 
     // Handle browser-to-chat refine URL params: ?refine=<prompt>&attach=<jobId/imgId>
-    _handleRefineParams();
+    try { _handleRefineParams(); } catch (e) { console.warn('_handleRefineParams failed:', e); }
 });
 
 function _handleRefineParams() {

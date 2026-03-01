@@ -6,13 +6,31 @@ import uuid
 import logging
 from datetime import datetime, timezone
 
-from src.models.database import get_db
+from sqlalchemy import text
+
+from src.models.database import get_db, row_to_dict
 from src.models import settings
 from src.services.image_parser import parse_file
 
 logger = logging.getLogger(__name__)
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
+
+
+def _output_folder_from_path(filepath: str) -> str:
+    """Compute output_folder relative to the configured output root directory.
+
+    For a file at ``<output_root>/character/subdir/image.png`` returns
+    ``"character/subdir"`` instead of just ``"subdir"``.
+    """
+    dirpath = os.path.normpath(os.path.dirname(filepath))
+    for root in get_root_directories():
+        root_path = os.path.normpath(root["path"])
+        if dirpath.startswith(root_path):
+            rel = os.path.relpath(dirpath, root_path)
+            return rel if rel != "." else ""
+    # Fallback: immediate parent only (no matching root found)
+    return os.path.basename(dirpath)
 
 
 def get_root_directories() -> list[dict]:
@@ -107,29 +125,34 @@ def fast_register_images(dir_path: str) -> int:
     disk_paths = set(fp for _, fp in image_files)
 
     # Remove DB records for files that were deleted from disk.
-    # Query all DB records under this directory and check against the disk listing.
     norm_dir = os.path.normpath(dir_path) + os.sep
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT gi.id, gi.job_id, gi.file_path
+        result = conn.execute(
+            text("""SELECT gi.id, gi.job_id, gi.file_path
                FROM generated_images gi
-               WHERE gi.file_path LIKE ? AND gi.file_path NOT LIKE ?""",
-            (norm_dir + "%", norm_dir + "%/%"),
+               WHERE gi.file_path LIKE :like AND gi.file_path NOT LIKE :not_like"""),
+            {"like": norm_dir + "%", "not_like": norm_dir + "%/%"},
         )
-        for row in cursor.fetchall():
-            if row["file_path"] not in disk_paths:
-                conn.execute("DELETE FROM generated_images WHERE id = ?", (row["id"],))
+        for row in result.fetchall():
+            r = row._mapping
+            if r["file_path"] not in disk_paths:
+                conn.execute(
+                    text("DELETE FROM generated_images WHERE id = :id"),
+                    {"id": r["id"]},
+                )
                 # Clean up orphan job if no images remain
                 remaining = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM generated_images WHERE job_id = ?",
-                    (row["job_id"],),
-                ).fetchone()["cnt"]
+                    text("SELECT COUNT(*) as cnt FROM generated_images WHERE job_id = :job_id"),
+                    {"job_id": r["job_id"]},
+                ).fetchone()._mapping["cnt"]
                 if remaining == 0:
-                    conn.execute("DELETE FROM generation_jobs WHERE id = ?", (row["job_id"],))
-                logger.debug("Removed stale DB record for deleted file: %s", row["file_path"])
+                    conn.execute(
+                        text("DELETE FROM generation_jobs WHERE id = :id"),
+                        {"id": r["job_id"]},
+                    )
+                logger.debug("Removed stale DB record for deleted file: %s", r["file_path"])
 
     # If the directory is now empty (no images, no subdirs), remove it from disk.
-    # Skip root output directories — only clean up subdirectories.
     if not image_files:
         _maybe_remove_empty_dir(dir_path)
 
@@ -142,12 +165,13 @@ def fast_register_images(dir_path: str) -> int:
     with get_db() as conn:
         for i in range(0, len(all_paths), 500):
             chunk = all_paths[i:i + 500]
-            placeholders = ",".join(["?"] * len(chunk))
-            cursor = conn.execute(
-                f"SELECT file_path FROM generated_images WHERE file_path IN ({placeholders})",
-                chunk,
+            placeholders = ",".join([f":p{j}" for j in range(len(chunk))])
+            params = {f"p{j}": v for j, v in enumerate(chunk)}
+            result = conn.execute(
+                text(f"SELECT file_path FROM generated_images WHERE file_path IN ({placeholders})"),
+                params,
             )
-            existing_paths.update(row["file_path"] for row in cursor.fetchall())
+            existing_paths.update(row._mapping["file_path"] for row in result.fetchall())
 
     # Register new files
     new_files = [(fname, fp) for fname, fp in image_files if fp not in existing_paths]
@@ -155,25 +179,25 @@ def fast_register_images(dir_path: str) -> int:
         return 0
 
     # Check for existing records from generation (file_path IS NULL, same filename).
-    # These were created by add_generated_image() during ComfyUI generation and
-    # already have correct settings/seed — just need file_path filled in.
     new_filenames = [fname for fname, _ in new_files]
     existing_by_name = {}
     with get_db() as conn:
         for i in range(0, len(new_filenames), 500):
             chunk = new_filenames[i:i + 500]
-            placeholders = ",".join(["?"] * len(chunk))
-            cursor = conn.execute(
-                f"""SELECT gi.id, gi.filename, gi.job_id
+            placeholders = ",".join([f":p{j}" for j in range(len(chunk))])
+            params = {f"p{j}": v for j, v in enumerate(chunk)}
+            result = conn.execute(
+                text(f"""SELECT gi.id, gi.filename, gi.job_id
                     FROM generated_images gi
                     WHERE gi.filename IN ({placeholders}) AND gi.file_path IS NULL
-                    ORDER BY gi.id DESC""",
-                chunk,
+                    ORDER BY gi.id DESC"""),
+                params,
             )
-            for row in cursor.fetchall():
+            for row in result.fetchall():
+                r = row._mapping
                 # Keep the most recent record per filename (highest id)
-                if row["filename"] not in existing_by_name:
-                    existing_by_name[row["filename"]] = row
+                if r["filename"] not in existing_by_name:
+                    existing_by_name[r["filename"]] = dict(r)
 
     count = 0
     with get_db() as conn:
@@ -186,36 +210,38 @@ def fast_register_images(dir_path: str) -> int:
                 continue
 
             if fname in existing_by_name:
-                # Update existing generation record with file_path — preserves
-                # the original job and settings (including correct seed)
+                # Update existing generation record with file_path
                 existing = existing_by_name[fname]
                 conn.execute(
-                    """UPDATE generated_images
-                       SET file_path = ?, file_size = ?, metadata_status = 'complete'
-                       WHERE id = ?""",
-                    (filepath, file_size, existing["id"]),
+                    text("""UPDATE generated_images
+                       SET file_path = :file_path, file_size = :file_size, metadata_status = 'complete'
+                       WHERE id = :id"""),
+                    {"file_path": filepath, "file_size": file_size, "id": existing["id"]},
                 )
                 count += 1
             else:
                 # Truly new file — create job + image record
                 job_id = str(uuid.uuid4())
                 conn.execute(
-                    """INSERT OR IGNORE INTO generation_jobs
+                    text("""INSERT OR IGNORE INTO generation_jobs
                        (id, chat_id, message_id, prompt_id, status, source, created_at, completed_at)
-                       VALUES (?, NULL, NULL, NULL, 'completed', 'scan', ?, ?)""",
-                    (job_id, file_mtime, file_mtime),
+                       VALUES (:id, NULL, NULL, NULL, 'completed', 'scan', :created_at, :completed_at)"""),
+                    {"id": job_id, "created_at": file_mtime, "completed_at": file_mtime},
                 )
                 result = conn.execute(
-                    """INSERT OR IGNORE INTO generated_images
+                    text("""INSERT OR IGNORE INTO generated_images
                        (job_id, filename, subfolder, file_size, file_path, metadata_status)
-                       VALUES (?, ?, '', ?, ?, 'pending')""",
-                    (job_id, fname, file_size, filepath),
+                       VALUES (:job_id, :filename, '', :file_size, :file_path, 'pending')"""),
+                    {"job_id": job_id, "filename": fname, "file_size": file_size, "file_path": filepath},
                 )
                 if result.rowcount > 0:
                     count += 1
                 else:
                     # Image already existed (race condition), clean up orphan job
-                    conn.execute("DELETE FROM generation_jobs WHERE id = ?", (job_id,))
+                    conn.execute(
+                        text("DELETE FROM generation_jobs WHERE id = :id"),
+                        {"id": job_id},
+                    )
 
     return count
 
@@ -232,25 +258,27 @@ def parse_pending_for_page(image_ids: list[int]) -> int:
     if not image_ids:
         return 0
 
-    placeholders = ",".join(["?"] * len(image_ids))
+    placeholders = ",".join([f":p{i}" for i in range(len(image_ids))])
+    params = {f"p{i}": v for i, v in enumerate(image_ids)}
 
     with get_db() as conn:
-        cursor = conn.execute(
-            f"""SELECT gi.id, gi.job_id, gi.file_path
+        result = conn.execute(
+            text(f"""SELECT gi.id, gi.job_id, gi.file_path
                 FROM generated_images gi
-                WHERE gi.id IN ({placeholders}) AND gi.metadata_status = 'pending'""",
-            image_ids,
+                WHERE gi.id IN ({placeholders}) AND gi.metadata_status = 'pending'"""),
+            params,
         )
-        pending = cursor.fetchall()
+        pending = result.fetchall()
 
     if not pending:
         return 0
 
     count = 0
     for row in pending:
-        image_id = row["id"]
-        job_id = row["job_id"]
-        filepath = row["file_path"]
+        r = row._mapping
+        image_id = r["id"]
+        job_id = r["job_id"]
+        filepath = r["file_path"]
 
         parsed = parse_file(filepath) if filepath else None
 
@@ -258,51 +286,52 @@ def parse_pending_for_page(image_ids: list[int]) -> int:
             if parsed:
                 loras_json = json.dumps(parsed.loras) if parsed.loras else None
                 conn.execute(
-                    """INSERT OR IGNORE INTO generation_settings
+                    text("""INSERT OR IGNORE INTO generation_settings
                        (job_id, positive_prompt, negative_prompt, base_model, loras,
                         output_folder, seed, num_images, sampler, cfg_scale, scheduler, steps)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)""",
-                    (
-                        job_id,
-                        parsed.prompt,
-                        parsed.negative_prompt,
-                        parsed.base_model,
-                        loras_json,
-                        os.path.basename(os.path.dirname(filepath)),
-                        parsed.seed if parsed.seed is not None else -1,
-                        parsed.sampler,
-                        parsed.cfg_scale,
-                        parsed.scheduler,
-                        parsed.steps,
-                    ),
+                       VALUES (:job_id, :positive_prompt, :negative_prompt, :base_model, :loras,
+                        :output_folder, :seed, 1, :sampler, :cfg_scale, :scheduler, :steps)"""),
+                    {
+                        "job_id": job_id,
+                        "positive_prompt": parsed.prompt,
+                        "negative_prompt": parsed.negative_prompt,
+                        "base_model": parsed.base_model,
+                        "loras": loras_json,
+                        "output_folder": _output_folder_from_path(filepath),
+                        "seed": parsed.seed if parsed.seed is not None else -1,
+                        "sampler": parsed.sampler,
+                        "cfg_scale": parsed.cfg_scale,
+                        "scheduler": parsed.scheduler,
+                        "steps": parsed.steps,
+                    },
                 )
                 # Update width/height if available
                 if parsed.raw_workflow is None:
-                    # For non-ComfyUI, try to get dimensions
                     try:
                         from PIL import Image
                         img = Image.open(filepath)
                         w, h = img.size
                         img.close()
                         conn.execute(
-                            "UPDATE generated_images SET width = ?, height = ? WHERE id = ?",
-                            (w, h, image_id),
+                            text("UPDATE generated_images SET width = :w, height = :h WHERE id = :id"),
+                            {"w": w, "h": h, "id": image_id},
                         )
                     except Exception:
                         pass
             else:
                 # Parse failed — insert minimal empty settings so we don't retry
                 conn.execute(
-                    """INSERT OR IGNORE INTO generation_settings
+                    text("""INSERT OR IGNORE INTO generation_settings
                        (job_id, positive_prompt, negative_prompt, base_model, loras,
                         output_folder, seed, num_images)
-                       VALUES (?, '', NULL, NULL, NULL, ?, -1, 1)""",
-                    (job_id, os.path.basename(os.path.dirname(filepath)) if filepath else ""),
+                       VALUES (:job_id, '', NULL, NULL, NULL, :output_folder, -1, 1)"""),
+                    {"job_id": job_id,
+                     "output_folder": _output_folder_from_path(filepath) if filepath else ""},
                 )
 
             conn.execute(
-                "UPDATE generated_images SET metadata_status = 'complete' WHERE id = ?",
-                (image_id,),
+                text("UPDATE generated_images SET metadata_status = 'complete' WHERE id = :id"),
+                {"id": image_id},
             )
         count += 1
 
@@ -316,16 +345,17 @@ def get_directory_previews(dir_path: str, count: int = 4) -> list[dict]:
     like_pattern = dir_path + "%"
 
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT gi.id as image_id, gi.job_id
+        result = conn.execute(
+            text("""SELECT gi.id as image_id, gi.job_id
                FROM generated_images gi
                JOIN generation_jobs gj ON gi.job_id = gj.id
-               WHERE gi.file_path LIKE ?
+               WHERE gi.file_path LIKE :like
                ORDER BY gj.created_at DESC
-               LIMIT ?""",
-            (like_pattern, count),
+               LIMIT :limit"""),
+            {"like": like_pattern, "limit": count},
         )
-        return [{"image_id": row["image_id"], "job_id": row["job_id"]} for row in cursor.fetchall()]
+        return [{"image_id": row._mapping["image_id"], "job_id": row._mapping["job_id"]}
+                for row in result.fetchall()]
 
 
 def get_latest_image_timestamp(dir_path: str) -> str | None:
@@ -338,15 +368,15 @@ def get_latest_image_timestamp(dir_path: str) -> str | None:
         dir_path = dir_path + os.sep
 
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT MAX(gj.created_at) as latest
+        result = conn.execute(
+            text("""SELECT MAX(gj.created_at) as latest
                FROM generated_images gi
                JOIN generation_jobs gj ON gi.job_id = gj.id
-               WHERE gi.file_path LIKE ?""",
-            (dir_path + "%",),
+               WHERE gi.file_path LIKE :like"""),
+            {"like": dir_path + "%"},
         )
-        row = cursor.fetchone()
-        return row["latest"] if row else None
+        row = result.fetchone()
+        return row._mapping["latest"] if row else None
 
 
 def _maybe_remove_empty_dir(dir_path: str):
@@ -354,8 +384,7 @@ def _maybe_remove_empty_dir(dir_path: str):
 
     Only deletes if the directory contains no files and no subdirectories.
     Root output directories (configured in data_directories) are never removed.
-    Walks up the tree so nested empty directories are cleaned up, e.g.
-    output/subject/photoshoot/ → remove photoshoot, then subject if also empty.
+    Walks up the tree so nested empty directories are cleaned up.
     """
     roots = get_root_directories()
     root_paths = {os.path.normpath(r["path"]) for r in roots}
@@ -380,8 +409,8 @@ def _count_images_in_dir(dir_path: str) -> int:
     like_pattern = dir_path + "%"
 
     with get_db() as conn:
-        cursor = conn.execute(
-            "SELECT COUNT(*) as cnt FROM generated_images WHERE file_path LIKE ?",
-            (like_pattern,),
+        result = conn.execute(
+            text("SELECT COUNT(*) as cnt FROM generated_images WHERE file_path LIKE :like"),
+            {"like": like_pattern},
         )
-        return cursor.fetchone()["cnt"]
+        return result.fetchone()._mapping["cnt"]

@@ -1,13 +1,68 @@
-"""SQLite database connection management and schema migrations."""
+"""SQLAlchemy Core database connection management and schema migrations."""
 
-import sqlite3
 import os
 import logging
 from contextlib import contextmanager
 
+from sqlalchemy import create_engine, event, text
+
 from src.config import SQLITE_DB_PATH, DEFAULT_COMFYUI_BASE_URL
 
 logger = logging.getLogger(__name__)
+
+# Singleton engine
+_engine = None
+
+
+def get_engine():
+    """Return the singleton SQLAlchemy engine, creating it on first call."""
+    global _engine
+    if _engine is not None:
+        return _engine
+
+    db_url = os.environ.get("DATABASE_URL", f"sqlite:///{SQLITE_DB_PATH}")
+
+    connect_args = {}
+    if db_url.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+
+    _engine = create_engine(
+        db_url,
+        connect_args=connect_args,
+        pool_pre_ping=True,
+    )
+
+    # SQLite pragmas applied on every new raw DBAPI connection
+    if db_url.startswith("sqlite"):
+        @event.listens_for(_engine, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+
+    return _engine
+
+
+@contextmanager
+def get_db():
+    """Context manager yielding a SQLAlchemy Connection with auto-commit/rollback."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        trans = conn.begin()
+        try:
+            yield conn
+            trans.commit()
+        except Exception:
+            trans.rollback()
+            raise
+
+
+def row_to_dict(row) -> dict:
+    """Convert a SQLAlchemy Row to a plain dict."""
+    return dict(row._mapping)
+
 
 # Schema migrations in order. Each is (version, description, sql_statements)
 MIGRATIONS = [
@@ -186,11 +241,6 @@ MIGRATIONS = [
         )""",
     ]),
     (7, "Fix duplicate image records: merge scan duplicates into generation originals", [
-        # For images generated through the app, add_generated_image left file_path NULL.
-        # fast_register_images then created scan duplicates with file_path set.
-        # Fix: copy file_path/file_size from scan duplicate to the generation original,
-        # then delete the scan duplicate and its orphan job.
-        # Step 1: Delete scan duplicate image records (frees unique file_path)
         """DELETE FROM generated_images WHERE id IN (
             SELECT b.id
             FROM generated_images a
@@ -198,55 +248,49 @@ MIGRATIONS = [
             JOIN generation_jobs gj ON b.job_id = gj.id
             WHERE a.file_path IS NULL AND b.file_path IS NOT NULL AND gj.source = 'scan'
         )""",
-        # Step 2: Update generation originals with file_path from a fresh filesystem scan
-        # (handled by fast_register_images on next browse — it detects NULL file_path records)
-        # Step 3: Clean up orphan scan jobs (no images left)
         """DELETE FROM generation_jobs WHERE source = 'scan'
            AND id NOT IN (SELECT job_id FROM generated_images)""",
     ]),
     (8, "Normalize timestamps: convert float epoch values to ISO-8601 text", [
-        # created_at: convert real (float epoch) values to ISO-8601 text
         """UPDATE generation_jobs
            SET created_at = datetime(created_at, 'unixepoch')
            WHERE typeof(created_at) = 'real'""",
-        # completed_at: same treatment
         """UPDATE generation_jobs
            SET completed_at = datetime(completed_at, 'unixepoch')
            WHERE typeof(completed_at) = 'real'""",
     ]),
+    (9, "Deduplicate generated_images and add unique constraint on (job_id, filename)", [
+        # Remove duplicate rows (keep the lowest id per job_id+filename pair)
+        """DELETE FROM generated_images WHERE id NOT IN (
+            SELECT MIN(id) FROM generated_images GROUP BY job_id, filename
+        )""",
+        # Prevent future duplicates at the DB level
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_gen_images_job_filename
+           ON generated_images(job_id, filename)""",
+    ]),
+    (10, "Re-run dedup cleanup (migration 9 index creation may have been skipped)", [
+        """DELETE FROM generated_images WHERE id NOT IN (
+            SELECT MIN(id) FROM generated_images GROUP BY job_id, filename
+        )""",
+        # Drop and recreate to ensure it exists even if migration 9's attempt failed
+        """DROP INDEX IF EXISTS idx_gen_images_job_filename""",
+        """CREATE UNIQUE INDEX idx_gen_images_job_filename
+           ON generated_images(job_id, filename)""",
+    ]),
+    (11, "Fix truncated output_folder for scanned images in nested directories", [
+        # Actual fixup is done in Python by _fix_truncated_output_folders()
+        # because it needs os.path.relpath which isn't available in SQL.
+    ]),
 ]
 
 
-def get_connection() -> sqlite3.Connection:
-    """Get a new SQLite connection with WAL mode and foreign keys enabled."""
-    conn = sqlite3.connect(SQLITE_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
-
-
-@contextmanager
-def get_db():
-    """Context manager for database connections with auto-commit/rollback."""
-    conn = get_connection()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
-def get_current_version(conn: sqlite3.Connection) -> int:
+def get_current_version(conn) -> int:
     """Get the current schema version."""
     try:
-        cursor = conn.execute("SELECT MAX(version) FROM schema_version")
-        row = cursor.fetchone()
+        result = conn.execute(text("SELECT MAX(version) FROM schema_version"))
+        row = result.fetchone()
         return row[0] if row[0] is not None else 0
-    except sqlite3.OperationalError:
+    except Exception:
         return 0
 
 
@@ -262,18 +306,71 @@ def initialize_database():
             if version > current_version:
                 logger.info(f"Applying migration {version}: {description}")
                 for sql in statements:
-                    conn.execute(sql)
+                    conn.execute(text(sql))
                 conn.execute(
-                    "INSERT INTO schema_version (version) VALUES (?)",
-                    (version,)
+                    text("INSERT INTO schema_version (version) VALUES (:v)"),
+                    {"v": version}
                 )
                 logger.info(f"Migration {version} applied successfully")
+
+        # One-time Python fixup for migration 11
+        if current_version < 11:
+            _fix_truncated_output_folders(conn)
 
         # Insert default settings if they don't exist
         _insert_default_settings(conn)
 
 
-def _insert_default_settings(conn: sqlite3.Connection):
+def _fix_truncated_output_folders(conn):
+    """Fix output_folder values that were truncated to just the leaf directory.
+
+    Scanned images in nested directories like ``character/subdir`` had
+    output_folder set to ``"subdir"`` instead of ``"character/subdir"``.
+    Recompute from file_path relative to the configured output root.
+    """
+    # Get output root directories
+    result = conn.execute(
+        text("SELECT path FROM data_directories WHERE dir_type = 'output' AND active = 1")
+    )
+    output_roots = [os.path.normpath(row[0]) for row in result.fetchall()]
+    if not output_roots:
+        return
+
+    # Find all images with file_path set and a generation_settings record
+    result = conn.execute(
+        text("""SELECT gs.job_id, gs.output_folder, gi.file_path
+           FROM generation_settings gs
+           JOIN generated_images gi ON gs.job_id = gi.job_id
+           WHERE gi.file_path IS NOT NULL""")
+    )
+    rows = result.fetchall()
+
+    fixed = 0
+    for row in rows:
+        job_id = row[0]
+        stored_folder = row[1] or ""
+        filepath = row[2]
+
+        dirpath = os.path.normpath(os.path.dirname(filepath))
+        correct_folder = None
+        for root in output_roots:
+            if dirpath.startswith(root):
+                rel = os.path.relpath(dirpath, root)
+                correct_folder = rel if rel != "." else ""
+                break
+
+        if correct_folder is not None and correct_folder != stored_folder:
+            conn.execute(
+                text("UPDATE generation_settings SET output_folder = :folder WHERE job_id = :job_id"),
+                {"folder": correct_folder, "job_id": job_id},
+            )
+            fixed += 1
+
+    if fixed:
+        logger.info(f"Fixed {fixed} truncated output_folder values")
+
+
+def _insert_default_settings(conn):
     """Insert default settings if they don't already exist."""
     from src.config import DEFAULT_MODEL_AGENT, DEFAULT_MODEL_EMBEDDING, DEFAULT_MODEL_SUMMARY, DEFAULT_GEMINI_RATE_LIMIT
     from src.agent.system_prompt import DEFAULT_SYSTEM_PROMPT
@@ -292,7 +389,7 @@ def _insert_default_settings(conn: sqlite3.Connection):
         "cluster_k_intra": "5",
         "cluster_k_cross": "15",
         "cluster_min_folder_size": "20",
-        "cluster_label_terms": "3",  # Number of TF-IDF terms used in cluster labels
+        "cluster_label_terms": "3",
         "comfyui_base_url": DEFAULT_COMFYUI_BASE_URL,
         "comfyui_default_model": "",
         "comfyui_default_negative": "",
@@ -313,6 +410,6 @@ def _insert_default_settings(conn: sqlite3.Connection):
 
     for key, value in defaults.items():
         conn.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-            (key, value)
+            text("INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"),
+            {"key": key, "value": value}
         )

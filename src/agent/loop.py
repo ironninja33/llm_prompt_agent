@@ -2,8 +2,9 @@
 
 import json
 import logging
-import sqlite3
 from typing import Generator
+
+import sqlalchemy.exc
 
 from google.genai import types
 
@@ -166,7 +167,7 @@ def run_agent_turn(
                         agent_state = apply_state_update(agent_state, tool_args)
                         try:
                             chat_model.save_agent_state(chat_id, agent_state)
-                        except sqlite3.IntegrityError:
+                        except sqlalchemy.exc.IntegrityError:
                             logger.warning("Chat %s was deleted mid-turn; stopping agent loop.", chat_id)
                             return
                         # Refresh the system prompt with updated state
@@ -224,7 +225,7 @@ def run_agent_turn(
         try:
             msg = chat_model.add_message(chat_id, "assistant", full_response)
             chat_model.save_agent_state(chat_id, agent_state)
-        except sqlite3.IntegrityError:
+        except sqlalchemy.exc.IntegrityError:
             logger.warning("Chat %s was deleted before response could be saved; discarding.", chat_id)
             return
 

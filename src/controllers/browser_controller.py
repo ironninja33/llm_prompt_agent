@@ -133,13 +133,13 @@ def search_embedding(query: str, offset: int = 0, limit: int = 50) -> dict:
             images.extend(gen_model.get_images_by_job_ids(job_ids))
 
         # Get images by file paths
-        for fp in file_paths:
-            img = gen_model.get_image_by_filepath(fp)
-            if img:
-                # Need to get settings too
-                with gen_model.get_db() as conn:
-                    cursor = conn.execute(
-                        """SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
+        if file_paths:
+            from src.models.database import get_db
+            from sqlalchemy import text
+            with get_db() as conn:
+                for fp in file_paths:
+                    result = conn.execute(
+                        text("""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
                                   gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path,
                                   gj.status, gj.source,
                                   gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
@@ -148,10 +148,10 @@ def search_embedding(query: str, offset: int = 0, limit: int = 50) -> dict:
                            FROM generated_images gi
                            JOIN generation_jobs gj ON gi.job_id = gj.id
                            LEFT JOIN generation_settings gs ON gi.job_id = gs.job_id
-                           WHERE gi.file_path = ?""",
-                        (fp,),
+                           WHERE gi.file_path = :fp"""),
+                        {"fp": fp},
                     )
-                    rows = cursor.fetchall()
+                    rows = result.fetchall()
                     if rows:
                         images.extend(gen_model._rows_to_image_list(rows))
 

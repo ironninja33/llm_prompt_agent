@@ -2,7 +2,8 @@
 
 import json
 import logging
-from src.models.database import get_db
+from sqlalchemy import text
+from src.models.database import get_db, row_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -33,39 +34,41 @@ def save_tool_calls(message_id: int, calls: list[dict]):
                 response_summary = result_str
 
             conn.execute(
-                """INSERT INTO tool_calls (message_id, tool_name, parameters, response_summary)
-                   VALUES (?, ?, ?, ?)""",
-                (message_id, tool_name, parameters, response_summary),
+                text("""INSERT INTO tool_calls (message_id, tool_name, parameters, response_summary)
+                   VALUES (:message_id, :tool_name, :parameters, :response_summary)"""),
+                {"message_id": message_id, "tool_name": tool_name,
+                 "parameters": parameters, "response_summary": response_summary},
             )
 
 
 def get_tool_calls(message_id: int) -> list[dict]:
     """Get saved tool calls for a message. Returns [] if none."""
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT tool_name, parameters, response_summary
-               FROM tool_calls WHERE message_id = ? ORDER BY id ASC""",
-            (message_id,),
+        result = conn.execute(
+            text("""SELECT tool_name, parameters, response_summary
+               FROM tool_calls WHERE message_id = :message_id ORDER BY id ASC"""),
+            {"message_id": message_id},
         )
         calls = []
-        for row in cursor.fetchall():
+        for row in result.fetchall():
+            r = row_to_dict(row)
             params = {}
-            if row["parameters"]:
+            if r["parameters"]:
                 try:
-                    params = json.loads(row["parameters"])
+                    params = json.loads(r["parameters"])
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            result = {}
-            if row["response_summary"]:
+            result_val = {}
+            if r["response_summary"]:
                 try:
-                    result = json.loads(row["response_summary"])
+                    result_val = json.loads(r["response_summary"])
                 except (json.JSONDecodeError, TypeError):
-                    result = {"summary": row["response_summary"]}
+                    result_val = {"summary": r["response_summary"]}
 
             calls.append({
-                "tool": row["tool_name"],
+                "tool": r["tool_name"],
                 "args": params,
-                "result": result,
+                "result": result_val,
             })
         return calls

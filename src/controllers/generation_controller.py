@@ -122,6 +122,12 @@ def handle_generation_complete(progress):
         )
 
         if progress.phase == "completed" and progress.output_images:
+            # Idempotency: skip if images already recorded for this job
+            existing = gen_model.get_job_images(progress.job_id)
+            if existing:
+                logger.debug("Images already recorded for job %s, skipping", progress.job_id)
+                return
+
             for img in progress.output_images:
                 gen_model.add_generated_image(
                     job_id=progress.job_id,

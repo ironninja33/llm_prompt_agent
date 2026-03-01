@@ -49,15 +49,21 @@ def create_app() -> Flask:
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
 
+    # Skip background work in the reloader parent process — only the child
+    # (WERKZEUG_RUN_MAIN=true) or non-debug mode should poll and ingest.
+    _is_reloader_parent = app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
+
     # Initialize generation listener
     from src.controllers import generation_controller
-    logger.info("Initializing generation listener...")
-    generation_controller.initialize()
+    if not _is_reloader_parent:
+        logger.info("Initializing generation listener...")
+        generation_controller.initialize()
 
     # Start background ingestion
     from src.services.ingestion_service import start_ingestion
-    logger.info("Starting background data ingestion...")
-    start_ingestion()
+    if not _is_reloader_parent:
+        logger.info("Starting background data ingestion...")
+        start_ingestion()
 
     logger.info("Application initialized successfully")
     return app

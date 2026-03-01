@@ -8,6 +8,8 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from sqlalchemy import text
+
 from src.services.image_parser import parse_file, ParsedImageData
 from src.services import embedding_service
 from src.models import vector_store, settings
@@ -129,8 +131,6 @@ def _run_ingestion(output_only: bool = False):
         _emit_status(progress)
 
         # Check which files are already indexed.
-        # Normalise stored IDs so they match the normalised scan paths,
-        # even if earlier runs stored non-normalised paths.
         training_existing = {
             os.path.normpath(p) for p in vector_store.get_existing_ids("training")
         }
@@ -190,7 +190,7 @@ def _run_ingestion(output_only: bool = False):
             # For output files, create SQLite records so the browser can query them
             if dir_type == "output":
                 try:
-                    _ensure_sqlite_records(filepath, parsed, d)
+                    _ensure_sqlite_records(filepath, parsed, dir_info)
                 except Exception as e:
                     logger.warning(f"Failed to create SQLite records for {filepath}: {e}")
 
@@ -222,7 +222,6 @@ def _run_ingestion(output_only: bool = False):
 
         # Phase 3: Clustering
         from src.services import clustering_service
-        from src.models.database import get_db
 
         progress.phase = "clustering"
         progress.message = "Checking clustering status..."
@@ -230,8 +229,8 @@ def _run_ingestion(output_only: bool = False):
 
         # Check if any clusters exist
         with get_db() as conn:
-            cursor = conn.execute("SELECT COUNT(*) as cnt FROM clusters")
-            cluster_count = cursor.fetchone()["cnt"]
+            result = conn.execute(text("SELECT COUNT(*) as cnt FROM clusters"))
+            cluster_count = result.fetchone()._mapping["cnt"]
 
         if cluster_count == 0 and progress.new_files > 0:
             # No clusters exist — run full clustering
@@ -306,15 +305,15 @@ def _run_ingestion(output_only: bool = False):
                     _emit_status(progress)
 
                 # Check for new folders needing intra-clustering
-                # Get folders that have docs but no intra-folder clusters
                 with get_db() as conn:
                     existing_folders = set()
-                    cursor = conn.execute(
-                        "SELECT DISTINCT folder_path FROM clusters WHERE cluster_type = 'intra_folder'"
+                    result = conn.execute(
+                        text("SELECT DISTINCT folder_path FROM clusters WHERE cluster_type = 'intra_folder'")
                     )
-                    for row in cursor:
-                        if row["folder_path"]:
-                            existing_folders.add(row["folder_path"])
+                    for row in result:
+                        fp = row._mapping["folder_path"]
+                        if fp:
+                            existing_folders.add(fp)
 
                 new_folder_concepts = set(new_concepts) - existing_folders
                 if new_folder_concepts:
@@ -354,8 +353,7 @@ def _scan_directory(dir_path: str, dir_type: str) -> list[tuple[str, str]]:
     """Scan a directory and return list of (filepath, dir_type) for parseable files.
 
     All file paths are normalised with os.path.normpath so they match
-    the IDs already stored in the vector store, preventing duplicates
-    and ensuring partially-indexed folders are completed on re-index.
+    the IDs already stored in the vector store, preventing duplicates.
     """
     IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
     files = []
@@ -385,14 +383,14 @@ def _process_batch(
 
         # Group by source type for ChromaDB
         groups: dict[str, tuple[list, list, list, list]] = {}
-        for doc_id, text, embedding, metadata, stype in zip(
+        for doc_id, text_val, embedding, metadata, stype in zip(
             ids, texts, embeddings, metadatas, source_types
         ):
             if stype not in groups:
                 groups[stype] = ([], [], [], [])
             g = groups[stype]
             g[0].append(doc_id)
-            g[1].append(text)
+            g[1].append(text_val)
             g[2].append(embedding)
             g[3].append(metadata)
 
@@ -412,12 +410,31 @@ def _ensure_sqlite_records(filepath: str, parsed: ParsedImageData, dir_info: dic
     norm_path = os.path.normpath(filepath)
 
     with get_db() as conn:
-        # Check for existing record
-        cursor = conn.execute(
-            "SELECT 1 FROM generated_images WHERE file_path = ?", (norm_path,)
+        # Check for existing record by file_path
+        result = conn.execute(
+            text("SELECT 1 FROM generated_images WHERE file_path = :file_path"),
+            {"file_path": norm_path},
         )
-        if cursor.fetchone():
+        if result.fetchone():
             return  # Already registered
+
+        # Also check by filename — chat-generated images have file_path=NULL
+        # but already have correct generation_settings.  Update their file_path
+        # instead of creating a duplicate scan record.
+        filename = os.path.basename(filepath)
+        result = conn.execute(
+            text("""SELECT gi.id FROM generated_images gi
+               WHERE gi.filename = :filename AND gi.file_path IS NULL"""),
+            {"filename": filename},
+        )
+        existing = result.fetchone()
+        if existing:
+            conn.execute(
+                text("UPDATE generated_images SET file_path = :fp, file_size = :fs WHERE id = :id"),
+                {"fp": norm_path, "fs": os.path.getsize(filepath) if os.path.isfile(filepath) else None,
+                 "id": existing._mapping["id"]},
+            )
+            return  # Linked to existing chat record
 
         # Get file metadata
         try:
@@ -432,9 +449,9 @@ def _ensure_sqlite_records(filepath: str, parsed: ParsedImageData, dir_info: dic
 
         # Create generation_jobs record (chat_id = NULL, source = 'scan')
         conn.execute(
-            """INSERT INTO generation_jobs (id, chat_id, message_id, prompt_id, status, source, created_at, completed_at)
-               VALUES (?, NULL, NULL, NULL, 'completed', 'scan', ?, ?)""",
-            (job_id, file_mtime, file_mtime),
+            text("""INSERT INTO generation_jobs (id, chat_id, message_id, prompt_id, status, source, created_at, completed_at)
+               VALUES (:id, NULL, NULL, NULL, 'completed', 'scan', :created_at, :completed_at)"""),
+            {"id": job_id, "created_at": file_mtime, "completed_at": file_mtime},
         )
 
         # Build loras JSON
@@ -442,22 +459,23 @@ def _ensure_sqlite_records(filepath: str, parsed: ParsedImageData, dir_info: dic
 
         # Create generation_settings record
         conn.execute(
-            """INSERT INTO generation_settings
+            text("""INSERT INTO generation_settings
                (job_id, positive_prompt, negative_prompt, base_model, loras,
                 output_folder, seed, num_images, sampler, cfg_scale, scheduler, steps)
-               VALUES (?, ?, ?, ?, ?, ?, -1, 1, ?, ?, ?, ?)""",
-            (
-                job_id,
-                parsed.prompt,
-                parsed.negative_prompt,
-                parsed.base_model,
-                loras_json,
-                os.path.basename(os.path.dirname(filepath)),
-                parsed.sampler,
-                parsed.cfg_scale,
-                parsed.scheduler,
-                parsed.steps,
-            ),
+               VALUES (:job_id, :positive_prompt, :negative_prompt, :base_model, :loras,
+                :output_folder, -1, 1, :sampler, :cfg_scale, :scheduler, :steps)"""),
+            {
+                "job_id": job_id,
+                "positive_prompt": parsed.prompt,
+                "negative_prompt": parsed.negative_prompt,
+                "base_model": parsed.base_model,
+                "loras": loras_json,
+                "output_folder": os.path.relpath(os.path.dirname(filepath), dir_info["path"]),
+                "sampler": parsed.sampler,
+                "cfg_scale": parsed.cfg_scale,
+                "scheduler": parsed.scheduler,
+                "steps": parsed.steps,
+            },
         )
 
         # Create generated_images record
@@ -467,8 +485,9 @@ def _ensure_sqlite_records(filepath: str, parsed: ParsedImageData, dir_info: dic
             subfolder = ""
 
         conn.execute(
-            """INSERT INTO generated_images
+            text("""INSERT INTO generated_images
                (job_id, filename, subfolder, file_size, file_path)
-               VALUES (?, ?, ?, ?, ?)""",
-            (job_id, filename, subfolder, file_size, norm_path),
+               VALUES (:job_id, :filename, :subfolder, :file_size, :file_path)"""),
+            {"job_id": job_id, "filename": filename, "subfolder": subfolder,
+             "file_size": file_size, "file_path": norm_path},
         )

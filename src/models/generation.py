@@ -4,7 +4,8 @@ import json
 import os
 import uuid
 import logging
-from src.models.database import get_db
+from sqlalchemy import text
+from src.models.database import get_db, row_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def _deserialize_settings(row) -> dict:
     """Convert a generation_settings Row to a dict with JSON fields parsed."""
-    settings = dict(row)
+    settings = row_to_dict(row)
     # Parse loras from JSON string to list
     if settings.get("loras"):
         try:
@@ -60,32 +61,34 @@ def create_job(chat_id: str | None, message_id: int | None, settings: dict,
 
     with get_db() as conn:
         conn.execute(
-            """INSERT INTO generation_jobs (id, chat_id, message_id, status, source)
-               VALUES (?, ?, ?, 'pending', ?)""",
-            (job_id, chat_id, message_id, source),
+            text("""INSERT INTO generation_jobs (id, chat_id, message_id, status, source)
+               VALUES (:id, :chat_id, :message_id, 'pending', :source)"""),
+            {"id": job_id, "chat_id": chat_id, "message_id": message_id, "source": source},
         )
         conn.execute(
-            """INSERT INTO generation_settings
+            text("""INSERT INTO generation_settings
                (job_id, positive_prompt, negative_prompt, base_model, loras,
                 output_folder, seed, num_images, workflow_name, extra_settings,
                 sampler, cfg_scale, scheduler, steps)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                job_id,
-                settings.get("positive_prompt", ""),
-                settings.get("negative_prompt"),
-                settings.get("base_model"),
-                loras_json,
-                settings.get("output_folder"),
-                settings.get("seed", -1),
-                settings.get("num_images", 1),
-                settings.get("workflow_name"),
-                extra_json,
-                settings.get("sampler"),
-                settings.get("cfg_scale"),
-                settings.get("scheduler"),
-                settings.get("steps"),
-            ),
+               VALUES (:job_id, :positive_prompt, :negative_prompt, :base_model, :loras,
+                :output_folder, :seed, :num_images, :workflow_name, :extra_settings,
+                :sampler, :cfg_scale, :scheduler, :steps)"""),
+            {
+                "job_id": job_id,
+                "positive_prompt": settings.get("positive_prompt", ""),
+                "negative_prompt": settings.get("negative_prompt"),
+                "base_model": settings.get("base_model"),
+                "loras": loras_json,
+                "output_folder": settings.get("output_folder"),
+                "seed": settings.get("seed", -1),
+                "num_images": settings.get("num_images", 1),
+                "workflow_name": settings.get("workflow_name"),
+                "extra_settings": extra_json,
+                "sampler": settings.get("sampler"),
+                "cfg_scale": settings.get("cfg_scale"),
+                "scheduler": settings.get("scheduler"),
+                "steps": settings.get("steps"),
+            },
         )
 
     return {
@@ -118,24 +121,24 @@ def create_job(chat_id: str | None, message_id: int | None, settings: dict,
 def get_job(job_id: str) -> dict | None:
     """Get a single generation job by ID, including its settings."""
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
-               FROM generation_jobs WHERE id = ?""",
-            (job_id,),
+        result = conn.execute(
+            text("""SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
+               FROM generation_jobs WHERE id = :id"""),
+            {"id": job_id},
         )
-        row = cursor.fetchone()
+        row = result.fetchone()
         if not row:
             return None
 
-        job = dict(row)
+        job = row_to_dict(row)
 
         # Attach settings
         sc = conn.execute(
-            """SELECT positive_prompt, negative_prompt, base_model, loras,
+            text("""SELECT positive_prompt, negative_prompt, base_model, loras,
                       output_folder, seed, num_images, workflow_name, extra_settings,
                       sampler, cfg_scale, scheduler, steps
-               FROM generation_settings WHERE job_id = ?""",
-            (job_id,),
+               FROM generation_settings WHERE job_id = :job_id"""),
+            {"job_id": job_id},
         )
         srow = sc.fetchone()
         job["settings"] = _deserialize_settings(srow) if srow else {}
@@ -152,31 +155,31 @@ def update_job_status(job_id: str, status: str, prompt_id: str | None = None) ->
     with get_db() as conn:
         if status in ("completed", "failed"):
             if prompt_id is not None:
-                cursor = conn.execute(
-                    """UPDATE generation_jobs
-                       SET status = ?, prompt_id = ?, completed_at = CURRENT_TIMESTAMP
-                       WHERE id = ?""",
-                    (status, prompt_id, job_id),
+                result = conn.execute(
+                    text("""UPDATE generation_jobs
+                       SET status = :status, prompt_id = :prompt_id, completed_at = CURRENT_TIMESTAMP
+                       WHERE id = :id"""),
+                    {"status": status, "prompt_id": prompt_id, "id": job_id},
                 )
             else:
-                cursor = conn.execute(
-                    """UPDATE generation_jobs
-                       SET status = ?, completed_at = CURRENT_TIMESTAMP
-                       WHERE id = ?""",
-                    (status, job_id),
+                result = conn.execute(
+                    text("""UPDATE generation_jobs
+                       SET status = :status, completed_at = CURRENT_TIMESTAMP
+                       WHERE id = :id"""),
+                    {"status": status, "id": job_id},
                 )
         else:
             if prompt_id is not None:
-                cursor = conn.execute(
-                    """UPDATE generation_jobs SET status = ?, prompt_id = ? WHERE id = ?""",
-                    (status, prompt_id, job_id),
+                result = conn.execute(
+                    text("UPDATE generation_jobs SET status = :status, prompt_id = :prompt_id WHERE id = :id"),
+                    {"status": status, "prompt_id": prompt_id, "id": job_id},
                 )
             else:
-                cursor = conn.execute(
-                    """UPDATE generation_jobs SET status = ? WHERE id = ?""",
-                    (status, job_id),
+                result = conn.execute(
+                    text("UPDATE generation_jobs SET status = :status WHERE id = :id"),
+                    {"status": status, "id": job_id},
                 )
-        return cursor.rowcount > 0
+        return result.rowcount > 0
 
 
 def update_job_message_id(job_id: str, message_id: int) -> bool:
@@ -186,11 +189,11 @@ def update_job_message_id(job_id: str, message_id: int) -> bool:
     Returns True if job was found and updated.
     """
     with get_db() as conn:
-        cursor = conn.execute(
-            "UPDATE generation_jobs SET message_id = ? WHERE id = ?",
-            (message_id, job_id),
+        result = conn.execute(
+            text("UPDATE generation_jobs SET message_id = :message_id WHERE id = :id"),
+            {"message_id": message_id, "id": job_id},
         )
-        return cursor.rowcount > 0
+        return result.rowcount > 0
 
 
 def _backfill_orphan_message_ids(conn, chat_id: str):
@@ -199,36 +202,38 @@ def _backfill_orphan_message_ids(conn, chat_id: str):
     fix is permanent.
     """
     orphans = conn.execute(
-        """SELECT id, created_at FROM generation_jobs
-           WHERE chat_id = ? AND message_id IS NULL AND source = 'chat'
-           ORDER BY created_at ASC""",
-        (chat_id,),
+        text("""SELECT id, created_at FROM generation_jobs
+           WHERE chat_id = :chat_id AND message_id IS NULL AND source = 'chat'
+           ORDER BY created_at ASC"""),
+        {"chat_id": chat_id},
     ).fetchall()
     if not orphans:
         return
 
     # Load assistant messages for this chat ordered by creation time
     assistants = conn.execute(
-        """SELECT id, created_at FROM messages
-           WHERE chat_id = ? AND role = 'assistant'
-           ORDER BY created_at ASC""",
-        (chat_id,),
+        text("""SELECT id, created_at FROM messages
+           WHERE chat_id = :chat_id AND role = 'assistant'
+           ORDER BY created_at ASC"""),
+        {"chat_id": chat_id},
     ).fetchall()
     if not assistants:
         return
 
     for orphan in orphans:
+        o = orphan._mapping
         # Find the latest assistant message created before (or at same time as) the job
         best = None
         for a in assistants:
-            if a["created_at"] <= orphan["created_at"]:
-                best = a
+            am = a._mapping
+            if am["created_at"] <= o["created_at"]:
+                best = am
             else:
                 break
         if best:
             conn.execute(
-                "UPDATE generation_jobs SET message_id = ? WHERE id = ?",
-                (best["id"], orphan["id"]),
+                text("UPDATE generation_jobs SET message_id = :message_id WHERE id = :id"),
+                {"message_id": best["id"], "id": o["id"]},
             )
     logger.info("Backfilled %d orphan generation jobs for chat %s", len(orphans), chat_id)
 
@@ -245,34 +250,34 @@ def get_jobs_for_chat(chat_id: str) -> list[dict]:
         # Auto-fix orphan jobs that lost their message_id
         _backfill_orphan_message_ids(conn, chat_id)
 
-        cursor = conn.execute(
-            """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
-               FROM generation_jobs WHERE chat_id = ? ORDER BY created_at ASC""",
-            (chat_id,),
+        result = conn.execute(
+            text("""SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
+               FROM generation_jobs WHERE chat_id = :chat_id ORDER BY created_at ASC"""),
+            {"chat_id": chat_id},
         )
         jobs = []
-        for row in cursor.fetchall():
-            job = dict(row)
+        for row in result.fetchall():
+            job = row_to_dict(row)
 
             # Attach settings
             sc = conn.execute(
-                """SELECT positive_prompt, negative_prompt, base_model, loras,
+                text("""SELECT positive_prompt, negative_prompt, base_model, loras,
                           output_folder, seed, num_images, workflow_name, extra_settings,
                           sampler, cfg_scale, scheduler, steps
-                   FROM generation_settings WHERE job_id = ?""",
-                (job["id"],),
+                   FROM generation_settings WHERE job_id = :job_id"""),
+                {"job_id": job["id"]},
             )
             srow = sc.fetchone()
             job["settings"] = _deserialize_settings(srow) if srow else {}
 
             # Attach images
             ic = conn.execute(
-                """SELECT id, job_id, filename, subfolder, width, height, created_at,
+                text("""SELECT id, job_id, filename, subfolder, width, height, created_at,
                           file_size, file_path
-                   FROM generated_images WHERE job_id = ? ORDER BY id ASC""",
-                (job["id"],),
+                   FROM generated_images WHERE job_id = :job_id ORDER BY id ASC"""),
+                {"job_id": job["id"]},
             )
-            job["images"] = [dict(irow) for irow in ic.fetchall()]
+            job["images"] = [row_to_dict(irow) for irow in ic.fetchall()]
 
             jobs.append(job)
         return jobs
@@ -284,8 +289,11 @@ def delete_job(job_id: str) -> bool:
     Returns True if found and deleted.
     """
     with get_db() as conn:
-        cursor = conn.execute("DELETE FROM generation_jobs WHERE id = ?", (job_id,))
-        return cursor.rowcount > 0
+        result = conn.execute(
+            text("DELETE FROM generation_jobs WHERE id = :id"),
+            {"id": job_id},
+        )
+        return result.rowcount > 0
 
 
 # ---------------------------------------------------------------------------
@@ -299,15 +307,20 @@ def add_generated_image(
     width: int | None = None,
     height: int | None = None,
 ) -> dict:
-    """Add a generated image record to a job. Returns the created image dict."""
+    """Add a generated image record to a job. Returns the created image dict.
+
+    Uses INSERT OR IGNORE so duplicate (job_id, filename) pairs are silently
+    skipped (unique index idx_gen_images_job_filename).
+    """
     with get_db() as conn:
-        cursor = conn.execute(
-            """INSERT INTO generated_images (job_id, filename, subfolder, width, height)
-               VALUES (?, ?, ?, ?, ?)""",
-            (job_id, filename, subfolder, width, height),
+        result = conn.execute(
+            text("""INSERT OR IGNORE INTO generated_images (job_id, filename, subfolder, width, height)
+               VALUES (:job_id, :filename, :subfolder, :width, :height)"""),
+            {"job_id": job_id, "filename": filename, "subfolder": subfolder,
+             "width": width, "height": height},
         )
         return {
-            "id": cursor.lastrowid,
+            "id": result.lastrowid,
             "job_id": job_id,
             "filename": filename,
             "subfolder": subfolder,
@@ -320,42 +333,45 @@ def add_generated_image(
 def get_job_images(job_id: str) -> list[dict]:
     """Get all images for a job."""
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT id, job_id, filename, subfolder, width, height, created_at
-               FROM generated_images WHERE job_id = ? ORDER BY id ASC""",
-            (job_id,),
+        result = conn.execute(
+            text("""SELECT id, job_id, filename, subfolder, width, height, created_at
+               FROM generated_images WHERE job_id = :job_id ORDER BY id ASC"""),
+            {"job_id": job_id},
         )
-        return [dict(row) for row in cursor.fetchall()]
+        return [row_to_dict(row) for row in result.fetchall()]
 
 
 def get_image(image_id: int) -> dict | None:
     """Get a single image by ID."""
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT id, job_id, filename, subfolder, width, height,
+        result = conn.execute(
+            text("""SELECT id, job_id, filename, subfolder, width, height,
                       file_size, file_path, created_at
-               FROM generated_images WHERE id = ?""",
-            (image_id,),
+               FROM generated_images WHERE id = :id"""),
+            {"id": image_id},
         )
-        row = cursor.fetchone()
-        return dict(row) if row else None
+        row = result.fetchone()
+        return row_to_dict(row) if row else None
 
 
 def delete_image(image_id: int) -> bool:
     """Delete a generated image record. Returns True if found and deleted."""
     with get_db() as conn:
-        cursor = conn.execute("DELETE FROM generated_images WHERE id = ?", (image_id,))
-        return cursor.rowcount > 0
+        result = conn.execute(
+            text("DELETE FROM generated_images WHERE id = :id"),
+            {"id": image_id},
+        )
+        return result.rowcount > 0
 
 
 def get_images_by_filename(filename: str) -> list[dict]:
     """Get all image records matching a filename."""
     with get_db() as conn:
-        cursor = conn.execute(
-            "SELECT id, job_id, filename, file_path FROM generated_images WHERE filename = ?",
-            (filename,),
+        result = conn.execute(
+            text("SELECT id, job_id, filename, file_path FROM generated_images WHERE filename = :filename"),
+            {"filename": filename},
         )
-        return [dict(row) for row in cursor.fetchall()]
+        return [row_to_dict(row) for row in result.fetchall()]
 
 
 def delete_images_by_filename(filename: str) -> int:
@@ -364,8 +380,11 @@ def delete_images_by_filename(filename: str) -> int:
     Used for cleanup when images are missing from disk.
     """
     with get_db() as conn:
-        cursor = conn.execute("DELETE FROM generated_images WHERE filename = ?", (filename,))
-        return cursor.rowcount
+        result = conn.execute(
+            text("DELETE FROM generated_images WHERE filename = :filename"),
+            {"filename": filename},
+        )
+        return result.rowcount
 
 
 # ---------------------------------------------------------------------------
@@ -384,26 +403,26 @@ def get_latest_job_settings(output_folder: str | None = None,
     """
     with get_db() as conn:
         conditions = ["gj.status = 'completed'"]
-        params = []
+        params = {}
         if output_folder:
-            conditions.append("gs.output_folder = ?")
-            params.append(output_folder)
+            conditions.append("gs.output_folder = :output_folder")
+            params["output_folder"] = output_folder
         if chat_id:
-            conditions.append("gj.chat_id = ?")
-            params.append(chat_id)
+            conditions.append("gj.chat_id = :chat_id")
+            params["chat_id"] = chat_id
 
         where = " AND ".join(conditions)
-        cursor = conn.execute(
-            f"""SELECT gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
+        result = conn.execute(
+            text(f"""SELECT gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
                       gs.output_folder, gs.seed, gs.num_images, gs.workflow_name,
                       gs.extra_settings, gs.sampler, gs.cfg_scale, gs.scheduler, gs.steps
                FROM generation_settings gs
                JOIN generation_jobs gj ON gs.job_id = gj.id
                WHERE {where}
-               ORDER BY gj.completed_at DESC LIMIT 1""",
+               ORDER BY gj.completed_at DESC LIMIT 1"""),
             params,
         )
-        row = cursor.fetchone()
+        row = result.fetchone()
         if not row:
             return None
         return _deserialize_settings(row)
@@ -422,25 +441,24 @@ def get_recent_job_prompts(count: int = 1,
     """
     with get_db() as conn:
         conditions = ["gj.status = 'completed'"]
-        params = []
+        params = {"limit": count}
         if chat_id:
-            conditions.append("gj.chat_id = ?")
-            params.append(chat_id)
+            conditions.append("gj.chat_id = :chat_id")
+            params["chat_id"] = chat_id
 
         where = " AND ".join(conditions)
-        params.append(count)
-        cursor = conn.execute(
-            f"""SELECT gj.id as job_id, gs.positive_prompt, gs.negative_prompt,
+        result = conn.execute(
+            text(f"""SELECT gj.id as job_id, gs.positive_prompt, gs.negative_prompt,
                       gs.base_model, gs.loras, gs.output_folder, gs.seed
                FROM generation_settings gs
                JOIN generation_jobs gj ON gs.job_id = gj.id
                WHERE {where}
-               ORDER BY gj.completed_at DESC LIMIT ?""",
+               ORDER BY gj.completed_at DESC LIMIT :limit"""),
             params,
         )
         results = []
-        for row in cursor.fetchall():
-            r = dict(row)
+        for row in result.fetchall():
+            r = row_to_dict(row)
             if r.get("loras"):
                 try:
                     r["loras"] = json.loads(r["loras"])
@@ -458,14 +476,14 @@ def get_job_settings(job_id: str) -> dict | None:
     Deserializes loras from JSON to list and extra_settings from JSON to dict.
     """
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT positive_prompt, negative_prompt, base_model, loras,
+        result = conn.execute(
+            text("""SELECT positive_prompt, negative_prompt, base_model, loras,
                       output_folder, seed, num_images, workflow_name, extra_settings,
                       sampler, cfg_scale, scheduler, steps
-               FROM generation_settings WHERE job_id = ?""",
-            (job_id,),
+               FROM generation_settings WHERE job_id = :job_id"""),
+            {"job_id": job_id},
         )
-        row = cursor.fetchone()
+        row = result.fetchone()
         if not row:
             return None
         return _deserialize_settings(row)
@@ -485,35 +503,35 @@ def get_generation_data_for_chat(chat_id: str) -> list[dict]:
         # Auto-fix orphan jobs that lost their message_id
         _backfill_orphan_message_ids(conn, chat_id)
 
-        cursor = conn.execute(
-            """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
-               FROM generation_jobs WHERE chat_id = ?
-               ORDER BY message_id ASC, created_at ASC""",
-            (chat_id,),
+        result = conn.execute(
+            text("""SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
+               FROM generation_jobs WHERE chat_id = :chat_id
+               ORDER BY message_id ASC, created_at ASC"""),
+            {"chat_id": chat_id},
         )
         jobs = []
-        for row in cursor.fetchall():
-            job = dict(row)
+        for row in result.fetchall():
+            job = row_to_dict(row)
 
             # Attach settings
             sc = conn.execute(
-                """SELECT positive_prompt, negative_prompt, base_model, loras,
+                text("""SELECT positive_prompt, negative_prompt, base_model, loras,
                           output_folder, seed, num_images, workflow_name, extra_settings,
                           sampler, cfg_scale, scheduler, steps
-                   FROM generation_settings WHERE job_id = ?""",
-                (job["id"],),
+                   FROM generation_settings WHERE job_id = :job_id"""),
+                {"job_id": job["id"]},
             )
             srow = sc.fetchone()
             job["settings"] = _deserialize_settings(srow) if srow else {}
 
             # Attach images
             ic = conn.execute(
-                """SELECT id, job_id, filename, subfolder, width, height, created_at,
+                text("""SELECT id, job_id, filename, subfolder, width, height, created_at,
                           file_size, file_path
-                   FROM generated_images WHERE job_id = ? ORDER BY id ASC""",
-                (job["id"],),
+                   FROM generated_images WHERE job_id = :job_id ORDER BY id ASC"""),
+                {"job_id": job["id"]},
             )
-            job["images"] = [dict(irow) for irow in ic.fetchall()]
+            job["images"] = [row_to_dict(irow) for irow in ic.fetchall()]
 
             jobs.append(job)
         return jobs
@@ -525,22 +543,22 @@ def get_active_jobs() -> list[dict]:
     Used to resume polling on app restart.
     """
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
+        result = conn.execute(
+            text("""SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
                FROM generation_jobs WHERE status IN ('pending', 'queued', 'running')
-               ORDER BY created_at ASC""",
+               ORDER BY created_at ASC"""),
         )
         jobs = []
-        for row in cursor.fetchall():
-            job = dict(row)
+        for row in result.fetchall():
+            job = row_to_dict(row)
 
             # Attach settings
             sc = conn.execute(
-                """SELECT positive_prompt, negative_prompt, base_model, loras,
+                text("""SELECT positive_prompt, negative_prompt, base_model, loras,
                           output_folder, seed, num_images, workflow_name, extra_settings,
                           sampler, cfg_scale, scheduler, steps
-                   FROM generation_settings WHERE job_id = ?""",
-                (job["id"],),
+                   FROM generation_settings WHERE job_id = :job_id"""),
+                {"job_id": job["id"]},
             )
             srow = sc.fetchone()
             job["settings"] = _deserialize_settings(srow) if srow else {}
@@ -556,14 +574,14 @@ def get_active_jobs() -> list[dict]:
 def get_image_by_filepath(file_path: str) -> dict | None:
     """Get a generated_images record by its file_path."""
     with get_db() as conn:
-        cursor = conn.execute(
-            """SELECT gi.id, gi.job_id, gi.filename, gi.subfolder,
+        result = conn.execute(
+            text("""SELECT gi.id, gi.job_id, gi.filename, gi.subfolder,
                       gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path
-               FROM generated_images gi WHERE gi.file_path = ?""",
-            (file_path,),
+               FROM generated_images gi WHERE gi.file_path = :file_path"""),
+            {"file_path": file_path},
         )
-        row = cursor.fetchone()
-        return dict(row) if row else None
+        row = result.fetchone()
+        return row_to_dict(row) if row else None
 
 
 def get_images_for_directory(path_prefix: str, offset: int = 0, limit: int = 50,
@@ -588,12 +606,12 @@ def get_images_for_directory(path_prefix: str, offset: int = 0, limit: int = 50,
 
     with get_db() as conn:
         # Count total (direct children only)
-        cursor = conn.execute(
-            """SELECT COUNT(*) as cnt FROM generated_images
-               WHERE file_path LIKE ? AND file_path NOT LIKE ?""",
-            (like_pattern, not_like_pattern),
+        result = conn.execute(
+            text("""SELECT COUNT(*) as cnt FROM generated_images
+               WHERE file_path LIKE :like AND file_path NOT LIKE :not_like"""),
+            {"like": like_pattern, "not_like": not_like_pattern},
         )
-        total_count = cursor.fetchone()["cnt"]
+        total_count = result.fetchone()._mapping["cnt"]
 
         # Fetch paginated images with their job + settings
         if sort == "name":
@@ -601,8 +619,8 @@ def get_images_for_directory(path_prefix: str, offset: int = 0, limit: int = 50,
         else:  # "date" (default)
             order_clause = "ORDER BY gj.created_at DESC"
 
-        cursor = conn.execute(
-            f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
+        result = conn.execute(
+            text(f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
                       gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path,
                       gi.metadata_status,
                       gj.status, gj.source,
@@ -612,13 +630,14 @@ def get_images_for_directory(path_prefix: str, offset: int = 0, limit: int = 50,
                FROM generated_images gi
                JOIN generation_jobs gj ON gi.job_id = gj.id
                LEFT JOIN generation_settings gs ON gi.job_id = gs.job_id
-               WHERE gi.file_path LIKE ? AND gi.file_path NOT LIKE ?
+               WHERE gi.file_path LIKE :like AND gi.file_path NOT LIKE :not_like
                {order_clause}
-               LIMIT ? OFFSET ?""",
-            (like_pattern, not_like_pattern, limit, offset),
+               LIMIT :limit OFFSET :offset"""),
+            {"like": like_pattern, "not_like": not_like_pattern,
+             "limit": limit, "offset": offset},
         )
 
-        images = _rows_to_image_list(cursor.fetchall())
+        images = _rows_to_image_list(result.fetchall())
 
         return {
             "images": images,
@@ -637,25 +656,28 @@ def search_by_keywords(keywords: list[str], offset: int = 0, limit: int = 50) ->
         return {"images": [], "total_count": 0, "has_more": False}
 
     conditions = []
-    params = []
-    for kw in keywords:
-        conditions.append("gs.positive_prompt LIKE ?")
-        params.append(f"%{kw}%")
+    params = {}
+    for i, kw in enumerate(keywords):
+        conditions.append(f"gs.positive_prompt LIKE :kw{i}")
+        params[f"kw{i}"] = f"%{kw}%"
 
     where_clause = " AND ".join(conditions)
 
     with get_db() as conn:
-        cursor = conn.execute(
-            f"""SELECT COUNT(*) as cnt
+        result = conn.execute(
+            text(f"""SELECT COUNT(*) as cnt
                 FROM generated_images gi
                 JOIN generation_settings gs ON gi.job_id = gs.job_id
-                WHERE {where_clause}""",
+                WHERE {where_clause}"""),
             params,
         )
-        total_count = cursor.fetchone()["cnt"]
+        total_count = result.fetchone()._mapping["cnt"]
 
-        cursor = conn.execute(
-            f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
+        query_params = dict(params)
+        query_params["limit"] = limit
+        query_params["offset"] = offset
+        result = conn.execute(
+            text(f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
                        gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path,
                        gj.status, gj.source,
                        gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
@@ -666,11 +688,11 @@ def search_by_keywords(keywords: list[str], offset: int = 0, limit: int = 50) ->
                 JOIN generation_settings gs ON gi.job_id = gs.job_id
                 WHERE {where_clause}
                 ORDER BY gi.created_at DESC
-                LIMIT ? OFFSET ?""",
-            params + [limit, offset],
+                LIMIT :limit OFFSET :offset"""),
+            query_params,
         )
 
-        images = _rows_to_image_list(cursor.fetchall())
+        images = _rows_to_image_list(result.fetchall())
 
         return {
             "images": images,
@@ -684,10 +706,11 @@ def get_images_by_job_ids(job_ids: list[str]) -> list[dict]:
     if not job_ids:
         return []
 
-    placeholders = ",".join(["?"] * len(job_ids))
+    placeholders = ",".join([f":p{i}" for i in range(len(job_ids))])
+    params = {f"p{i}": v for i, v in enumerate(job_ids)}
     with get_db() as conn:
-        cursor = conn.execute(
-            f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
+        result = conn.execute(
+            text(f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
                        gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path,
                        gj.status, gj.source,
                        gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
@@ -697,18 +720,18 @@ def get_images_by_job_ids(job_ids: list[str]) -> list[dict]:
                 JOIN generation_jobs gj ON gi.job_id = gj.id
                 LEFT JOIN generation_settings gs ON gi.job_id = gs.job_id
                 WHERE gi.job_id IN ({placeholders})
-                ORDER BY gi.created_at DESC""",
-            job_ids,
+                ORDER BY gi.created_at DESC"""),
+            params,
         )
 
-        return _rows_to_image_list(cursor.fetchall())
+        return _rows_to_image_list(result.fetchall())
 
 
 def _rows_to_image_list(rows) -> list[dict]:
     """Convert joined query rows to a list of image dicts with nested settings."""
     images = []
     for row in rows:
-        r = dict(row)
+        r = row_to_dict(row)
         loras = []
         if r.get("loras"):
             try:

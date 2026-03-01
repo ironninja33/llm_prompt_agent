@@ -5,6 +5,7 @@ import os
 import logging
 
 from PIL import Image
+from sqlalchemy import text
 
 from src.models.database import get_db
 
@@ -29,13 +30,13 @@ def get_cached_thumbnail(file_path: str, max_size: int = 256) -> bytes | None:
 
     # Check cache
     with get_db() as conn:
-        cursor = conn.execute(
-            "SELECT thumbnail, source_mtime FROM thumbnail_cache WHERE file_path = ?",
-            (norm_path,),
+        result = conn.execute(
+            text("SELECT thumbnail, source_mtime FROM thumbnail_cache WHERE file_path = :file_path"),
+            {"file_path": norm_path},
         )
-        row = cursor.fetchone()
-        if row and row["source_mtime"] == current_mtime:
-            return row["thumbnail"]
+        row = result.fetchone()
+        if row and row._mapping["source_mtime"] == current_mtime:
+            return row._mapping["thumbnail"]
 
     # Generate thumbnail
     try:
@@ -58,10 +59,11 @@ def get_cached_thumbnail(file_path: str, max_size: int = 256) -> bytes | None:
     try:
         with get_db() as conn:
             conn.execute(
-                """INSERT OR REPLACE INTO thumbnail_cache
+                text("""INSERT OR REPLACE INTO thumbnail_cache
                    (file_path, thumbnail, width, height, source_mtime)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (norm_path, thumb_bytes, max_size, max_size, current_mtime),
+                   VALUES (:file_path, :thumbnail, :width, :height, :source_mtime)"""),
+                {"file_path": norm_path, "thumbnail": thumb_bytes,
+                 "width": max_size, "height": max_size, "source_mtime": current_mtime},
             )
     except Exception as e:
         logger.warning("Failed to cache thumbnail for %s: %s", norm_path, e)
@@ -74,6 +76,9 @@ def invalidate(file_path: str):
     norm_path = os.path.normpath(file_path)
     try:
         with get_db() as conn:
-            conn.execute("DELETE FROM thumbnail_cache WHERE file_path = ?", (norm_path,))
+            conn.execute(
+                text("DELETE FROM thumbnail_cache WHERE file_path = :file_path"),
+                {"file_path": norm_path},
+            )
     except Exception as e:
         logger.warning("Failed to invalidate thumbnail cache for %s: %s", norm_path, e)

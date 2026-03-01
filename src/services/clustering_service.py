@@ -15,9 +15,10 @@ from datetime import datetime
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sqlalchemy import text
 
 from src.models import vector_store, settings
-from src.models.database import get_db
+from src.models.database import get_db, row_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -421,35 +422,39 @@ def generate_cross_folder_clusters(k: int | None = None):
     with get_db() as conn:
         # Clear old cross_folder data
         conn.execute(
-            "DELETE FROM cluster_assignments WHERE cluster_id IN "
-            "(SELECT id FROM clusters WHERE cluster_type = 'cross_folder')"
+            text("DELETE FROM cluster_assignments WHERE cluster_id IN "
+                 "(SELECT id FROM clusters WHERE cluster_type = 'cross_folder')")
         )
-        conn.execute("DELETE FROM clusters WHERE cluster_type = 'cross_folder'")
+        conn.execute(text("DELETE FROM clusters WHERE cluster_type = 'cross_folder'"))
 
         # Insert new clusters
         cluster_id_map: dict[int, int] = {}  # cluster_index -> db id
         for cd in cluster_data:
-            cursor = conn.execute(
-                "INSERT INTO clusters (cluster_type, folder_path, cluster_index, label, centroid, prompt_count) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                ("cross_folder", None, cd["cluster_index"], cd["label"], cd["centroid"], cd["prompt_count"]),
+            result = conn.execute(
+                text("INSERT INTO clusters (cluster_type, folder_path, cluster_index, label, centroid, prompt_count) "
+                     "VALUES (:cluster_type, :folder_path, :cluster_index, :label, :centroid, :prompt_count)"),
+                {"cluster_type": "cross_folder", "folder_path": None,
+                 "cluster_index": cd["cluster_index"], "label": cd["label"],
+                 "centroid": cd["centroid"], "prompt_count": cd["prompt_count"]},
             )
-            cluster_id_map[cd["cluster_index"]] = cursor.lastrowid
+            cluster_id_map[cd["cluster_index"]] = result.lastrowid
 
         # Insert assignments
         for ad in assignment_data:
             db_cluster_id = cluster_id_map[ad["cluster_index"]]
             conn.execute(
-                "INSERT INTO cluster_assignments (doc_id, source_type, cluster_id, distance) "
-                "VALUES (?, ?, ?, ?)",
-                (ad["doc_id"], ad["source_type"], db_cluster_id, ad["distance"]),
+                text("INSERT INTO cluster_assignments (doc_id, source_type, cluster_id, distance) "
+                     "VALUES (:doc_id, :source_type, :cluster_id, :distance)"),
+                {"doc_id": ad["doc_id"], "source_type": ad["source_type"],
+                 "cluster_id": db_cluster_id, "distance": ad["distance"]},
             )
 
         # 9. Record the run
         conn.execute(
-            "INSERT INTO clustering_runs (run_type, folder_path, total_prompts, num_clusters, started_at, completed_at) "
-            "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-            ("cross_folder", None, n_samples, effective_k, started_at),
+            text("INSERT INTO clustering_runs (run_type, folder_path, total_prompts, num_clusters, started_at, completed_at) "
+                 "VALUES (:run_type, :folder_path, :total_prompts, :num_clusters, :started_at, CURRENT_TIMESTAMP)"),
+            {"run_type": "cross_folder", "folder_path": None,
+             "total_prompts": n_samples, "num_clusters": effective_k, "started_at": started_at},
         )
 
     # 10. Emit completion
@@ -523,21 +528,21 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
         if not force:
             with get_db() as conn:
                 # Check if intra_folder clustering exists for this folder
-                cursor = conn.execute(
-                    "SELECT id FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = ? LIMIT 1",
-                    (concept_name,),
+                result = conn.execute(
+                    text("SELECT id FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = :folder_path LIMIT 1"),
+                    {"folder_path": concept_name},
                 )
-                existing_cluster = cursor.fetchone()
+                existing_cluster = result.fetchone()
 
                 if existing_cluster:
                     # Check if there are any doc_ids not yet assigned to intra clusters for this folder
-                    assigned_cursor = conn.execute(
-                        "SELECT DISTINCT ca.doc_id FROM cluster_assignments ca "
-                        "JOIN clusters c ON ca.cluster_id = c.id "
-                        "WHERE c.cluster_type = 'intra_folder' AND c.folder_path = ?",
-                        (concept_name,),
+                    assigned_result = conn.execute(
+                        text("SELECT DISTINCT ca.doc_id FROM cluster_assignments ca "
+                             "JOIN clusters c ON ca.cluster_id = c.id "
+                             "WHERE c.cluster_type = 'intra_folder' AND c.folder_path = :folder_path"),
+                        {"folder_path": concept_name},
                     )
-                    assigned_ids = {row["doc_id"] for row in assigned_cursor.fetchall()}
+                    assigned_ids = {row._mapping["doc_id"] for row in assigned_result.fetchall()}
                     unassigned = [did for did in doc_ids if did not in assigned_ids]
 
                     if not unassigned:
@@ -589,39 +594,43 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
         with get_db() as conn:
             # Clear old intra_folder clusters for this concept
             conn.execute(
-                "DELETE FROM cluster_assignments WHERE cluster_id IN "
-                "(SELECT id FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = ?)",
-                (concept_name,),
+                text("DELETE FROM cluster_assignments WHERE cluster_id IN "
+                     "(SELECT id FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = :folder_path)"),
+                {"folder_path": concept_name},
             )
             conn.execute(
-                "DELETE FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = ?",
-                (concept_name,),
+                text("DELETE FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = :folder_path"),
+                {"folder_path": concept_name},
             )
 
             # Insert clusters
             cluster_id_map: dict[int, int] = {}
             for cd in cluster_data:
-                cursor = conn.execute(
-                    "INSERT INTO clusters (cluster_type, folder_path, cluster_index, label, centroid, prompt_count) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    ("intra_folder", concept_name, cd["cluster_index"], cd["label"], cd["centroid"], cd["prompt_count"]),
+                result = conn.execute(
+                    text("INSERT INTO clusters (cluster_type, folder_path, cluster_index, label, centroid, prompt_count) "
+                         "VALUES (:cluster_type, :folder_path, :cluster_index, :label, :centroid, :prompt_count)"),
+                    {"cluster_type": "intra_folder", "folder_path": concept_name,
+                     "cluster_index": cd["cluster_index"], "label": cd["label"],
+                     "centroid": cd["centroid"], "prompt_count": cd["prompt_count"]},
                 )
-                cluster_id_map[cd["cluster_index"]] = cursor.lastrowid
+                cluster_id_map[cd["cluster_index"]] = result.lastrowid
 
             # Insert assignments
             for ad in assignment_data:
                 db_cluster_id = cluster_id_map[ad["cluster_index"]]
                 conn.execute(
-                    "INSERT INTO cluster_assignments (doc_id, source_type, cluster_id, distance) "
-                    "VALUES (?, ?, ?, ?)",
-                    (ad["doc_id"], ad["source_type"], db_cluster_id, ad["distance"]),
+                    text("INSERT INTO cluster_assignments (doc_id, source_type, cluster_id, distance) "
+                         "VALUES (:doc_id, :source_type, :cluster_id, :distance)"),
+                    {"doc_id": ad["doc_id"], "source_type": ad["source_type"],
+                     "cluster_id": db_cluster_id, "distance": ad["distance"]},
                 )
 
             # Record run
             conn.execute(
-                "INSERT INTO clustering_runs (run_type, folder_path, total_prompts, num_clusters, started_at, completed_at) "
-                "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-                ("intra_folder", concept_name, n_samples, effective_k, started_at),
+                text("INSERT INTO clustering_runs (run_type, folder_path, total_prompts, num_clusters, started_at, completed_at) "
+                     "VALUES (:run_type, :folder_path, :total_prompts, :num_clusters, :started_at, CURRENT_TIMESTAMP)"),
+                {"run_type": "intra_folder", "folder_path": concept_name,
+                 "total_prompts": n_samples, "num_clusters": effective_k, "started_at": started_at},
             )
 
     progress.message = "Intra-folder clustering complete."
@@ -660,27 +669,29 @@ def assign_new_docs_to_clusters(
 
     with get_db() as conn:
         # Cross-folder clusters
-        cursor = conn.execute(
-            "SELECT id, centroid FROM clusters WHERE cluster_type = 'cross_folder' AND centroid IS NOT NULL"
+        result = conn.execute(
+            text("SELECT id, centroid FROM clusters WHERE cluster_type = 'cross_folder' AND centroid IS NOT NULL")
         )
-        for row in cursor.fetchall():
+        for row in result.fetchall():
+            r = row._mapping
             cross_clusters.append({
-                "id": row["id"],
-                "centroid": np.array(json.loads(row["centroid"])),
+                "id": r["id"],
+                "centroid": np.array(json.loads(r["centroid"])),
             })
 
         # Intra-folder clusters — group by folder_path
-        cursor = conn.execute(
-            "SELECT id, folder_path, centroid FROM clusters "
-            "WHERE cluster_type = 'intra_folder' AND centroid IS NOT NULL"
+        result = conn.execute(
+            text("SELECT id, folder_path, centroid FROM clusters "
+                 "WHERE cluster_type = 'intra_folder' AND centroid IS NOT NULL")
         )
-        for row in cursor.fetchall():
-            folder = row["folder_path"]
+        for row in result.fetchall():
+            r = row._mapping
+            folder = r["folder_path"]
             if folder not in intra_clusters_by_folder:
                 intra_clusters_by_folder[folder] = []
             intra_clusters_by_folder[folder].append({
-                "id": row["id"],
-                "centroid": np.array(json.loads(row["centroid"])),
+                "id": r["id"],
+                "centroid": np.array(json.loads(r["centroid"])),
             })
 
     if not cross_clusters and not intra_clusters_by_folder:
@@ -703,14 +714,15 @@ def assign_new_docs_to_clusters(
 
                 if best_cross_id is not None:
                     conn.execute(
-                        "INSERT INTO cluster_assignments (doc_id, source_type, cluster_id, distance) "
-                        "VALUES (?, ?, ?, ?)",
-                        (doc_id, source_type, best_cross_id, best_cross_dist),
+                        text("INSERT INTO cluster_assignments (doc_id, source_type, cluster_id, distance) "
+                             "VALUES (:doc_id, :source_type, :cluster_id, :distance)"),
+                        {"doc_id": doc_id, "source_type": source_type,
+                         "cluster_id": best_cross_id, "distance": best_cross_dist},
                     )
                     # Update prompt_count
                     conn.execute(
-                        "UPDATE clusters SET prompt_count = prompt_count + 1 WHERE id = ?",
-                        (best_cross_id,),
+                        text("UPDATE clusters SET prompt_count = prompt_count + 1 WHERE id = :id"),
+                        {"id": best_cross_id},
                     )
 
             # Assign to nearest intra-folder cluster (if concept has clusters)
@@ -726,13 +738,14 @@ def assign_new_docs_to_clusters(
 
                 if best_intra_id is not None:
                     conn.execute(
-                        "INSERT INTO cluster_assignments (doc_id, source_type, cluster_id, distance) "
-                        "VALUES (?, ?, ?, ?)",
-                        (doc_id, source_type, best_intra_id, best_intra_dist),
+                        text("INSERT INTO cluster_assignments (doc_id, source_type, cluster_id, distance) "
+                             "VALUES (:doc_id, :source_type, :cluster_id, :distance)"),
+                        {"doc_id": doc_id, "source_type": source_type,
+                         "cluster_id": best_intra_id, "distance": best_intra_dist},
                     )
                     conn.execute(
-                        "UPDATE clusters SET prompt_count = prompt_count + 1 WHERE id = ?",
-                        (best_intra_id,),
+                        text("UPDATE clusters SET prompt_count = prompt_count + 1 WHERE id = :id"),
+                        {"id": best_intra_id},
                     )
 
 
@@ -765,55 +778,54 @@ def get_dataset_map() -> dict:
 
     with get_db() as conn:
         # Cross-folder themes
-        cursor = conn.execute(
-            "SELECT id, label, prompt_count FROM clusters WHERE cluster_type = 'cross_folder' ORDER BY id"
+        result = conn.execute(
+            text("SELECT id, label, prompt_count FROM clusters WHERE cluster_type = 'cross_folder' ORDER BY id")
         )
         cross_folder_themes = [
-            {"id": row["id"], "label": row["label"], "prompt_count": row["prompt_count"]}
-            for row in cursor.fetchall()
+            {"id": row._mapping["id"], "label": row._mapping["label"], "prompt_count": row._mapping["prompt_count"]}
+            for row in result.fetchall()
         ]
 
         # Intra-folder themes grouped by folder
-        cursor = conn.execute(
-            "SELECT id, folder_path, label, prompt_count FROM clusters "
-            "WHERE cluster_type = 'intra_folder' ORDER BY folder_path, id"
+        result = conn.execute(
+            text("SELECT id, folder_path, label, prompt_count FROM clusters "
+                 "WHERE cluster_type = 'intra_folder' ORDER BY folder_path, id")
         )
         intra_by_folder: dict[str, list[dict]] = {}
-        for row in cursor.fetchall():
-            fp = row["folder_path"]
+        for row in result.fetchall():
+            r = row._mapping
+            fp = r["folder_path"]
             if fp not in intra_by_folder:
                 intra_by_folder[fp] = []
             intra_by_folder[fp].append({
-                "id": row["id"],
-                "label": row["label"],
-                "prompt_count": row["prompt_count"],
+                "id": r["id"],
+                "label": r["label"],
+                "prompt_count": r["prompt_count"],
             })
 
         # Count docs with cross_folder assignment
-        cursor = conn.execute(
-            "SELECT COUNT(DISTINCT ca.doc_id) as cnt FROM cluster_assignments ca "
-            "JOIN clusters c ON ca.cluster_id = c.id WHERE c.cluster_type = 'cross_folder'"
+        result = conn.execute(
+            text("SELECT COUNT(DISTINCT ca.doc_id) as cnt FROM cluster_assignments ca "
+                 "JOIN clusters c ON ca.cluster_id = c.id WHERE c.cluster_type = 'cross_folder'")
         )
-        cross_assigned_count = cursor.fetchone()["cnt"]
+        cross_assigned_count = result.fetchone()._mapping["cnt"]
 
         # Count docs incrementally assigned to intra clusters
-        # (assigned to intra clusters but not from a full intra run — approximation:
-        #  docs in intra assignments that were not part of the latest intra run)
-        cursor = conn.execute(
-            "SELECT COUNT(DISTINCT ca.doc_id) as cnt FROM cluster_assignments ca "
-            "JOIN clusters c ON ca.cluster_id = c.id WHERE c.cluster_type = 'intra_folder'"
+        result = conn.execute(
+            text("SELECT COUNT(DISTINCT ca.doc_id) as cnt FROM cluster_assignments ca "
+                 "JOIN clusters c ON ca.cluster_id = c.id WHERE c.cluster_type = 'intra_folder'")
         )
-        intra_assigned_count = cursor.fetchone()["cnt"]
+        intra_assigned_count = result.fetchone()._mapping["cnt"]
 
         # Total clusters
-        cursor = conn.execute("SELECT COUNT(*) as cnt FROM clusters")
-        total_clusters = cursor.fetchone()["cnt"]
+        result = conn.execute(text("SELECT COUNT(*) as cnt FROM clusters"))
+        total_clusters = result.fetchone()._mapping["cnt"]
 
         # Total intra themes
-        cursor = conn.execute(
-            "SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'intra_folder'"
+        result = conn.execute(
+            text("SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'intra_folder'")
         )
-        total_intra = cursor.fetchone()["cnt"]
+        total_intra = result.fetchone()._mapping["cnt"]
 
     new_since_last_cross = total_chromadb_docs - cross_assigned_count
 
@@ -973,17 +985,18 @@ def _get_theme_matches(
     """
     # Load centroids from SQLite
     with get_db() as conn:
-        cursor = conn.execute(
-            "SELECT id, label, centroid FROM clusters WHERE cluster_type = ? AND centroid IS NOT NULL",
-            (cluster_type,),
+        result = conn.execute(
+            text("SELECT id, label, centroid FROM clusters WHERE cluster_type = :cluster_type AND centroid IS NOT NULL"),
+            {"cluster_type": cluster_type},
         )
         clusters = []
-        for row in cursor.fetchall():
+        for row in result.fetchall():
+            r = row._mapping
             try:
-                centroid = np.array(json.loads(row["centroid"]))
+                centroid = np.array(json.loads(r["centroid"]))
                 clusters.append({
-                    "id": row["id"],
-                    "label": row["label"],
+                    "id": r["id"],
+                    "label": r["label"],
                     "centroid": centroid,
                 })
             except (json.JSONDecodeError, ValueError):
@@ -1005,23 +1018,23 @@ def _get_theme_matches(
         # Get assigned doc IDs
         with get_db() as conn:
             if source_type:
-                cursor = conn.execute(
-                    "SELECT doc_id, source_type FROM cluster_assignments WHERE cluster_id = ? AND source_type = ? ORDER BY distance ASC LIMIT ?",
-                    (cluster_id, source_type, k_per_cluster),
+                result = conn.execute(
+                    text("SELECT doc_id, source_type FROM cluster_assignments WHERE cluster_id = :cluster_id AND source_type = :source_type ORDER BY distance ASC LIMIT :limit"),
+                    {"cluster_id": cluster_id, "source_type": source_type, "limit": k_per_cluster},
                 )
             else:
-                cursor = conn.execute(
-                    "SELECT doc_id, source_type FROM cluster_assignments WHERE cluster_id = ? ORDER BY distance ASC LIMIT ?",
-                    (cluster_id, k_per_cluster),
+                result = conn.execute(
+                    text("SELECT doc_id, source_type FROM cluster_assignments WHERE cluster_id = :cluster_id ORDER BY distance ASC LIMIT :limit"),
+                    {"cluster_id": cluster_id, "limit": k_per_cluster},
                 )
-            assignments = cursor.fetchall()
+            assignments = result.fetchall()
 
         if not assignments:
             continue
 
         # Fetch documents from ChromaDB by ID
-        doc_id_list = [a["doc_id"] for a in assignments]
-        source_type_map = {a["doc_id"]: a["source_type"] for a in assignments}
+        doc_id_list = [a._mapping["doc_id"] for a in assignments]
+        source_type_map = {a._mapping["doc_id"]: a._mapping["source_type"] for a in assignments}
 
         prompts = _fetch_docs_by_ids(doc_id_list, source_type_map)
         if prompts:
@@ -1152,41 +1165,41 @@ def get_clustering_stats() -> dict:
 
     with get_db() as conn:
         # Docs assigned to cross-folder clusters
-        cursor = conn.execute(
-            "SELECT COUNT(DISTINCT ca.doc_id) as cnt FROM cluster_assignments ca "
-            "JOIN clusters c ON ca.cluster_id = c.id WHERE c.cluster_type = 'cross_folder'"
+        result = conn.execute(
+            text("SELECT COUNT(DISTINCT ca.doc_id) as cnt FROM cluster_assignments ca "
+                 "JOIN clusters c ON ca.cluster_id = c.id WHERE c.cluster_type = 'cross_folder'")
         )
-        cross_assigned = cursor.fetchone()["cnt"]
+        cross_assigned = result.fetchone()._mapping["cnt"]
 
         # Docs assigned to intra-folder clusters
-        cursor = conn.execute(
-            "SELECT COUNT(DISTINCT ca.doc_id) as cnt FROM cluster_assignments ca "
-            "JOIN clusters c ON ca.cluster_id = c.id WHERE c.cluster_type = 'intra_folder'"
+        result = conn.execute(
+            text("SELECT COUNT(DISTINCT ca.doc_id) as cnt FROM cluster_assignments ca "
+                 "JOIN clusters c ON ca.cluster_id = c.id WHERE c.cluster_type = 'intra_folder'")
         )
-        intra_assigned = cursor.fetchone()["cnt"]
+        intra_assigned = result.fetchone()._mapping["cnt"]
 
         # Last cross-folder run
-        cursor = conn.execute(
-            "SELECT completed_at FROM clustering_runs "
-            "WHERE run_type = 'cross_folder' ORDER BY completed_at DESC LIMIT 1"
+        result = conn.execute(
+            text("SELECT completed_at FROM clustering_runs "
+                 "WHERE run_type = 'cross_folder' ORDER BY completed_at DESC LIMIT 1")
         )
-        last_run_row = cursor.fetchone()
-        last_cross_run = last_run_row["completed_at"] if last_run_row else None
+        last_run_row = result.fetchone()
+        last_cross_run = last_run_row._mapping["completed_at"] if last_run_row else None
 
         # Total clusters
-        cursor = conn.execute("SELECT COUNT(*) as cnt FROM clusters")
-        total_clusters = cursor.fetchone()["cnt"]
+        result = conn.execute(text("SELECT COUNT(*) as cnt FROM clusters"))
+        total_clusters = result.fetchone()._mapping["cnt"]
 
         # Separate cluster counts by type
-        cursor = conn.execute(
-            "SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'cross_folder'"
+        result = conn.execute(
+            text("SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'cross_folder'")
         )
-        cross_folder_clusters = cursor.fetchone()["cnt"]
+        cross_folder_clusters = result.fetchone()._mapping["cnt"]
 
-        cursor = conn.execute(
-            "SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'intra_folder'"
+        result = conn.execute(
+            text("SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'intra_folder'")
         )
-        intra_folder_clusters = cursor.fetchone()["cnt"]
+        intra_folder_clusters = result.fetchone()._mapping["cnt"]
 
     return {
         "new_since_last_cross_cluster": max(0, total_chromadb_docs - cross_assigned),
