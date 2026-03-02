@@ -78,3 +78,51 @@ def browser_generate():
     )
 
     return jsonify(job)
+
+
+@api_bp.route("/browser/reorg/suggest", methods=["GET"])
+def browser_reorg_suggest():
+    """Get proposed subfolder split based on intra-folder clusters.
+
+    Params: path (virtual path to directory).
+    """
+    path = request.args.get("path", "")
+    if not path:
+        return jsonify({"error": "path required"}), 400
+
+    result = browser_controller.suggest_subfolders(path)
+    return jsonify(result)
+
+
+@api_bp.route("/browser/reorg/recluster", methods=["POST"])
+def browser_reorg_recluster():
+    """Recluster a single folder with a custom k value.
+
+    Body: { "path": str, "k": int }
+    """
+    data = request.get_json()
+    if not data or not data.get("path"):
+        return jsonify({"error": "path required"}), 400
+
+    k = data.get("k")
+    if not isinstance(k, int) or k < 2:
+        return jsonify({"error": "k must be an integer >= 2"}), 400
+
+    result = browser_controller.recluster_folder(data["path"], k)
+    if result.get("error"):
+        return jsonify(result), 409
+    return jsonify(result)
+
+
+@api_bp.route("/browser/reorg/execute", methods=["POST"])
+def browser_reorg_execute():
+    """Move files into subfolders.
+
+    Body: { "path": str, "subfolders": [{"name": str, "image_ids": [int]}] }
+    """
+    data = request.get_json()
+    if not data or not data.get("path") or not data.get("subfolders"):
+        return jsonify({"error": "path and subfolders required"}), 400
+
+    result = browser_controller.execute_reorg(data["path"], data["subfolders"])
+    return jsonify(result)

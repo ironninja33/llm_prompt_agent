@@ -480,7 +480,9 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
     _emit_status(progress)
 
     # 1. Read settings
-    if k is None:
+    # Track whether k was explicitly passed (single-folder recluster) vs global default
+    k_explicit = k is not None
+    if not k_explicit:
         k_str = settings.get_setting("cluster_k_intra")
         k = int(k_str) if k_str else 5
 
@@ -549,8 +551,15 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
                         logger.info(f"Skipping concept '{concept_name}': all docs already assigned, no new docs")
                         continue
 
+        # Determine effective k: per-folder override during global runs only
+        if not k_explicit:
+            per_folder_k_str = settings.get_setting(f"cluster_k_intra:{concept_name}")
+            effective_base_k = int(per_folder_k_str) if per_folder_k_str else k
+        else:
+            effective_base_k = k
+
         # Run KMeans
-        effective_k = min(k, n_samples)
+        effective_k = min(effective_base_k, n_samples)
         embeddings_np = np.array(embeddings_list)
         kmeans = KMeans(n_clusters=effective_k, n_init=10, random_state=42)
         labels = kmeans.fit_predict(embeddings_np)
@@ -1091,6 +1100,56 @@ def _fetch_docs_by_ids(doc_ids: list[str], source_type_map: dict[str, str]) -> l
 # ---------------------------------------------------------------------------
 # Background thread entry point
 # ---------------------------------------------------------------------------
+
+def start_clustering_single(folder_path: str, k: int):
+    """Start single-folder recluster in a background thread.
+
+    Args:
+        folder_path: Concept/folder name to recluster.
+        k: Number of clusters.
+    """
+    global _clustering_running
+    with _clustering_lock:
+        if _clustering_running:
+            logger.warning("Clustering already running, skipping single-folder recluster")
+            return
+        _clustering_running = True
+
+    thread = threading.Thread(
+        target=_run_clustering_single,
+        args=(folder_path, k),
+        daemon=True,
+    )
+    thread.start()
+
+
+def _run_clustering_single(folder_path: str, k: int):
+    """Single-folder recluster — runs in a background thread."""
+    global _clustering_running
+    progress = ClusteringProgress()
+
+    try:
+        progress.phase = "intra_folder"
+        progress.message = f"Reclustering '{folder_path}' with k={k}..."
+        _emit_status(progress)
+
+        generate_intra_folder_clusters(folder_path=folder_path, k=k, force=True)
+
+        progress.phase = "complete"
+        progress.complete = True
+        progress.message = "Reclustering complete."
+        _emit_status(progress)
+
+    except Exception as e:
+        logger.error(f"Single-folder recluster error: {e}", exc_info=True)
+        progress.phase = "error"
+        progress.complete = True
+        progress.message = f"Reclustering failed: {str(e)}"
+        _emit_status(progress)
+
+    finally:
+        _clustering_running = False
+
 
 def start_clustering(cross_folder: bool = True, intra_folder: bool = True, force: bool = False):
     """Start clustering in a background thread.

@@ -69,6 +69,15 @@ def get_directory_contents(virtual_path: str, offset: int = 0, limit: int = 50,
         except Exception as e:
             logger.warning("Error parsing pending metadata: %s", e)
 
+    # Derive output_folder from actual file location so it's always correct
+    # even if the stored DB value is stale from a previous move/reorg.
+    for img in result["images"]:
+        if img.get("file_path"):
+            img["settings"]["output_folder"] = browser_model._output_folder_from_path(img["file_path"])
+
+    # Recursive image count (current dir + all subdirs)
+    result["recursive_image_count"] = browser_model._count_images_in_dir(abs_path)
+
     # Add previews for subdirectories
     for d in result["directories"]:
         d["previews"] = browser_model.get_directory_previews(d["path"])
@@ -200,6 +209,205 @@ def _register_dir_and_subdirs(abs_path: str) -> int:
     except OSError:
         pass
     return new_count
+
+
+def recluster_folder(virtual_path: str, k: int) -> dict:
+    """Save per-folder k and trigger single-folder recluster."""
+    from src.models import settings
+    from src.services import clustering_service
+
+    if clustering_service.is_running():
+        return {"error": "Clustering already running"}
+
+    # Extract concept name (same logic as suggest_subfolders)
+    parts = virtual_path.strip("/").split("/")
+    concept_name = parts[1] if len(parts) >= 2 else parts[0]
+
+    # Save per-folder k override
+    settings.update_setting(f"cluster_k_intra:{concept_name}", str(k))
+
+    # Start single-folder recluster
+    clustering_service.start_clustering_single(concept_name, k)
+    return {"ok": True}
+
+
+def suggest_subfolders(virtual_path: str) -> dict:
+    """Get proposed subfolder split based on intra-folder clusters."""
+    import re
+
+    from src.models.database import get_db, row_to_dict
+    from sqlalchemy import text
+
+    abs_path = _resolve_virtual_path(virtual_path)
+    if abs_path is None:
+        return {"error": "Invalid path", "subfolders": []}
+
+    # Get the concept name — matches ingestion logic where the concept is the
+    # first subdirectory within a registered root, not the root itself.
+    parts = virtual_path.strip("/").split("/")
+    concept_name = parts[1] if len(parts) >= 2 else parts[0]
+
+    # Get intra-folder clusters for this concept
+    with get_db() as conn:
+        result = conn.execute(
+            text("""SELECT c.id, c.label, c.prompt_count
+               FROM clusters c
+               WHERE c.cluster_type = 'intra_folder' AND c.folder_path = :folder_path
+               ORDER BY c.id"""),
+            {"folder_path": concept_name},
+        )
+        clusters = [dict(row._mapping) for row in result.fetchall()]
+
+    if not clusters:
+        return {"subfolders": [], "message": "No clusters found. Run clustering first."}
+
+    subfolders = []
+    with get_db() as conn:
+        for cluster in clusters:
+            # Get image IDs assigned to this cluster
+            result = conn.execute(
+                text("""SELECT ca.doc_id, gi.id as image_id, gi.job_id
+                   FROM cluster_assignments ca
+                   JOIN generated_images gi ON (ca.doc_id = gi.file_path OR ca.doc_id = 'gen_' || gi.job_id)
+                   WHERE ca.cluster_id = :cluster_id"""),
+                {"cluster_id": cluster["id"]},
+            )
+            members = [dict(row._mapping) for row in result.fetchall()]
+            image_ids = [m["image_id"] for m in members]
+
+            if not image_ids:
+                continue
+
+            # Normalize label to subfolder name
+            label = cluster["label"] or f"group_{cluster['id']}"
+            subfolder_name = _normalize_label(label)
+
+            # Get 4 sample image IDs for preview thumbnails
+            sample_ids = image_ids[:4]
+            sample_previews = []
+            for sid in sample_ids:
+                row = conn.execute(
+                    text("SELECT id, job_id FROM generated_images WHERE id = :id"),
+                    {"id": sid},
+                ).fetchone()
+                if row:
+                    r = row._mapping
+                    sample_previews.append({"image_id": r["id"], "job_id": r["job_id"]})
+
+            subfolders.append({
+                "name": subfolder_name,
+                "label": cluster["label"],
+                "image_count": len(image_ids),
+                "image_ids": image_ids,
+                "sample_previews": sample_previews,
+            })
+
+    # Find images with no cluster assignment -> 'misc' group
+    with get_db() as conn:
+        assigned_ids = set()
+        for sf in subfolders:
+            assigned_ids.update(sf["image_ids"])
+
+        result = conn.execute(
+            text("""SELECT gi.id as image_id, gi.job_id
+               FROM generated_images gi
+               LEFT JOIN generation_settings gs ON gs.job_id = gi.job_id
+               WHERE gi.file_path LIKE :path_prefix
+               AND gi.file_path IS NOT NULL"""),
+            {"path_prefix": abs_path + "%"},
+        )
+        all_in_dir = [dict(row._mapping) for row in result.fetchall()]
+        misc_images = [m for m in all_in_dir if m["image_id"] not in assigned_ids]
+
+        if misc_images:
+            misc_ids = [m["image_id"] for m in misc_images]
+            subfolders.append({
+                "name": "misc",
+                "label": "Unclustered",
+                "image_count": len(misc_ids),
+                "image_ids": misc_ids,
+                "sample_previews": [{"image_id": m["image_id"], "job_id": m["job_id"]}
+                                    for m in misc_images[:4]],
+            })
+
+    return {"subfolders": subfolders}
+
+
+def execute_reorg(virtual_path: str, subfolders: list[dict]) -> dict:
+    """Move files into subfolders and update DB/ChromaDB."""
+    from src.models.database import get_db
+    from src.models import vector_store
+    from sqlalchemy import text
+
+    abs_path = _resolve_virtual_path(virtual_path)
+    if abs_path is None:
+        return {"error": "Invalid path", "moved": 0, "errors": []}
+
+    moved = 0
+    errors = []
+
+    for subfolder in subfolders:
+        subfolder_name = subfolder["name"]
+        image_ids = subfolder.get("image_ids", [])
+        if not image_ids or not subfolder_name:
+            continue
+
+        new_dir = os.path.join(abs_path, subfolder_name)
+        os.makedirs(new_dir, exist_ok=True)
+
+        for image_id in image_ids:
+            try:
+                with get_db() as conn:
+                    row = conn.execute(
+                        text("SELECT id, file_path, job_id FROM generated_images WHERE id = :id"),
+                        {"id": image_id},
+                    ).fetchone()
+
+                    if not row:
+                        continue
+                    r = row._mapping
+                    old_path = r["file_path"]
+                    if not old_path or not os.path.isfile(old_path):
+                        continue
+
+                    filename = os.path.basename(old_path)
+                    new_path = os.path.join(new_dir, filename)
+
+                    # Move file
+                    os.rename(old_path, new_path)
+
+                    # Update DB
+                    conn.execute(
+                        text("UPDATE generated_images SET file_path = :new_path WHERE id = :id"),
+                        {"new_path": new_path, "id": image_id},
+                    )
+
+                    # Update output_folder in generation_settings
+                    new_output_folder = browser_model._output_folder_from_path(new_path)
+                    conn.execute(
+                        text("UPDATE generation_settings SET output_folder = :folder WHERE job_id = :jid"),
+                        {"folder": new_output_folder, "jid": r["job_id"]},
+                    )
+
+                moved += 1
+
+            except Exception as e:
+                errors.append({"image_id": image_id, "error": str(e)})
+                logger.error("Reorg move failed for image %s: %s", image_id, e)
+
+    return {"moved": moved, "errors": errors}
+
+
+def _normalize_label(label: str) -> str:
+    """Normalize a cluster label to a valid subfolder name."""
+    import re
+    # Remove punctuation, lowercase, replace spaces with underscores
+    name = re.sub(r'[^\w\s-]', '', label.lower())
+    name = re.sub(r'[\s-]+', '_', name).strip('_')
+    # Truncate to reasonable length
+    if len(name) > 40:
+        name = name[:40].rstrip('_')
+    return name or "group"
 
 
 def _resolve_virtual_path(virtual_path: str) -> str | None:

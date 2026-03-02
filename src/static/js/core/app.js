@@ -245,6 +245,27 @@ function monitorIngestion() {
 
 async function triggerClustering() {
     try {
+        // Check for per-folder k overrides before triggering
+        let resetOverrides = false;
+        try {
+            const checkRes = await fetch("/api/settings/custom-cluster-k");
+            const checkData = await checkRes.json();
+            if (checkData.has_overrides) {
+                const choice = confirm(
+                    "Some folders have custom cluster sizes.\n\n" +
+                    "OK = Keep custom sizes for those folders\n" +
+                    "Cancel = Reset all to the global default"
+                );
+                if (!choice) {
+                    // User chose to reset
+                    await fetch("/api/settings/reset-custom-cluster-k", { method: "POST" });
+                }
+            }
+        } catch (e) {
+            // Non-critical — proceed with clustering anyway
+            console.warn("Failed to check custom cluster k overrides:", e);
+        }
+
         const response = await fetch("/api/clustering/trigger", { method: "POST" });
         const data = await response.json();
 

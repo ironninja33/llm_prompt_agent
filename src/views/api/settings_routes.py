@@ -47,6 +47,38 @@ def list_models():
     return jsonify(models)
 
 
+# ── Per-folder cluster k endpoints ────────────────────────────────────────
+
+@api_bp.route("/settings/custom-cluster-k", methods=["GET"])
+def get_custom_cluster_k():
+    """Check if any per-folder cluster k overrides exist."""
+    from src.models.database import get_db
+    from sqlalchemy import text
+
+    with get_db() as conn:
+        result = conn.execute(
+            text("SELECT COUNT(*) as cnt FROM settings WHERE key LIKE 'cluster_k_intra:%'")
+        )
+        count = result.fetchone()._mapping["cnt"]
+
+    return jsonify({"has_overrides": count > 0})
+
+
+@api_bp.route("/settings/reset-custom-cluster-k", methods=["POST"])
+def reset_custom_cluster_k():
+    """Delete all per-folder cluster k overrides."""
+    from src.models.database import get_db
+    from sqlalchemy import text
+
+    with get_db() as conn:
+        result = conn.execute(
+            text("DELETE FROM settings WHERE key LIKE 'cluster_k_intra:%'")
+        )
+        deleted = result.rowcount
+
+    return jsonify({"ok": True, "deleted": deleted})
+
+
 # ── Data directory endpoints ─────────────────────────────────────────────
 
 @api_bp.route("/data-directories", methods=["GET"])
