@@ -264,11 +264,16 @@ def suggest_subfolders(virtual_path: str) -> dict:
     subfolders = []
     with get_db() as conn:
         for cluster in clusters:
-            # Get image IDs assigned to this cluster
+            # Get image IDs assigned to this cluster.
+            # Match on exact file_path first, fall back to basename match
+            # (handles files moved by a previous reorg where doc_id is stale).
             result = conn.execute(
                 text("""SELECT ca.doc_id, gi.id as image_id, gi.job_id
                    FROM cluster_assignments ca
-                   JOIN generated_images gi ON (ca.doc_id = gi.file_path OR ca.doc_id = 'gen_' || gi.job_id)
+                   JOIN generated_images gi ON (
+                       ca.doc_id = gi.file_path
+                       OR ca.doc_id LIKE '%/' || gi.filename
+                   )
                    WHERE ca.cluster_id = :cluster_id"""),
                 {"cluster_id": cluster["id"]},
             )
@@ -387,6 +392,13 @@ def execute_reorg(virtual_path: str, subfolders: list[dict]) -> dict:
                     conn.execute(
                         text("UPDATE generation_settings SET output_folder = :folder WHERE job_id = :jid"),
                         {"folder": new_output_folder, "jid": r["job_id"]},
+                    )
+
+                    # Update cluster_assignments doc_id so future lookups
+                    # don't rely on the filename fallback
+                    conn.execute(
+                        text("UPDATE cluster_assignments SET doc_id = :new_path WHERE doc_id = :old_path"),
+                        {"new_path": new_path, "old_path": old_path},
                     )
 
                 moved += 1
