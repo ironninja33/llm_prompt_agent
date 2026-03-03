@@ -1,0 +1,98 @@
+    <!-- ── Cleanup assistant overlay ───────────────────────────── -->
+    <div id="cleanup-overlay" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeCleanupOverlay()"></div>
+        <div class="modal-dialog cleanup-dialog">
+            <div class="modal-header">
+                <h2>Cleanup Assistant</h2>
+                <div class="cleanup-header-actions">
+                    <span id="cleanup-status-text" class="cleanup-status-text"></span>
+                    <button class="btn-icon" onclick="closeCleanupOverlay()" title="Close">×</button>
+                </div>
+            </div>
+
+            <!-- Parse progress (shown during bulk metadata parse) -->
+            <div id="cleanup-parse-bar" class="cleanup-parse-bar hidden">
+                <div class="cleanup-parse-progress">
+                    <div id="cleanup-parse-fill" class="cleanup-parse-fill"></div>
+                </div>
+                <span id="cleanup-parse-label" class="cleanup-parse-label">Parsing metadata...</span>
+            </div>
+
+            <!-- Batch scoring status (shown when a Gemini batch is active) -->
+            <div id="cleanup-batch-bar" class="cleanup-batch-bar hidden">
+                <div class="cleanup-batch-indicator"></div>
+                <span id="cleanup-batch-label" class="cleanup-batch-label">Scoring batch processing...</span>
+            </div>
+
+            <!-- Blocking overlay shown during metadata parse -->
+            <div id="cleanup-parse-blocker" class="cleanup-parse-blocker hidden">
+                <div class="cleanup-parse-blocker-content">
+                    <div class="cleanup-parse-blocker-spinner"></div>
+                    <h3 id="cleanup-parse-blocker-title">Parsing image metadata...</h3>
+                    <div class="cleanup-parse-blocker-bar">
+                        <div id="cleanup-parse-blocker-fill" class="cleanup-parse-fill"></div>
+                    </div>
+                    <p id="cleanup-parse-blocker-label" class="cleanup-parse-label">Preparing...</p>
+                </div>
+            </div>
+
+            <!-- Blocking overlay shown during image deletion -->
+            <div id="cleanup-delete-blocker" class="cleanup-parse-blocker hidden">
+                <div class="cleanup-parse-blocker-content">
+                    <div class="cleanup-parse-blocker-spinner"></div>
+                    <h3 id="cleanup-delete-blocker-title">Deleting images...</h3>
+                    <div class="cleanup-parse-blocker-bar">
+                        <div id="cleanup-delete-blocker-fill" class="cleanup-parse-fill"></div>
+                    </div>
+                    <p id="cleanup-delete-blocker-label" class="cleanup-parse-label">Preparing...</p>
+                </div>
+            </div>
+
+            <div class="cleanup-layout">
+                <!-- Sidebar: folder list -->
+                <aside id="cleanup-sidebar" class="cleanup-sidebar">
+                    <div class="cleanup-sidebar-header">
+                        <strong>Folders</strong>
+                    </div>
+                    <ul id="cleanup-folder-list" class="cleanup-folder-list">
+                        <li class="cleanup-folder-item active" data-folder="">
+                            <span class="cleanup-folder-name">All</span>
+                        </li>
+                    </ul>
+                </aside>
+
+                <!-- Main content area -->
+                <div class="cleanup-main">
+                    <!-- Wave tabs -->
+                    <div class="cleanup-wave-tabs">
+                        <button class="cleanup-wave-tab active" data-wave="1" onclick="switchCleanupWave(1)">
+                            Wave 1 <span id="cleanup-wave1-count" class="cleanup-wave-count">0</span>
+                        </button>
+                        <button class="cleanup-wave-tab" data-wave="2" onclick="switchCleanupWave(2)">
+                            Wave 2 <span id="cleanup-wave2-count" class="cleanup-wave-count">0</span>
+                        </button>
+                        <button class="cleanup-wave-tab" data-wave="3" onclick="switchCleanupWave(3)">
+                            Wave 3 <span id="cleanup-wave3-count" class="cleanup-wave-count">0</span>
+                        </button>
+                    </div>
+
+                    <!-- Scrollable content area -->
+                    <div class="cleanup-scroll-area">
+                        <!-- Wave images (faux group) -->
+                        <div id="cleanup-grid" class="cleanup-grid">
+                            <div class="loading-text">Loading...</div>
+                        </div>
+
+                        <!-- Near-duplicate groups (collapsible) -->
+                        <div id="cleanup-near-dupes" class="cleanup-near-dupes hidden"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom bar: summary -->
+            <div class="cleanup-bottom-bar">
+                <span id="cleanup-total-info">0 images in wave</span>
+                <span id="cleanup-freed-info"></span>
+            </div>
+        </div>
+    </div>

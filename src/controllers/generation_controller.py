@@ -210,6 +210,9 @@ def _embed_generated_prompt(job_id: str):
 
             logger.info(f"Assigned generated prompt {doc_id} to nearest clusters")
 
+            # Auto-slot into subfolder if enabled
+            _auto_slot_if_enabled(job_id, embedding, concept)
+
         except Exception as e:
             logger.error(
                 f"Failed to embed generated prompt for job {job_id}: {e}",
@@ -218,6 +221,138 @@ def _embed_generated_prompt(job_id: str):
 
     thread = threading.Thread(target=_do_embed, daemon=True)
     thread.start()
+
+
+def _auto_slot_if_enabled(job_id: str, embedding: list[float], concept: str):
+    """Silently move generated image to best-matching subfolder.
+
+    1. Check setting: auto_organize_output. If disabled, return.
+    2. Check if output_folder already has a subfolder (user specified). If so, return.
+    3. Find intra-folder cluster centroids for this concept.
+    4. Compute cosine similarity to each centroid.
+    5. If best > 0.7, move file to that cluster's subfolder.
+    """
+    import json
+    import os
+    import re
+
+    import numpy as np
+
+    from src.models.settings import get_setting
+    from src.models.database import get_db
+    from sqlalchemy import text
+
+    try:
+        auto_organize = get_setting("auto_organize_output")
+        if auto_organize != "true":
+            return
+
+        settings = gen_model.get_job_settings(job_id)
+        if not settings:
+            return
+
+        output_folder = settings.get("output_folder") or ""
+        # If user already specified a subfolder (contains /), skip
+        if "/" in output_folder:
+            return
+
+        # Get intra-folder cluster centroids for this concept
+        with get_db() as conn:
+            result = conn.execute(
+                text("""SELECT id, label, centroid
+                   FROM clusters
+                   WHERE cluster_type = 'intra_folder'
+                   AND folder_path = :concept
+                   AND centroid IS NOT NULL"""),
+                {"concept": concept},
+            )
+            clusters = []
+            for row in result.fetchall():
+                r = row._mapping
+                centroid = json.loads(r["centroid"]) if isinstance(r["centroid"], str) else r["centroid"]
+                if centroid:
+                    clusters.append({
+                        "id": r["id"],
+                        "label": r["label"],
+                        "centroid": np.array(centroid, dtype=np.float32),
+                    })
+
+        if not clusters:
+            return
+
+        # Compute cosine similarity
+        emb = np.array(embedding, dtype=np.float32)
+        emb_norm = emb / (np.linalg.norm(emb) or 1.0)
+
+        best_sim = -1.0
+        best_cluster = None
+        for c in clusters:
+            c_norm = c["centroid"] / (np.linalg.norm(c["centroid"]) or 1.0)
+            sim = float(np.dot(emb_norm, c_norm))
+            if sim > best_sim:
+                best_sim = sim
+                best_cluster = c
+
+        if best_sim < 0.7 or best_cluster is None:
+            return
+
+        # Normalize cluster label to subfolder name
+        label = best_cluster["label"] or f"group_{best_cluster['id']}"
+        subfolder = re.sub(r'[^\w\s-]', '', label.lower())
+        subfolder = re.sub(r'[\s-]+', '_', subfolder).strip('_')
+        if len(subfolder) > 40:
+            subfolder = subfolder[:40].rstrip('_')
+        subfolder = subfolder or "group"
+
+        # Get the generated image file path
+        images = gen_model.get_images_by_job_ids([job_id])
+        if not images:
+            return
+
+        from src.models.browser import get_root_directories
+        roots = get_root_directories()
+        if not roots:
+            return
+
+        for img in images:
+            file_path = img.get("file_path")
+            # file_path is often NULL for freshly-generated images; resolve
+            # from filename + subfolder against the output data directories.
+            if not file_path:
+                file_path = comfyui_service._resolve_image_path(
+                    img.get("filename", ""), img.get("subfolder", ""),
+                )
+            if not file_path or not os.path.isfile(file_path):
+                continue
+
+            # Compute new path
+            current_dir = os.path.dirname(file_path)
+            new_dir = os.path.join(current_dir, subfolder)
+            os.makedirs(new_dir, exist_ok=True)
+
+            filename = os.path.basename(file_path)
+            new_path = os.path.join(new_dir, filename)
+
+            # Move file
+            os.rename(file_path, new_path)
+
+            # Update DB
+            with get_db() as conn:
+                conn.execute(
+                    text("UPDATE generated_images SET file_path = :new_path WHERE id = :id"),
+                    {"new_path": new_path, "id": img["id"]},
+                )
+                new_output_folder = f"{output_folder}/{subfolder}" if output_folder else subfolder
+                conn.execute(
+                    text("UPDATE generation_settings SET output_folder = :folder WHERE job_id = :jid"),
+                    {"folder": new_output_folder, "jid": job_id},
+                )
+
+            logger.info("Auto-slotted image %s to subfolder %s (similarity=%.3f)",
+                         img["id"], subfolder, best_sim)
+
+    except Exception as e:
+        logger.warning("Auto-slot failed for job %s: %s", job_id, e, exc_info=True)
 
 
 def initialize():

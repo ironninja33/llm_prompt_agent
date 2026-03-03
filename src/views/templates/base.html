@@ -14,6 +14,7 @@
     {% include 'partials/_generation_overlay.html' %}
     {% include 'partials/_settings_modal.html' %}
     {% include 'partials/_dataset_map_modal.html' %}
+    {% include 'partials/_cleanup_overlay.html' %}
 
     <!-- ── Main layout ───────────────────────────────────────────── -->
     <div class="app-layout">
@@ -36,6 +37,9 @@
     <script src="/static/js/settings/settings.js"></script>
     <script src="/static/js/settings/settingsComfyUI.js"></script>
     <script src="/static/js/data/datasetMap.js"></script>
+    <script src="/static/js/components/multiSelect.js"></script>
+    <script src="/static/js/cleanup/cleanupSidebar.js"></script>
+    <script src="/static/js/cleanup/cleanupOverlay.js"></script>
 
     {% block extra_js %}{% endblock %}
 </body>

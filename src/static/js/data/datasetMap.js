@@ -8,7 +8,7 @@
 let _datasetMapData = null;
 let _datasetMapFoldersRendered = 0;
 const DATASET_MAP_PAGE_SIZE = 10;
-let _datasetMapObserver = null;
+let _folderScrollBound = null;   // bound scroll handler ref for cleanup
 let _globalClustersVisible = false;
 
 // ── Dataset Map Modal ───────────────────────────────────────────────────
@@ -34,11 +34,7 @@ async function openDatasetMap() {
 
 function closeDatasetMap() {
     document.getElementById("dataset-map-modal").classList.add("hidden");
-    // Clean up observer
-    if (_datasetMapObserver) {
-        _datasetMapObserver.disconnect();
-        _datasetMapObserver = null;
-    }
+    teardownFolderScroll();
 }
 
 function switchDatasetMapTab(btn) {
@@ -53,9 +49,10 @@ function switchDatasetMapTab(btn) {
     const pane = document.getElementById(tabId);
     if (pane) pane.classList.add('active');
 
-    // If switching to folders tab, set up infinite scroll
     if (tabId === 'map-folders') {
         setupFolderInfiniteScroll();
+    } else {
+        teardownFolderScroll();
     }
 }
 
@@ -186,35 +183,47 @@ function toggleAllClusters(btn) {
     });
 }
 
-function setupFolderInfiniteScroll() {
-    // Clean up previous observer
-    if (_datasetMapObserver) {
-        _datasetMapObserver.disconnect();
-        _datasetMapObserver = null;
+function teardownFolderScroll() {
+    if (_folderScrollBound) {
+        const sc = document.getElementById('dataset-map-content');
+        if (sc) sc.removeEventListener('scroll', _folderScrollBound);
+        _folderScrollBound = null;
     }
+}
 
-    const sentinel = document.getElementById('folder-scroll-sentinel');
-    if (!sentinel) return;
+function setupFolderInfiniteScroll() {
+    teardownFolderScroll();
 
-    // The scrollable container is the modal-body
     const scrollContainer = document.getElementById('dataset-map-content');
     if (!scrollContainer) return;
+    if (!_datasetMapData || !_datasetMapData.folders) return;
 
-    _datasetMapObserver = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-            if (entry.isIntersecting) {
-                renderMoreFolders();
-                // If all loaded, disconnect
-                if (_datasetMapData && _datasetMapFoldersRendered >= _datasetMapData.folders.length) {
-                    _datasetMapObserver.disconnect();
-                    _datasetMapObserver = null;
-                }
+    let ticking = false;
+    _folderScrollBound = () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+            ticking = false;
+            if (!_datasetMapData || _datasetMapFoldersRendered >= _datasetMapData.folders.length) {
+                teardownFolderScroll();
+                return;
             }
-        }
-    }, {
-        root: scrollContainer,
-        rootMargin: '100px',
-    });
+            const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+            if (scrollTop + clientHeight >= scrollHeight - 200) {
+                renderMoreFolders();
+            }
+        });
+    };
 
-    _datasetMapObserver.observe(sentinel);
+    scrollContainer.addEventListener('scroll', _folderScrollBound, { passive: true });
+
+    // Fill viewport if content is too short to scroll
+    function fillIfNeeded() {
+        if (!_datasetMapData || _datasetMapFoldersRendered >= _datasetMapData.folders.length) return;
+        if (scrollContainer.scrollHeight <= scrollContainer.clientHeight) {
+            renderMoreFolders();
+            requestAnimationFrame(fillIfNeeded);
+        }
+    }
+    requestAnimationFrame(fillIfNeeded);
 }

@@ -7,17 +7,21 @@
 /**
  * Render clickable breadcrumb from path segments.
  */
-function renderBreadcrumb(breadcrumb) {
+function renderBreadcrumb(breadcrumb, recursiveImageCount) {
     const el = $('#browser-breadcrumb');
     if (!el) return;
     el.innerHTML = '';
+
+    // Left group: path segments
+    const pathGroup = document.createElement('div');
+    pathGroup.className = 'breadcrumb-path';
 
     breadcrumb.forEach((seg, idx) => {
         if (idx > 0) {
             const sep = document.createElement('span');
             sep.className = 'breadcrumb-sep';
             sep.textContent = '›';
-            el.appendChild(sep);
+            pathGroup.appendChild(sep);
         }
 
         const link = document.createElement('span');
@@ -30,8 +34,23 @@ function renderBreadcrumb(breadcrumb) {
             link.onclick = () => navigateToPath(seg.name, null, seg.path);
         }
 
-        el.appendChild(link);
+        pathGroup.appendChild(link);
     });
+
+    el.appendChild(pathGroup);
+
+    // Right group: image count + action buttons
+    const actionsGroup = document.createElement('div');
+    actionsGroup.className = 'breadcrumb-actions';
+
+    if (recursiveImageCount > 0) {
+        const count = document.createElement('span');
+        count.className = 'breadcrumb-image-count';
+        count.textContent = `${recursiveImageCount} image${recursiveImageCount !== 1 ? 's' : ''}`;
+        actionsGroup.appendChild(count);
+    }
+
+    el.appendChild(actionsGroup);
 }
 
 /**
@@ -86,7 +105,7 @@ async function loadBrowserContents() {
 
         // Render breadcrumb
         if (result.breadcrumb) {
-            renderBreadcrumb(result.breadcrumb);
+            renderBreadcrumb(result.breadcrumb, result.recursive_image_count || 0);
         }
 
         // Render grid
@@ -97,6 +116,15 @@ async function loadBrowserContents() {
         }
 
         BrowserState.hasMore = result.has_more || false;
+
+        // Show "Suggest subfolders" button if applicable
+        if (typeof maybeShowReorgButton === 'function') {
+            maybeShowReorgButton(
+                BrowserState.currentPath,
+                result.total_image_count || 0,
+                (result.directories && result.directories.length > 0)
+            );
+        }
 
     } catch (err) {
         console.error('Failed to load browser contents:', err);

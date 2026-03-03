@@ -61,6 +61,26 @@
     border-color: var(--accent);
 }
 
+/* ── Checkbox toggle field ────────────────────────────────────── */
+.gen-toggle-field {
+    flex-direction: row !important;
+    align-items: center;
+    gap: 8px !important;
+    font-weight: 500 !important;
+    font-size: 0.82rem !important;
+    color: var(--text-muted) !important;
+    cursor: pointer;
+    user-select: none;
+}
+
+.gen-toggle-field input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
 /* ── Row layout for side-by-side fields ──────────────────────── */
 .gen-row {
     display: flex;

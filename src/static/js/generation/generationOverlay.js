@@ -29,6 +29,9 @@ let _cachedModels = null;
 let _cachedLoras = null;
 let _cachedFolders = null;
 
+// Cached auto-organize setting (loaded once from DB)
+let _autoOrganizeCached = null;
+
 // ── Open the overlay ────────────────────────────────────────────────────
 
 /**
@@ -121,6 +124,18 @@ async function openGenerationOverlay(options) {
         _previousGenSeed = null;
         _fillOverlayDefaults(prompt);
     }
+
+    // Load auto-organize setting (once, then cached)
+    if (_autoOrganizeCached === null) {
+        try {
+            const allSettings = await API.getSettings();
+            _autoOrganizeCached = allSettings.auto_organize_output === "true";
+        } catch (_) {
+            _autoOrganizeCached = false;
+        }
+    }
+    const aoCheckbox = $('#gen-auto-organize');
+    if (aoCheckbox) aoCheckbox.checked = _autoOrganizeCached;
 
     // Show/hide the "use previous seed" hint button
     _updateSeedHint();
@@ -251,6 +266,15 @@ function _initGenWidgets() {
             placeholder: 'Select a diffusion model…',
             items: [],
             value: '',
+        });
+    }
+
+    // Auto-organize toggle: persist on change
+    const aoCheckbox = $('#gen-auto-organize');
+    if (aoCheckbox) {
+        aoCheckbox.addEventListener('change', () => {
+            _autoOrganizeCached = aoCheckbox.checked;
+            API.updateSettings({ auto_organize_output: aoCheckbox.checked ? "true" : "false" });
         });
     }
 

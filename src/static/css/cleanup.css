@@ -1,0 +1,549 @@
+/* ── Cleanup Assistant ────────────────────────────────────────── */
+
+/* Full-width dialog that takes most of the viewport */
+.cleanup-dialog {
+    width: 95vw;
+    max-width: 1400px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.cleanup-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.cleanup-status-text {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* ── Parse blocker (full overlay during metadata parse) ───────── */
+.cleanup-parse-blocker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    background: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-lg);
+}
+
+/* Keep the modal header clickable above the blocker (for close button) */
+.cleanup-dialog > .modal-header {
+    position: relative;
+    z-index: 25;
+}
+
+.cleanup-parse-blocker-content {
+    text-align: center;
+    max-width: 400px;
+    padding: 40px 30px;
+}
+
+.cleanup-parse-blocker-content h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 16px 0 20px;
+}
+
+.cleanup-parse-blocker-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.cleanup-parse-blocker-spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* ── Parse progress bar ──────────────────────────────────────── */
+.cleanup-parse-bar {
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.cleanup-parse-progress {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.cleanup-parse-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.cleanup-parse-label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* ── Batch scoring status ────────────────────────────────────── */
+.cleanup-batch-bar {
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cleanup-batch-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+}
+
+.cleanup-batch-label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+/* ── Layout: sidebar + main ──────────────────────────────────── */
+.cleanup-layout {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+.cleanup-sidebar {
+    width: 220px;
+    min-width: 220px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.cleanup-sidebar-header {
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.cleanup-folder-list {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+}
+
+.cleanup-folder-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    transition: background 0.1s, color 0.1s;
+}
+
+.cleanup-folder-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
+}
+
+.cleanup-folder-item.active {
+    background: var(--accent-dim);
+    color: var(--accent);
+}
+
+.cleanup-folder-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.cleanup-folder-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: 8px;
+}
+
+.cleanup-folder-count {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.cleanup-folder-bar {
+    width: 30px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.cleanup-folder-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+}
+
+.cleanup-folder-bar-fill.low { background: var(--success); }
+.cleanup-folder-bar-fill.medium { background: #ffa726; }
+.cleanup-folder-bar-fill.high { background: var(--danger); }
+
+/* ── Main content ────────────────────────────────────────────── */
+.cleanup-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.cleanup-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* ── Wave tabs ───────────────────────────────────────────────── */
+.cleanup-wave-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 12px;
+    background: var(--bg-secondary);
+}
+
+.cleanup-wave-tab {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s, border-color 0.12s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cleanup-wave-tab:hover { color: var(--text-primary); }
+
+.cleanup-wave-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.cleanup-wave-tab.locked {
+    color: var(--text-muted);
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.cleanup-wave-count {
+    font-size: 0.7rem;
+    background: var(--border);
+    color: var(--text-secondary);
+    padding: 1px 6px;
+    border-radius: 8px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.cleanup-wave-tab.active .cleanup-wave-count {
+    background: var(--accent-dim);
+    color: var(--accent);
+}
+
+/* Small button variants */
+.btn-small {
+    font-size: 0.78rem;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.12s;
+    white-space: nowrap;
+}
+
+.btn-small:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+.btn-small.btn-danger {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+.btn-small.btn-danger:hover {
+    background: var(--danger);
+    color: #fff;
+}
+
+.btn-small.btn-danger-outline {
+    color: var(--danger);
+    border-color: rgba(239, 83, 80, 0.4);
+}
+
+.btn-small.btn-danger-outline:hover {
+    background: rgba(239, 83, 80, 0.1);
+    border-color: var(--danger);
+}
+
+.btn-small.btn-keep {
+    color: var(--success);
+    border-color: var(--success);
+}
+
+.btn-small.btn-keep:hover {
+    background: var(--success);
+    color: #fff;
+}
+
+/* ── Cleanup grid container ──────────────────────────────────── */
+.cleanup-grid {
+    padding: 12px;
+}
+
+/* Keep-score badge overlay */
+.cleanup-score-badge {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #fff;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.cleanup-score-badge.score-low { background: var(--danger); }
+.cleanup-score-badge.score-mid { background: #ffa726; }
+.cleanup-score-badge.score-high { background: var(--success); }
+
+/* ── Near-duplicate group cards ──────────────────────────────── */
+.cleanup-near-dupes {
+    padding: 0 12px 12px;
+}
+
+.cleanup-dupe-group {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+/* Wave group — distinct from dupe groups */
+.cleanup-wave-group {
+    border-color: var(--accent, #42a5f5);
+}
+
+.cleanup-wave-group .cleanup-dupe-header {
+    background: rgba(66, 165, 245, 0.06);
+    color: var(--text-primary, var(--text-secondary));
+}
+
+.cleanup-dupe-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.cleanup-dupe-header:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.cleanup-dupe-header .best-pick-badge {
+    font-size: 0.7rem;
+    color: var(--success);
+    margin-left: 8px;
+}
+
+.cleanup-dupe-body {
+    display: none;
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cleanup-dupe-body.visible {
+    display: flex;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.cleanup-dupe-folders {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.cleanup-dupe-folder-badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+
+/* ── Dupe tag states ───────────────────────────────────────── */
+.cleanup-dupe-body .gen-thumbnail-item {
+    cursor: pointer;
+    transition: box-shadow 0.15s, opacity 0.15s;
+}
+
+.cleanup-dupe-body .gen-thumbnail-item.dupe-keep {
+    box-shadow: inset 0 0 0 3px var(--success), 0 0 0 2px var(--success);
+    border-radius: var(--radius);
+}
+
+.cleanup-dupe-body .gen-thumbnail-item.dupe-keep::after {
+    content: '\2713';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    background: var(--success);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 22px;
+    text-align: center;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 3;
+}
+
+.cleanup-dupe-body .gen-thumbnail-item.dupe-delete {
+    box-shadow: inset 0 0 0 3px var(--error, #e53935), 0 0 0 2px var(--error, #e53935);
+    border-radius: var(--radius);
+}
+
+.cleanup-dupe-body .gen-thumbnail-item.dupe-delete .gen-thumbnail-img {
+    opacity: 0.5;
+}
+
+.cleanup-dupe-body .gen-thumbnail-item.dupe-delete::after {
+    content: '\2717';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    background: var(--error, #e53935);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 22px;
+    text-align: center;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* ── Dupe group action bar ─────────────────────────────────── */
+.dupe-group-actions {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.dupe-group-actions.visible {
+    display: flex;
+}
+
+.dupe-group-status {
+    flex: 1;
+    min-width: 0;
+}
+
+.dupe-group-btns {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.dupe-group-btns .btn-small {
+    font-size: 0.72rem;
+    padding: 3px 8px;
+}
+
+.dupe-group-btns .dupe-delete-tagged-btn {
+    color: var(--error, #e53935);
+    border-color: var(--error, #e53935);
+}
+
+.dupe-group-btns .dupe-delete-tagged-btn:not(:disabled):hover {
+    background: var(--error, #e53935);
+    color: #fff;
+}
+
+/* ── Bottom bar ──────────────────────────────────────────────── */
+.cleanup-bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+/* ── Header cleanup icon ─────────────────────────────────────── */
+.cleanup-header-icon {
+    position: relative;
+}
+
+.cleanup-header-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.cleanup-header-dot.status-green { background: var(--success); }
+.cleanup-header-dot.status-yellow { background: #ffa726; }
+.cleanup-header-dot.status-red { background: var(--danger); }

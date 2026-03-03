@@ -281,6 +281,44 @@ MIGRATIONS = [
         # Actual fixup is done in Python by _fix_truncated_output_folders()
         # because it needs os.path.relpath which isn't available in SQL.
     ]),
+    (12, "Cleanup assistant: quality scores, batch tracking, keep flags", [
+        """CREATE TABLE IF NOT EXISTS image_quality_scores (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            image_id    INTEGER NOT NULL UNIQUE REFERENCES generated_images(id) ON DELETE CASCADE,
+            overall     REAL NOT NULL,
+            character   REAL NOT NULL,
+            composition REAL NOT NULL,
+            artifacts   REAL NOT NULL,
+            theme       REAL NOT NULL,
+            detail      REAL NOT NULL,
+            expression  REAL NOT NULL,
+            notes       TEXT,
+            model_used  TEXT NOT NULL,
+            scored_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS scoring_batches (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id    TEXT NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'submitted'
+                        CHECK (status IN ('submitted', 'processing', 'completed', 'failed')),
+            total_images INTEGER NOT NULL,
+            scored_count INTEGER DEFAULT 0,
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS scoring_batch_items (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id    INTEGER NOT NULL REFERENCES scoring_batches(id) ON DELETE CASCADE,
+            image_id    INTEGER NOT NULL REFERENCES generated_images(id) ON DELETE CASCADE,
+            request_idx INTEGER NOT NULL
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_scoring_batch_items_batch
+           ON scoring_batch_items(batch_id)""",
+        """CREATE TABLE IF NOT EXISTS image_keep_flags (
+            image_id    INTEGER PRIMARY KEY REFERENCES generated_images(id) ON DELETE CASCADE,
+            flagged_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+    ]),
 ]
 
 
@@ -406,6 +444,7 @@ def _insert_default_settings(conn):
         "comfyui_default_cfg": "",
         "comfyui_default_scheduler": "",
         "comfyui_default_steps": "",
+        "auto_organize_output": "false",
     }
 
     for key, value in defaults.items():
