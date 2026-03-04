@@ -45,11 +45,19 @@ def update_settings(new_settings: dict):
     if new_settings:
         settings.update_settings(new_settings)
 
+    # Invalidate LLM cache if cache-relevant settings changed
+    _CACHE_KEYS = {"system_prompt", "model_agent"}
+    if _CACHE_KEYS & new_settings.keys():
+        from src.services.cache_service import cache_manager
+        cache_manager.invalidate()
+
 
 def reset_system_prompt() -> str:
     """Reset the system prompt to the default from the markdown file."""
     default_prompt = load_default_system_prompt()
     settings.update_setting("system_prompt", default_prompt)
+    from src.services.cache_service import cache_manager
+    cache_manager.invalidate()
     return default_prompt
 
 

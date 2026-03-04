@@ -10,7 +10,8 @@
                 <button class="tab active" data-tab="tab-api" onclick="switchTab(this)">API &amp; Models</button>
                 <button class="tab" data-tab="tab-prompt" onclick="switchTab(this)">System Prompt</button>
                 <button class="tab" data-tab="tab-dirs" onclick="switchTab(this)">Data Directories</button>
-                <button class="tab" data-tab="tab-params" onclick="switchTab(this)">Clustering</button>
+                <button class="tab" data-tab="tab-query" onclick="switchTab(this)">Query</button>
+                <button class="tab" data-tab="tab-clustering" onclick="switchTab(this)">Clustering</button>
                 <button class="tab" data-tab="tab-comfyui" onclick="switchTab(this)">ComfyUI</button>
                 <button class="tab" data-tab="tab-look" onclick="switchTab(this)">Look &amp; Feel</button>
             </div>
@@ -171,8 +172,8 @@
                     </div>
                 </div>
 
-                <!-- Clustering tab -->
-                <div id="tab-params" class="tab-pane hidden">
+                <!-- Query tab -->
+                <div id="tab-query" class="tab-pane hidden">
                     <h3 class="settings-group-title">Query Parameters</h3>
                     <p class="settings-group-desc">Controls how many results the agent retrieves when searching the dataset.</p>
 
@@ -196,13 +197,25 @@
                         <span class="setting-help">Number of random prompts returned by get_random tool</span>
                     </label>
 
-                    <h3 class="settings-group-title">Clustering Parameters</h3>
-                    <p class="settings-group-desc">Controls how the dataset is organized into thematic clusters. Changes take effect on next clustering run.</p>
+                    <div class="btn-row">
+                        <button class="btn-primary" onclick="saveQuerySettings()">Save</button>
+                    </div>
+                </div>
 
-                    <label>Clusters per Folder (k)
-                        <input type="number" id="setting-cluster-k-intra" min="2" max="30" step="1">
-                        <span class="setting-help">Number of theme clusters generated within each folder</span>
-                    </label>
+                <!-- Clustering tab -->
+                <div id="tab-clustering" class="tab-pane hidden">
+                    <h3 class="settings-group-title">Adaptive Clusters per Folder</h3>
+                    <p class="settings-group-desc">Cluster count is chosen automatically based on folder size. Configure the tier thresholds below.</p>
+
+                    <h4 class="settings-group-title" style="font-size:0.88rem">Training Folders</h4>
+                    <div id="adaptive-k-training" class="adaptive-k-container"></div>
+                    <button class="btn-add-tier" onclick="addAdaptiveKTier('adaptive-k-training')">+ Add tier</button>
+
+                    <h4 class="settings-group-title" style="font-size:0.88rem">Output Folders</h4>
+                    <div id="adaptive-k-output" class="adaptive-k-container"></div>
+                    <button class="btn-add-tier" onclick="addAdaptiveKTier('adaptive-k-output')">+ Add tier</button>
+
+                    <h3 class="settings-group-title">Other Clustering Parameters</h3>
 
                     <label>Cross-folder Clusters (k)
                         <input type="number" id="setting-cluster-k-cross" min="2" max="50" step="1">
@@ -220,7 +233,7 @@
                     </label>
 
                     <div class="btn-row">
-                        <button class="btn-primary" onclick="saveParamSettings()">Save Parameters</button>
+                        <button class="btn-primary" onclick="saveClusterSettings()">Save</button>
                         <button class="btn-secondary" onclick="triggerClustering()">Re-cluster Now</button>
                     </div>
                 </div>

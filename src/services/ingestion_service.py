@@ -330,6 +330,10 @@ def _run_ingestion(output_only: bool = False):
                 progress.message = f"Clustering assignment warning: {str(e)}"
                 _emit_status(progress)
 
+        # Invalidate LLM cache since dataset map may have changed
+        from src.services.cache_service import cache_manager
+        cache_manager.invalidate()
+
         # Phase 4: Complete
         progress.phase = "complete"
         progress.complete = True

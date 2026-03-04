@@ -8,7 +8,8 @@ import sqlalchemy.exc
 
 from google.genai import types
 
-from src.services import llm_service
+from src.services import llm_service, clustering_service
+from src.services.cache_service import cache_manager
 from src.models import settings, chat as chat_model
 from src.models import tool_calls as tool_calls_model
 from src.models import generation as gen_model
@@ -61,16 +62,35 @@ def run_agent_turn(
         user_msg = chat_model.add_message(chat_id, "user", user_message, metadata=msg_metadata)
         yield {"type": "user_saved", "message_id": user_msg["id"]}
 
-        # Build system prompt with agent state context appended
-        full_system_prompt = system_prompt + state_to_context(agent_state)
+        # System prompt stays static (no agent state) to enable Gemini caching
+        full_system_prompt = system_prompt
 
-        # Build conversation history (clean — no state injected into user messages)
-        messages = _build_message_history(chat_id)
+        # Build conversation history with agent state as first message pair
+        history = _build_message_history(chat_id)
+        state_prefix = [
+            {"role": "user", "content": state_to_context(agent_state)},
+            {"role": "model", "content": "Acknowledged."},
+        ]
+        messages = state_prefix + history
 
         # If attachments were provided, enhance the last user message with
         # inline image parts so the LLM can see the images.
         if attachments:
             _inject_attachments(messages, attachments)
+
+        # Try to create/reuse an explicit Gemini cache for static content
+        cache_name = None
+        try:
+            client = llm_service.get_client()
+            if client:
+                dataset_overview = clustering_service.get_dataset_overview()
+                cache_name = cache_manager.get_or_create(
+                    client, model_agent, full_system_prompt,
+                    TOOL_DECLARATIONS, dataset_overview,
+                )
+        except Exception as e:
+            logger.warning("Cache creation failed, falling back to uncached: %s", e)
+            cache_name = None
 
         # Run agent loop (may involve multiple tool calls)
         full_response = ""
@@ -82,12 +102,19 @@ def run_agent_turn(
             iteration += 1
 
             try:
-                response_stream = llm_service.generate_stream(
-                    model=model_agent,
-                    messages=messages,
-                    system_prompt=full_system_prompt,
-                    tools=TOOL_DECLARATIONS,
-                )
+                if cache_name:
+                    response_stream = llm_service.generate_stream(
+                        model=model_agent,
+                        messages=messages,
+                        cached_content=cache_name,
+                    )
+                else:
+                    response_stream = llm_service.generate_stream(
+                        model=model_agent,
+                        messages=messages,
+                        system_prompt=full_system_prompt,
+                        tools=TOOL_DECLARATIONS,
+                    )
             except Exception as e:
                 error_text = f"LLM error: {str(e)}"
                 try:
@@ -170,8 +197,9 @@ def run_agent_turn(
                         except sqlalchemy.exc.IntegrityError:
                             logger.warning("Chat %s was deleted mid-turn; stopping agent loop.", chat_id)
                             return
-                        # Refresh the system prompt with updated state
-                        full_system_prompt = system_prompt + state_to_context(agent_state)
+                        # Refresh the state prefix in messages (first two entries)
+                        messages[0] = {"role": "user", "content": state_to_context(agent_state)}
+                        messages[1] = {"role": "model", "content": "Acknowledged."}
                         logger.info(f"Agent state updated for chat {chat_id}: phase={agent_state.get('phase')}")
 
                         yield {

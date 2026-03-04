@@ -36,9 +36,16 @@ function createDirectoryThumbnail(dir) {
     info.className = 'browser-dir-info';
     const name = document.createElement('div');
     name.className = 'browser-dir-name';
-    name.textContent = dir.name;
+    name.textContent = dir.display_name || dir.name;
     name.title = dir.name;
     info.appendChild(name);
+
+    if (dir.category) {
+        const badge = document.createElement('span');
+        badge.className = 'category-badge';
+        badge.textContent = dir.category;
+        info.appendChild(badge);
+    }
 
     const meta = document.createElement('div');
     meta.className = 'browser-dir-meta';

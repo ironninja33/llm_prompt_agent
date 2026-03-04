@@ -179,7 +179,7 @@ def _embed_generated_prompt(job_id: str):
 
             # Build metadata matching the ingestion_service pattern
             output_folder = settings.get("output_folder", "") or ""
-            concept = output_folder if output_folder else "generated"
+            concept = output_folder.split("/")[0] if output_folder else "generated"
             metadata = {
                 "concept": concept,
                 "base_dir": "generated",

@@ -21,6 +21,7 @@ def create_app() -> Flask:
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
     logger = logging.getLogger(__name__)
 
     # Initialize database
@@ -33,8 +34,14 @@ def create_app() -> Flask:
     logger.info("Initializing vector store...")
     init_vector_store()
 
+    # One-time fixup: repair subfolder concepts in ChromaDB (needs vector store)
+    from src.models.settings import get_setting, update_setting
+    if get_setting("subfolder_concepts_fixed") != "true":
+        from src.models.database import fix_subfolder_concepts
+        fix_subfolder_concepts()
+        update_setting("subfolder_concepts_fixed", "true")
+
     # Initialize LLM service (if API key is set)
-    from src.models.settings import get_setting
     from src.services.llm_service import initialize as init_llm
     api_key = get_setting("gemini_api_key")
     if api_key:

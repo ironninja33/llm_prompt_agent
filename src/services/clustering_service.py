@@ -31,6 +31,67 @@ _PUNCT_SPLIT_RE = re.compile(r'[\s]*[,\.;:!?\(\)\[\]\{\}|/\\]+[\s]*')
 # Token pattern: 2+ word-characters (letters, digits, underscore).
 _TOKEN_RE = re.compile(r'\b\w\w+\b', re.UNICODE)
 
+# Domain-specific stop words for TF-IDF cluster labeling.
+# These terms are too generic or redundant to be useful as cluster labels.
+_DOMAIN_STOP_WORDS: set[str] = {
+    # ── Technical image generation terms ──
+    "photorealistic", "photorealism", "photograph", "photography",
+    "photo", "image", "picture", "render", "rendered", "rendering",
+    "realistic", "realism", "hyperrealistic",
+    "resolution", "quality", "masterpiece", "masterwork",
+    "detailed", "detail", "details", "intricate",
+    "high", "ultra", "extremely", "very", "highly", "incredibly",
+    "8k", "4k", "hd", "uhd",
+    "depicts", "depicting", "depicted", "shows", "showing", "features",
+    "wearing", "wears", "worn", "dressed",
+    "beautiful", "gorgeous", "stunning", "attractive",
+    "professional", "cinematic",
+    # ── Common prompt boilerplate ──
+    "style", "aesthetic", "look", "looking", "looks",
+    "scene", "shot", "view", "camera", "angle",
+    "background", "foreground",
+    # ── Overly generic descriptors ──
+    "woman", "women", "man", "men", "person", "people",
+    "young", "adult", "female", "male",
+    "face", "body", "hair", "eyes", "skin",
+    "standing", "sitting", "posing", "posed",
+}
+
+
+_DEFAULT_TIERS_TRAINING = [
+    {"max_prompts": 40, "k": 2},
+    {"max_prompts": 80, "k": 3},
+    {"max_prompts": 150, "k": 4},
+    {"max_prompts": None, "k": 5},
+]
+
+_DEFAULT_TIERS_OUTPUT = [
+    {"max_prompts": 30, "k": 3},
+    {"max_prompts": 100, "k": 7},
+    {"max_prompts": 300, "k": 10},
+    {"max_prompts": None, "k": 15},
+]
+
+
+def _compute_adaptive_k(n_prompts: int, source_type: str) -> int:
+    """Compute default cluster count based on folder size and type.
+
+    Reads configurable tier lists from settings. Training folders are narrow
+    (one subject), need fewer clusters. Output folders are diverse (many
+    subjects/styles), need more.
+    """
+    key = "adaptive_k_output" if source_type == "output" else "adaptive_k_training"
+    tiers_json = settings.get_setting(key)
+    if tiers_json:
+        tiers = json.loads(tiers_json)
+    else:
+        tiers = _DEFAULT_TIERS_OUTPUT if source_type == "output" else _DEFAULT_TIERS_TRAINING
+
+    for tier in tiers:
+        if tier["max_prompts"] is None or n_prompts < tier["max_prompts"]:
+            return tier["k"]
+    return tiers[-1]["k"]
+
 
 def _make_punctuation_aware_analyzer(
     ngram_range: tuple[int, int],
@@ -260,13 +321,16 @@ def _generate_unique_cluster_labels(
     tfidf_matrix = None
     feature_names = None
 
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+    combined_stop_words = ENGLISH_STOP_WORDS | _DOMAIN_STOP_WORDS
+
     for ngram_range, min_df, max_feats in [
         ((2, 3), 2, 3000),
         ((2, 3), 1, 3000),
         ((1, 3), 1, 2000),
     ]:
         try:
-            analyzer = _make_punctuation_aware_analyzer(ngram_range)
+            analyzer = _make_punctuation_aware_analyzer(ngram_range, stop_words=combined_stop_words)
             v = TfidfVectorizer(
                 analyzer=analyzer,
                 max_features=max_feats,
@@ -331,6 +395,55 @@ def _generate_unique_cluster_labels(
             labels[ci] = "unknown"
 
     return labels
+
+
+def _generate_folder_summaries(
+    folder_texts: dict[str, list[str]],
+    top_n: int = 3,
+) -> dict[str, str]:
+    """Generate summary terms for each folder using TF-IDF.
+
+    Each folder's prompts are concatenated into one "document", then TF-IDF
+    is computed across all folder-documents.  The top terms per folder are
+    its summary — what distinguishes it from other folders.
+
+    Args:
+        folder_texts: Mapping of folder_name -> list of prompt texts.
+        top_n: Number of summary terms per folder.
+
+    Returns:
+        Mapping of folder_name -> comma-separated summary string.
+    """
+    if not folder_texts:
+        return {}
+
+    folder_names = sorted(folder_texts.keys())
+    corpus = [" ".join(folder_texts[name]) for name in folder_names]
+
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+    combined_stops = ENGLISH_STOP_WORDS | _DOMAIN_STOP_WORDS
+    analyzer = _make_punctuation_aware_analyzer((2, 3), stop_words=combined_stops)
+
+    try:
+        vectorizer = TfidfVectorizer(
+            analyzer=analyzer,
+            max_features=2000,
+            min_df=1,
+            max_df=0.85,
+        )
+        tfidf_matrix = vectorizer.fit_transform(corpus)
+        feature_names = vectorizer.get_feature_names_out()
+    except ValueError:
+        return {name: "" for name in folder_names}
+
+    summaries = {}
+    for i, name in enumerate(folder_names):
+        row = tfidf_matrix[i].toarray().flatten()
+        top_indices = row.argsort()[::-1][:top_n]
+        terms = [feature_names[j] for j in top_indices if row[j] > 0]
+        summaries[name] = ", ".join(terms) if terms else ""
+
+    return summaries
 
 
 # ---------------------------------------------------------------------------
@@ -473,18 +586,15 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
     Args:
         folder_path: If provided, only cluster this specific concept. Otherwise
                      cluster all concepts meeting minimum size.
-        k: Number of clusters per folder. Falls back to ``cluster_k_intra`` setting.
+        k: Number of clusters per folder. Falls back to adaptive tiers from settings.
         force: If True, skip size and freshness checks.
     """
     progress = ClusteringProgress(phase="intra_folder", message="Starting intra-folder clustering...")
     _emit_status(progress)
 
     # 1. Read settings
-    # Track whether k was explicitly passed (single-folder recluster) vs global default
+    # Track whether k was explicitly passed (single-folder recluster) vs adaptive default
     k_explicit = k is not None
-    if not k_explicit:
-        k_str = settings.get_setting("cluster_k_intra")
-        k = int(k_str) if k_str else 5
 
     min_size_str = settings.get_setting("cluster_min_folder_size")
     min_folder_size = int(min_size_str) if min_size_str else 20
@@ -551,10 +661,15 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
                         logger.info(f"Skipping concept '{concept_name}': all docs already assigned, no new docs")
                         continue
 
-        # Determine effective k: per-folder override during global runs only
+        # Determine effective k: explicit k param > per-folder override > adaptive tiers
         if not k_explicit:
             per_folder_k_str = settings.get_setting(f"cluster_k_intra:{concept_name}")
-            effective_base_k = int(per_folder_k_str) if per_folder_k_str else k
+            if per_folder_k_str:
+                effective_base_k = int(per_folder_k_str)
+            else:
+                source_types = {m.get("dir_type", "training") for m in metadatas if m}
+                folder_source = "output" if "output" in source_types else "training"
+                effective_base_k = _compute_adaptive_k(n_samples, folder_source)
         else:
             effective_base_k = k
 
@@ -774,16 +889,14 @@ def get_dataset_map() -> dict:
 
     # Get concept info from ChromaDB
     concept_list = vector_store.list_concepts()
-    # Aggregate by concept
-    folder_info: dict[str, dict] = {}
+    # Aggregate by (concept, source_type) so training and output show separately
+    folder_info: dict[tuple[str, str], dict] = {}
     for c in concept_list:
         name = c["concept"]
-        if name not in folder_info:
-            folder_info[name] = {"name": name, "source_type": c["source_type"], "total_prompts": 0}
-        folder_info[name]["total_prompts"] += c["count"]
-        # Keep most specific source_type (if mixed, use "training")
-        if c["source_type"] == "training":
-            folder_info[name]["source_type"] = "training"
+        key = (name, c["source_type"])
+        if key not in folder_info:
+            folder_info[key] = {"name": name, "source_type": c["source_type"], "total_prompts": 0}
+        folder_info[key]["total_prompts"] += c["count"]
 
     with get_db() as conn:
         # Cross-folder themes
@@ -791,7 +904,7 @@ def get_dataset_map() -> dict:
             text("SELECT id, label, prompt_count FROM clusters WHERE cluster_type = 'cross_folder' ORDER BY id")
         )
         cross_folder_themes = [
-            {"id": row._mapping["id"], "label": row._mapping["label"], "prompt_count": row._mapping["prompt_count"]}
+            {"label": row._mapping["label"], "prompt_count": row._mapping["prompt_count"]}
             for row in result.fetchall()
         ]
 
@@ -807,7 +920,6 @@ def get_dataset_map() -> dict:
             if fp not in intra_by_folder:
                 intra_by_folder[fp] = []
             intra_by_folder[fp].append({
-                "id": r["id"],
                 "label": r["label"],
                 "prompt_count": r["prompt_count"],
             })
@@ -836,16 +948,26 @@ def get_dataset_map() -> dict:
         )
         total_intra = result.fetchone()._mapping["cnt"]
 
+        # Folder summaries
+        result = conn.execute(text("SELECT folder_path, summary FROM folder_summaries"))
+        summaries = {r._mapping["folder_path"]: r._mapping["summary"] for r in result.fetchall()}
+
     new_since_last_cross = total_chromadb_docs - cross_assigned_count
 
     # Build folders list
+    from src.models.browser import parse_concept_name
+
     folders = []
-    for name, info in sorted(folder_info.items()):
+    for (name, source_type), info in sorted(folder_info.items()):
+        parsed = parse_concept_name(name)
         folder_entry = {
             "name": info["name"],
+            "category": parsed["category"],
+            "display_name": parsed["display_name"],
             "source_type": info["source_type"],
             "total_prompts": info["total_prompts"],
             "intra_themes": intra_by_folder.get(name, []),
+            "summary": summaries.get(name, ""),
         }
         folders.append(folder_entry)
 
@@ -860,6 +982,95 @@ def get_dataset_map() -> dict:
             "assigned_to_existing_intra": intra_assigned_count,
         },
     }
+
+
+def get_dataset_overview() -> dict:
+    """Lightweight dataset overview — no intra-folder cluster details.
+
+    Returns folder names, source types, prompt counts, per-folder summary
+    terms, cross-folder themes, and aggregate stats.  Used for LLM cache
+    pre-loading and the ``get_dataset_overview`` agent tool.
+    """
+    counts = vector_store.get_collection_counts()
+    total_docs = counts.get("training", 0) + counts.get("generated", 0)
+
+    concept_list = vector_store.list_concepts()
+    folder_info: dict[tuple[str, str], dict] = {}
+    for c in concept_list:
+        name = c["concept"]
+        key = (name, c["source_type"])
+        if key not in folder_info:
+            folder_info[key] = {"name": name, "source_type": c["source_type"], "total_prompts": 0}
+        folder_info[key]["total_prompts"] += c["count"]
+
+    with get_db() as conn:
+        # Cross-folder themes (no id)
+        result = conn.execute(
+            text("SELECT label, prompt_count FROM clusters "
+                 "WHERE cluster_type = 'cross_folder' ORDER BY prompt_count DESC")
+        )
+        cross_themes = [
+            {"label": r._mapping["label"], "prompt_count": r._mapping["prompt_count"]}
+            for r in result.fetchall()
+        ]
+
+        # Folder summaries
+        result = conn.execute(text("SELECT folder_path, summary FROM folder_summaries"))
+        summaries = {r._mapping["folder_path"]: r._mapping["summary"] for r in result.fetchall()}
+
+        # Stats
+        result = conn.execute(
+            text("SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'intra_folder'")
+        )
+        total_intra = result.fetchone()._mapping["cnt"]
+
+    folders = []
+    from src.models.browser import parse_concept_name
+
+    for (name, source_type), info in sorted(folder_info.items()):
+        parsed = parse_concept_name(name)
+        folders.append({
+            "category": parsed["category"],
+            "display_name": parsed["display_name"],
+            "source_type": info["source_type"],
+            "total_prompts": info["total_prompts"],
+            "summary": summaries.get(name, ""),
+        })
+
+    return {
+        "cross_folder_themes": cross_themes,
+        "folders": folders,
+        "stats": {
+            "total_prompts": total_docs,
+            "total_cross_themes": len(cross_themes),
+            "total_intra_themes": total_intra,
+        },
+    }
+
+
+def get_folder_themes(folder_name: str) -> dict:
+    """Get intra-folder cluster themes for a specific folder.
+
+    Args:
+        folder_name: Concept/folder name.
+
+    Returns:
+        Dict with ``folder`` name and ``themes`` list of
+        ``{label, prompt_count}`` dicts.
+    """
+    with get_db() as conn:
+        result = conn.execute(
+            text("SELECT label, prompt_count FROM clusters "
+                 "WHERE cluster_type = 'intra_folder' AND folder_path = :fp "
+                 "ORDER BY prompt_count DESC"),
+            {"fp": folder_name},
+        )
+        themes = [
+            {"label": r._mapping["label"], "prompt_count": r._mapping["prompt_count"]}
+            for r in result.fetchall()
+        ]
+
+    return {"folder": folder_name, "themes": themes}
 
 
 # ---------------------------------------------------------------------------
@@ -1049,7 +1260,6 @@ def _get_theme_matches(
         if prompts:
             theme_matches.append({
                 "theme_label": cluster_label,
-                "theme_id": cluster_id,
                 "prompts": prompts,
             })
 
@@ -1140,6 +1350,10 @@ def _run_clustering_single(folder_path: str, k: int):
         progress.message = "Reclustering complete."
         _emit_status(progress)
 
+        # Invalidate LLM cache since dataset map changed
+        from src.services.cache_service import cache_manager
+        cache_manager.invalidate()
+
     except Exception as e:
         logger.error(f"Single-folder recluster error: {e}", exc_info=True)
         progress.phase = "error"
@@ -1192,10 +1406,41 @@ def _run_clustering(cross_folder: bool, intra_folder: bool, force: bool):
             _emit_status(progress)
             generate_intra_folder_clusters(force=force)
 
+        # Generate folder-level summary terms for the two-tier dataset map
+        progress.phase = "folder_summaries"
+        progress.message = "Generating folder summary terms..."
+        _emit_status(progress)
+        try:
+            all_concepts = _get_all_concepts()
+            folder_texts: dict[str, list[str]] = {}
+            for concept_info in all_concepts:
+                concept_name = concept_info["concept"]
+                _, _, documents, _ = _fetch_embeddings_by_concept(concept_name)
+                if documents:
+                    folder_texts[concept_name] = documents
+
+            summaries = _generate_folder_summaries(folder_texts)
+            with get_db() as conn:
+                conn.execute(text("DELETE FROM folder_summaries"))
+                for folder, summary in summaries.items():
+                    conn.execute(
+                        text("INSERT INTO folder_summaries (folder_path, summary) "
+                             "VALUES (:fp, :s)"),
+                        {"fp": folder, "s": summary},
+                    )
+            progress.message = f"Generated summaries for {len(summaries)} folders."
+            _emit_status(progress)
+        except Exception as e:
+            logger.warning("Folder summary generation failed: %s", e, exc_info=True)
+
         progress.phase = "complete"
         progress.complete = True
         progress.message = "Clustering complete."
         _emit_status(progress)
+
+        # Invalidate LLM cache since dataset map changed
+        from src.services.cache_service import cache_manager
+        cache_manager.invalidate()
 
     except Exception as e:
         logger.error(f"Clustering error: {e}", exc_info=True)

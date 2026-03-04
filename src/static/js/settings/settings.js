@@ -27,15 +27,31 @@ async function openSettings() {
     $('#setting-rate-limit').value = settings.gemini_rate_limit || '3000';
     $('#setting-system-prompt').value = settings.system_prompt || '';
 
-    // Load parameter settings
+    // Load query parameter settings
     $('#setting-query-k-similar').value = settings.query_k_similar || '10';
     $('#setting-query-k-theme-intra').value = settings.query_k_theme_intra || '5';
     $('#setting-query-k-theme-cross').value = settings.query_k_theme_cross || '5';
     $('#setting-query-k-random').value = settings.query_k_random || '3';
-    $('#setting-cluster-k-intra').value = settings.cluster_k_intra || '5';
+
+    // Load clustering settings
     $('#setting-cluster-k-cross').value = settings.cluster_k_cross || '15';
     $('#setting-cluster-min-folder-size').value = settings.cluster_min_folder_size || '20';
     $('#setting-cluster-label-terms').value = settings.cluster_label_terms || '3';
+
+    // Load adaptive K tier tables
+    const defaultTraining = [{"max_prompts": 40, "k": 2}, {"max_prompts": 80, "k": 3}, {"max_prompts": 150, "k": 4}, {"max_prompts": null, "k": 5}];
+    const defaultOutput = [{"max_prompts": 30, "k": 3}, {"max_prompts": 100, "k": 7}, {"max_prompts": 300, "k": 10}, {"max_prompts": null, "k": 15}];
+
+    let trainingTiers = defaultTraining;
+    let outputTiers = defaultOutput;
+    try {
+        if (settings.adaptive_k_training) trainingTiers = JSON.parse(settings.adaptive_k_training);
+        if (settings.adaptive_k_output) outputTiers = JSON.parse(settings.adaptive_k_output);
+    } catch (e) {
+        console.warn('Failed to parse adaptive K tiers:', e);
+    }
+    renderAdaptiveKTable('adaptive-k-training', trainingTiers);
+    renderAdaptiveKTable('adaptive-k-output', outputTiers);
 
     // Load directories
     await loadDirectories();
@@ -107,13 +123,32 @@ async function resetSystemPrompt() {
     }
 }
 
-async function saveParamSettings() {
-    const settings = {
+async function saveQuerySettings() {
+    const data = {
         query_k_similar: $('#setting-query-k-similar').value,
         query_k_theme_intra: $('#setting-query-k-theme-intra').value,
         query_k_theme_cross: $('#setting-query-k-theme-cross').value,
         query_k_random: $('#setting-query-k-random').value,
-        cluster_k_intra: $('#setting-cluster-k-intra').value,
+    };
+
+    const response = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+
+    if (response.ok) {
+        alert('Query settings saved');
+    }
+}
+
+async function saveClusterSettings() {
+    const trainingTiers = collectAdaptiveKTiers('adaptive-k-training');
+    const outputTiers = collectAdaptiveKTiers('adaptive-k-output');
+
+    const data = {
+        adaptive_k_training: JSON.stringify(trainingTiers),
+        adaptive_k_output: JSON.stringify(outputTiers),
         cluster_k_cross: $('#setting-cluster-k-cross').value,
         cluster_min_folder_size: $('#setting-cluster-min-folder-size').value,
         cluster_label_terms: $('#setting-cluster-label-terms').value,
@@ -122,12 +157,88 @@ async function saveParamSettings() {
     const response = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
+        body: JSON.stringify(data),
     });
 
     if (response.ok) {
-        alert('Parameters saved successfully');
+        alert('Clustering settings saved');
     }
+}
+
+// ── Adaptive K Tier Tables ───────────────────────────────────────────────
+
+function renderAdaptiveKTable(containerId, tiers) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    let html = '<table class="adaptive-k-table"><thead><tr>'
+        + '<th>Max Prompts</th><th>Clusters (k)</th><th></th>'
+        + '</tr></thead><tbody>';
+
+    for (let i = 0; i < tiers.length; i++) {
+        const tier = tiers[i];
+        const isCatchAll = tier.max_prompts === null;
+        html += '<tr>';
+        if (isCatchAll) {
+            html += `<td><span class="adaptive-k-infinity">\u221e</span></td>`;
+        } else {
+            html += `<td><input type="number" class="adaptive-k-input" value="${tier.max_prompts}" min="1" step="1"></td>`;
+        }
+        html += `<td><input type="number" class="adaptive-k-input" value="${tier.k}" min="1" max="50" step="1"></td>`;
+        if (isCatchAll) {
+            html += '<td></td>';
+        } else {
+            html += `<td><button class="btn-remove-tier" onclick="removeAdaptiveKTier('${containerId}', ${i})" title="Remove tier">\u00d7</button></td>`;
+        }
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function addAdaptiveKTier(containerId) {
+    const tiers = collectAdaptiveKTiers(containerId);
+    // Insert before the catch-all (last entry)
+    const catchAll = tiers[tiers.length - 1];
+    const prevMax = tiers.length >= 2 ? tiers[tiers.length - 2].max_prompts : 0;
+    const newMax = prevMax ? prevMax + 50 : 50;
+    const newK = catchAll.k > 1 ? catchAll.k - 1 : 1;
+    tiers.splice(tiers.length - 1, 0, { max_prompts: newMax, k: newK });
+    renderAdaptiveKTable(containerId, tiers);
+}
+
+function removeAdaptiveKTier(containerId, index) {
+    const tiers = collectAdaptiveKTiers(containerId);
+    // Don't allow removing the catch-all
+    if (tiers[index].max_prompts === null) return;
+    tiers.splice(index, 1);
+    renderAdaptiveKTable(containerId, tiers);
+}
+
+function collectAdaptiveKTiers(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return [];
+
+    const rows = container.querySelectorAll('tbody tr');
+    const tiers = [];
+
+    rows.forEach(row => {
+        const inputs = row.querySelectorAll('input.adaptive-k-input');
+        const infinitySpan = row.querySelector('.adaptive-k-infinity');
+
+        if (infinitySpan) {
+            // Catch-all row: only k input
+            const k = parseInt(inputs[0].value, 10) || 5;
+            tiers.push({ max_prompts: null, k });
+        } else if (inputs.length === 2) {
+            const maxPrompts = parseInt(inputs[0].value, 10) || 50;
+            const k = parseInt(inputs[1].value, 10) || 3;
+            tiers.push({ max_prompts: maxPrompts, k });
+        }
+    });
+
+    return tiers;
 }
 
 // ── Data Directories ────────────────────────────────────────────────────

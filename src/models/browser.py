@@ -17,6 +17,18 @@ logger = logging.getLogger(__name__)
 IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 
 
+def parse_concept_name(raw_name: str) -> dict:
+    """Parse 'category__display_name' folder naming convention.
+
+    Returns {"raw": raw_name, "category": category_or_None, "display_name": name_part}.
+    Folders without a ``__`` delimiter return category=None and display_name=raw_name.
+    """
+    if "__" in raw_name:
+        category, _, display_name = raw_name.partition("__")
+        return {"raw": raw_name, "category": category, "display_name": display_name}
+    return {"raw": raw_name, "category": None, "display_name": raw_name}
+
+
 def _output_folder_from_path(filepath: str) -> str:
     """Compute output_folder relative to the configured output root directory.
 
@@ -75,10 +87,13 @@ def get_directory_contents(abs_dir_path: str, offset: int = 0, limit: int = 50,
             full_path = os.path.join(abs_dir_path, entry)
             if os.path.isdir(full_path):
                 image_count = _count_images_in_dir(full_path)
+                parsed = parse_concept_name(entry)
                 directories.append({
                     "name": entry,
                     "path": full_path,
                     "image_count": image_count,
+                    "category": parsed["category"],
+                    "display_name": parsed["display_name"],
                 })
 
     # Sort directories

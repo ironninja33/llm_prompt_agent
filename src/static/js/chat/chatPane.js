@@ -608,14 +608,9 @@ async function submitEditedMessage(messageId) {
 
         if (currentChatId === sendChatId) {
             // Reload messages to show cleaned-up history, then stream
+            // (the new user message is already persisted by the backend
+            //  before streaming begins, so loadMessages picks it up)
             await loadMessages(sendChatId);
-
-            // Add the new user message
-            const container = $('#messages');
-            const userDiv = document.createElement('div');
-            userDiv.className = 'message user';
-            userDiv.textContent = content;
-            container.appendChild(userDiv);
 
             addStreamingMessage();
         }

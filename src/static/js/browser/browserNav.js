@@ -26,7 +26,19 @@ function renderBreadcrumb(breadcrumb, recursiveImageCount) {
 
         const link = document.createElement('span');
         link.className = 'breadcrumb-segment';
-        link.textContent = seg.name;
+
+        if (seg.category) {
+            const badge = document.createElement('span');
+            badge.className = 'category-badge';
+            badge.textContent = seg.category;
+            link.appendChild(badge);
+            link.appendChild(document.createTextNode(' '));
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = seg.display_name || seg.name;
+            link.appendChild(nameSpan);
+        } else {
+            link.textContent = seg.display_name || seg.name;
+        }
 
         if (idx === breadcrumb.length - 1) {
             link.classList.add('active');

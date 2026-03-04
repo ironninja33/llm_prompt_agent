@@ -319,6 +319,22 @@ MIGRATIONS = [
             flagged_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
     ]),
+    (13, "Folder summaries for two-tier dataset map", [
+        """CREATE TABLE IF NOT EXISTS folder_summaries (
+            folder_path TEXT PRIMARY KEY,
+            summary     TEXT NOT NULL,
+            updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+    ]),
+    (14, "Fix subfolder concepts in ChromaDB vector store", [
+        # Remove cluster assignments for subfolder clusters
+        """DELETE FROM cluster_assignments WHERE cluster_id IN (
+            SELECT id FROM clusters WHERE folder_path LIKE '%/%'
+        )""",
+        # Remove the subfolder cluster entries themselves
+        """DELETE FROM clusters WHERE folder_path LIKE '%/%'""",
+        # ChromaDB metadata fixup is done in Python by _fix_subfolder_concepts()
+    ]),
 ]
 
 
@@ -408,6 +424,145 @@ def _fix_truncated_output_folders(conn):
         logger.info(f"Fixed {fixed} truncated output_folder values")
 
 
+def fix_subfolder_concepts():
+    """Fix ChromaDB documents where concept is a subfolder instead of a base concept.
+
+    Two sources of bad concepts:
+    1. Slash paths (e.g. ``"character/scenes"``) — generation_controller used
+       the full output_folder as the concept.
+    2. Bare subfolder names (e.g. ``"scenes"``) — files in user-created
+       subfolders at the output root level got the subfolder as the concept.
+
+    For slash paths, the fix is ``concept.split("/")[0]``.
+    For bare subfolders, we determine the correct parent from:
+    - File-path IDs: derive parent from the path relative to the output root.
+    - ``gen_*`` IDs: look up ``output_folder`` in ``generation_settings``.
+
+    Also cleans up orphan cluster/assignment rows in SQLite.
+    """
+    try:
+        from src.models import vector_store
+        if vector_store._generated_collection is None:
+            return
+
+        col = vector_store._generated_collection
+        count = col.count()
+        if count == 0:
+            return
+
+        # Build set of valid base-level concepts from registered output dirs
+        valid_base_concepts = set()
+        output_roots = []
+        with get_db() as conn:
+            result = conn.execute(
+                text("SELECT path FROM data_directories WHERE dir_type = 'output' AND active = 1")
+            )
+            output_roots = [os.path.normpath(row[0]) for row in result.fetchall()]
+
+        for root in output_roots:
+            if os.path.isdir(root):
+                for name in os.listdir(root):
+                    if os.path.isdir(os.path.join(root, name)):
+                        valid_base_concepts.add(name)
+
+        if not valid_base_concepts:
+            return
+
+        # Build a gen_job_id -> output_folder lookup for gen_* docs
+        gen_output_folders = {}
+        with get_db() as conn:
+            result = conn.execute(text("SELECT job_id, output_folder FROM generation_settings"))
+            for row in result.fetchall():
+                gen_output_folders[row[0]] = row[1] or ""
+
+        # Scan all generated docs for bad concepts
+        all_data = col.get(limit=count, include=["metadatas"])
+        fix_ids = []
+        fix_metadatas = []
+        delete_ids = []
+        fixed_concepts = set()
+
+        for doc_id, meta in zip(all_data["ids"], all_data["metadatas"]):
+            concept = meta.get("concept", "")
+
+            # Case 1: slash in concept — always fixable
+            if "/" in concept:
+                correct = concept.split("/")[0]
+                fixed_meta = dict(meta)
+                fixed_meta["concept"] = correct
+                fix_ids.append(doc_id)
+                fix_metadatas.append(fixed_meta)
+                fixed_concepts.add(concept)
+                continue
+
+            # Case 2: concept not in valid base set — it's a subfolder name
+            if concept and concept not in valid_base_concepts:
+                correct = None
+
+                # For file-path IDs, derive from path
+                if not doc_id.startswith("gen_"):
+                    norm_path = os.path.normpath(doc_id)
+                    for root in output_roots:
+                        if norm_path.startswith(root):
+                            rel = os.path.relpath(norm_path, root)
+                            parts = rel.split(os.sep)
+                            if len(parts) > 2:
+                                # Nested under a base concept subfolder
+                                correct = parts[0]
+                            break
+
+                # For gen_* IDs, look up output_folder
+                else:
+                    job_id = doc_id[4:]
+                    output_folder = gen_output_folders.get(job_id, "")
+                    if output_folder:
+                        correct = output_folder.split("/")[0]
+
+                if correct and correct in valid_base_concepts and correct != concept:
+                    fixed_meta = dict(meta)
+                    fixed_meta["concept"] = correct
+                    fix_ids.append(doc_id)
+                    fix_metadatas.append(fixed_meta)
+                    fixed_concepts.add(concept)
+                elif not correct or correct not in valid_base_concepts:
+                    # Orphan document — folder gone and no parent derivable
+                    delete_ids.append(doc_id)
+                    fixed_concepts.add(concept)
+
+        if fix_ids:
+            chunk_size = 500
+            for i in range(0, len(fix_ids), chunk_size):
+                col.update(
+                    ids=fix_ids[i:i + chunk_size],
+                    metadatas=fix_metadatas[i:i + chunk_size],
+                )
+            logger.info(f"Fixed {len(fix_ids)} ChromaDB documents with subfolder concepts")
+
+        if delete_ids:
+            chunk_size = 500
+            for i in range(0, len(delete_ids), chunk_size):
+                col.delete(ids=delete_ids[i:i + chunk_size])
+            logger.info(f"Deleted {len(delete_ids)} orphan ChromaDB documents with no valid parent concept")
+
+        # Clean up orphan cluster rows in SQLite for the fixed concepts
+        if fixed_concepts:
+            with get_db() as conn:
+                for bad_concept in fixed_concepts:
+                    conn.execute(
+                        text("DELETE FROM cluster_assignments WHERE cluster_id IN "
+                             "(SELECT id FROM clusters WHERE folder_path = :fp)"),
+                        {"fp": bad_concept},
+                    )
+                    conn.execute(
+                        text("DELETE FROM clusters WHERE folder_path = :fp"),
+                        {"fp": bad_concept},
+                    )
+            logger.info(f"Removed orphan cluster rows for {len(fixed_concepts)} subfolder concepts")
+
+    except Exception as e:
+        logger.warning(f"Could not fix subfolder concepts: {e}")
+
+
 def _insert_default_settings(conn):
     """Insert default settings if they don't already exist."""
     from src.config import DEFAULT_MODEL_AGENT, DEFAULT_MODEL_EMBEDDING, DEFAULT_MODEL_SUMMARY, DEFAULT_GEMINI_RATE_LIMIT
@@ -424,10 +579,11 @@ def _insert_default_settings(conn):
         "query_k_theme_intra": "5",
         "query_k_theme_cross": "5",
         "query_k_random": "3",
-        "cluster_k_intra": "5",
+        "adaptive_k_training": '[{"max_prompts": 40, "k": 2}, {"max_prompts": 80, "k": 3}, {"max_prompts": 150, "k": 4}, {"max_prompts": null, "k": 5}]',
+        "adaptive_k_output": '[{"max_prompts": 30, "k": 3}, {"max_prompts": 100, "k": 7}, {"max_prompts": 300, "k": 10}, {"max_prompts": null, "k": 15}]',
         "cluster_k_cross": "15",
         "cluster_min_folder_size": "20",
-        "cluster_label_terms": "3",
+        "cluster_label_terms": "2",
         "comfyui_base_url": DEFAULT_COMFYUI_BASE_URL,
         "comfyui_default_model": "",
         "comfyui_default_negative": "",

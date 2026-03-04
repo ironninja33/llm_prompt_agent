@@ -124,11 +124,43 @@
     display: none;
 }
 
+.folder-name-group {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    min-width: 0;
+    flex: 1;
+}
+
 .folder-name {
     font-weight: 600;
     font-family: var(--font-mono);
     font-size: 0.85rem;
     color: var(--text-primary);
+}
+
+.folder-summary {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.folder-name-group .category-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #b39ddb;
+    background: rgba(179, 157, 219, 0.12);
+    border: 1px solid rgba(179, 157, 219, 0.25);
+    border-radius: 9px;
+    padding: 1px 7px;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+    vertical-align: baseline;
 }
 
 .folder-meta {
@@ -171,6 +203,9 @@
 
 /* ── Global Cluster Toggle ───────────────────────────────────── */
 .global-cluster-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     position: sticky;
     top: -16px;
     z-index: 5;
@@ -179,6 +214,23 @@
     margin-top: -16px;
     margin-bottom: 0.5rem;
     border-bottom: 1px solid var(--border);
+}
+
+.dataset-map-search {
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.78rem;
+    font-family: var(--font-sans);
+    outline: none;
+    width: 180px;
+    margin-left: auto;
+}
+
+.dataset-map-search:focus {
+    border-color: var(--accent);
 }
 
 .btn-toggle-all-clusters {

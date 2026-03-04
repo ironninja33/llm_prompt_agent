@@ -36,6 +36,7 @@ def generate_stream(
     messages: list[dict],
     system_prompt: str | None = None,
     tools: list | None = None,
+    cached_content: str | None = None,
 ) -> Generator:
     """Stream a response from Gemini.
 
@@ -44,6 +45,8 @@ def generate_stream(
         messages: List of {'role': 'user'|'model', 'parts': [...]}.
         system_prompt: Optional system instruction.
         tools: Optional list of tool declarations.
+        cached_content: Optional cache resource name. When provided,
+            system_prompt and tools should be None (they're in the cache).
 
     Yields:
         Response chunks from the streaming API.
@@ -56,6 +59,7 @@ def generate_stream(
     config = types.GenerateContentConfig(
         system_instruction=system_prompt if system_prompt else None,
         tools=tools if tools else None,
+        cached_content=cached_content,
     )
 
     contents = _build_contents(messages)
@@ -73,6 +77,7 @@ def generate(
     messages: list[dict],
     system_prompt: str | None = None,
     tools: list | None = None,
+    cached_content: str | None = None,
 ) -> types.GenerateContentResponse:
     """Non-streaming generation (for summarization, etc.)."""
     if not _client:
@@ -83,6 +88,7 @@ def generate(
     config = types.GenerateContentConfig(
         system_instruction=system_prompt if system_prompt else None,
         tools=tools if tools else None,
+        cached_content=cached_content,
     )
 
     contents = _build_contents(messages)

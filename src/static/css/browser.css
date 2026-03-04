@@ -153,6 +153,34 @@
     margin-top: 2px;
 }
 
+/* ── Category Badge (browser) ───────────────────────────────── */
+.browser-dir-info .category-badge {
+    display: inline-block;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: #b39ddb;
+    background: rgba(179, 157, 219, 0.12);
+    border: 1px solid rgba(179, 157, 219, 0.25);
+    border-radius: 9px;
+    padding: 1px 7px;
+    margin-top: 2px;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+}
+
+.breadcrumb-segment .category-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #b39ddb;
+    background: rgba(179, 157, 219, 0.12);
+    border: 1px solid rgba(179, 157, 219, 0.25);
+    border-radius: 9px;
+    padding: 1px 6px;
+    text-transform: lowercase;
+    vertical-align: baseline;
+}
+
 /* ── Browser Image Item ──────────────────────────────────────── */
 .browser-img-item {
     display: flex;

@@ -111,15 +111,34 @@ TOOL_DECLARATIONS = [
             ),
         ),
         types.FunctionDeclaration(
-            name="get_dataset_map",
+            name="get_dataset_overview",
             description=(
-                "Get a map of the dataset showing folder structure, "
-                "intra-folder themes, cross-cutting themes, and prompt counts. "
-                "Use this first to understand what data is available before searching."
+                "Get a high-level overview of the entire dataset. Returns folder names, "
+                "source types, prompt counts, per-folder summary terms, and cross-folder "
+                "themes. This is pre-loaded in your context — only call if data may have "
+                "changed mid-conversation."
             ),
             parameters=types.Schema(
                 type="OBJECT",
                 properties={},
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="get_folder_themes",
+            description=(
+                "Get the intra-folder cluster themes for a specific concept folder. "
+                "Returns theme labels and prompt counts. Call this to explore the "
+                "thematic variety within a folder before searching."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "folder_name": types.Schema(
+                        type="STRING",
+                        description="The concept folder name (e.g. 'salma', 'clothes_gown')",
+                    ),
+                },
+                required=["folder_name"],
             ),
         ),
         types.FunctionDeclaration(
@@ -394,8 +413,10 @@ def execute_tool(name: str, args: dict, context: dict | None = None) -> dict:
             return _get_opposite(args)
         elif name == "list_concepts":
             return _list_concepts(args)
-        elif name == "get_dataset_map":
-            return _get_dataset_map(args)
+        elif name == "get_dataset_overview":
+            return _get_dataset_overview(args)
+        elif name == "get_folder_themes":
+            return _get_folder_themes(args)
         elif name == "query_themed_prompts":
             return _query_themed_prompts(args)
         elif name == "generate_image":
@@ -544,10 +565,19 @@ def _list_concepts(args: dict) -> dict:
     }
 
 
-def _get_dataset_map(args: dict) -> dict:
-    """Get the dataset map showing themes, folders, and stats."""
+def _get_dataset_overview(args: dict) -> dict:
+    """Get the lightweight dataset overview (no intra-folder cluster details)."""
     from src.services import clustering_service
-    return clustering_service.get_dataset_map()
+    return clustering_service.get_dataset_overview()
+
+
+def _get_folder_themes(args: dict) -> dict:
+    """Get intra-folder cluster themes for a specific folder."""
+    from src.services import clustering_service
+    folder_name = args.get("folder_name", "")
+    if not folder_name:
+        return {"error": "folder_name is required"}
+    return clustering_service.get_folder_themes(folder_name)
 
 
 def _query_themed_prompts(args: dict) -> dict:

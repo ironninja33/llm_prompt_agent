@@ -88,6 +88,7 @@ function renderDatasetMap(data, container) {
     if (data.folders && data.folders.length > 0) {
         html += '<div class="global-cluster-toggle">';
         html += '<button class="btn-toggle-all-clusters" onclick="toggleAllClusters(this)">Show all clusters</button>';
+        html += '<input type="text" id="dataset-map-search" class="dataset-map-search" placeholder="Filter folders..." oninput="filterDatasetMap(this.value)">';
         html += '</div>';
         html += '<div class="dataset-section" id="folder-list-container"></div>';
         html += '<div id="folder-scroll-sentinel" class="scroll-sentinel" style="display:none;"><span class="spinner-small"></span> Loading more folders...</div>';
@@ -124,8 +125,16 @@ function renderMoreFolders() {
         const card = document.createElement('div');
         card.className = 'folder-card';
 
+        const displayName = folder.display_name || folder.name;
+        const categoryBadge = folder.category
+            ? `<span class="category-badge">${escapeHtml(folder.category)}</span>`
+            : '';
         let headerHtml = `<div class="folder-header" onclick="toggleFolderClusters(this)">
-            <span class="folder-name">${escapeHtml(folder.name)}</span>
+            <div class="folder-name-group">
+                <span class="folder-name">${escapeHtml(displayName)}</span>
+                ${categoryBadge}
+                ${folder.summary ? `<span class="folder-summary">${escapeHtml(folder.summary)}</span>` : ''}
+            </div>
             <span class="folder-meta">
                 <span class="source-badge source-${folder.source_type}">${folder.source_type}</span>
                 <span class="doc-count">${folder.total_prompts} docs</span>
@@ -180,6 +189,36 @@ function toggleAllClusters(btn) {
     // Apply to all currently rendered folder cards
     document.querySelectorAll('#folder-list-container .folder-themes').forEach(el => {
         el.classList.toggle('visible', _globalClustersVisible);
+    });
+}
+
+function _renderAllRemainingFolders() {
+    if (!_datasetMapData || !_datasetMapData.folders) return;
+    while (_datasetMapFoldersRendered < _datasetMapData.folders.length) {
+        renderMoreFolders();
+    }
+}
+
+function filterDatasetMap(query) {
+    // Render all folders so the filter can search the full list
+    if (_datasetMapData && _datasetMapFoldersRendered < _datasetMapData.folders.length) {
+        _renderAllRemainingFolders();
+    }
+
+    const q = query.toLowerCase().trim();
+    const cards = document.querySelectorAll('#folder-list-container .folder-card');
+
+    cards.forEach(card => {
+        if (!q) {
+            card.style.display = '';
+            return;
+        }
+        const name = card.querySelector('.folder-name')?.textContent?.toLowerCase() || '';
+        const category = card.querySelector('.category-badge')?.textContent?.toLowerCase() || '';
+        const summary = card.querySelector('.folder-summary')?.textContent?.toLowerCase() || '';
+        const themes = card.querySelector('.folder-themes')?.textContent?.toLowerCase() || '';
+        const match = name.includes(q) || category.includes(q) || summary.includes(q) || themes.includes(q);
+        card.style.display = match ? '' : 'none';
     });
 }
 

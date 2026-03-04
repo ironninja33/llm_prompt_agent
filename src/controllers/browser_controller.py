@@ -87,15 +87,23 @@ def get_directory_contents(virtual_path: str, offset: int = 0, limit: int = 50,
 
 def get_breadcrumb(virtual_path: str) -> list[dict]:
     """Build breadcrumb segments for navigation."""
+    from src.models.browser import parse_concept_name
+
     if not virtual_path:
         return [{"name": "Root", "path": ""}]
 
     segments = [{"name": "Root", "path": ""}]
     parts = virtual_path.strip("/").split("/")
     current = ""
-    for part in parts:
+    for idx, part in enumerate(parts):
         current = f"{current}/{part}" if current else part
-        segments.append({"name": part, "path": current})
+        seg = {"name": part, "path": current}
+        # Concept-level segments (depth 2: root_dir/concept)
+        if idx == 1:
+            parsed = parse_concept_name(part)
+            seg["category"] = parsed["category"]
+            seg["display_name"] = parsed["display_name"]
+        segments.append(seg)
     return segments
 
 

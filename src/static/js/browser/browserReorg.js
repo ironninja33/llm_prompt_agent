@@ -93,14 +93,17 @@ async function _openReorgOverlay(virtualPath) {
     content.innerHTML = '<div class="loading-text">Loading suggestions...</div>';
     $('#reorg-execute-btn').style.display = 'none';
 
-    // Fetch per-folder k from settings, fall back to global default
+    // Fetch per-folder k from settings, fall back to adaptive default
     const concept = _conceptFromPath(virtualPath);
     try {
         const allSettings = await API.getSettings();
         const perFolderK = allSettings[`cluster_k_intra:${concept}`];
-        const globalK = allSettings['cluster_k_intra'];
-        const kValue = perFolderK || globalK || '5';
-        $('#reorg-k-input').value = parseInt(kValue, 10);
+        if (perFolderK) {
+            $('#reorg-k-input').value = parseInt(perFolderK, 10);
+        } else {
+            // Server uses adaptive K at clustering time; show a reasonable default
+            $('#reorg-k-input').value = 5;
+        }
     } catch (e) {
         console.warn('Failed to load k setting:', e);
         $('#reorg-k-input').value = 5;
