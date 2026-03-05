@@ -7,6 +7,7 @@ decoupled from the agent loop and LLM interface.
 
 import json
 import logging
+import os
 import re
 import threading
 from dataclasses import dataclass
@@ -216,11 +217,16 @@ def _fetch_all_embeddings() -> tuple[list[str], list[list[float]], list[str], li
     return all_ids, all_embeddings, all_documents, all_metadatas
 
 
-def _fetch_embeddings_by_concept(concept_name: str) -> tuple[list[str], list[list[float]], list[str], list[dict]]:
-    """Fetch embeddings and documents for a specific concept from both collections.
+def _fetch_embeddings_by_concept(
+    concept_name: str,
+    source_type: str | None = None,
+) -> tuple[list[str], list[list[float]], list[str], list[dict]]:
+    """Fetch embeddings and documents for a specific concept.
 
     Args:
         concept_name: The concept/folder name to filter by.
+        source_type: ``"training"`` to fetch only from the training collection,
+            ``"output"`` for only the generated collection, or ``None`` for both.
 
     Returns:
         Tuple of (ids, embeddings, documents, metadatas).
@@ -230,7 +236,14 @@ def _fetch_embeddings_by_concept(concept_name: str) -> tuple[list[str], list[lis
     all_documents: list[str] = []
     all_metadatas: list[dict] = []
 
-    for collection in [vector_store._training_collection, vector_store._generated_collection]:
+    if source_type == "training":
+        collections = [vector_store._training_collection]
+    elif source_type == "output":
+        collections = [vector_store._generated_collection]
+    else:
+        collections = [vector_store._training_collection, vector_store._generated_collection]
+
+    for collection in collections:
         if collection is None:
             continue
         count = collection.count()
@@ -580,14 +593,22 @@ def generate_cross_folder_clusters(k: int | None = None):
 # Intra-folder clustering
 # ---------------------------------------------------------------------------
 
-def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None = None, force: bool = False):
-    """Run KMeans clustering within individual folders/concepts.
+def generate_intra_folder_clusters(
+    folder_path: str | None = None,
+    k: int | None = None,
+    force: bool = False,
+    source_type: str | None = None,
+):
+    """Run KMeans clustering within individual folders/concepts, split by source_type.
 
     Args:
         folder_path: If provided, only cluster this specific concept. Otherwise
                      cluster all concepts meeting minimum size.
         k: Number of clusters per folder. Falls back to adaptive tiers from settings.
         force: If True, skip size and freshness checks.
+        source_type: If provided, only cluster this source_type for the given
+            folder_path. When ``None`` (full run), clusters each (concept, source_type)
+            pair independently.
     """
     progress = ClusteringProgress(phase="intra_folder", message="Starting intra-folder clustering...")
     _emit_status(progress)
@@ -599,77 +620,84 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
     min_size_str = settings.get_setting("cluster_min_folder_size")
     min_folder_size = int(min_size_str) if min_size_str else 20
 
-    # 2. Determine which concepts to cluster
-    if folder_path:
-        concepts_to_cluster = [{"concept": folder_path}]
+    # 2. Determine which (concept, source_type) pairs to cluster
+    if folder_path and source_type:
+        entries_to_cluster = [{"concept": folder_path, "source_type": source_type}]
+    elif folder_path:
+        # Cluster both source types for this concept
+        entries_to_cluster = [
+            {"concept": folder_path, "source_type": "training"},
+            {"concept": folder_path, "source_type": "output"},
+        ]
     else:
+        # Full run: iterate all (concept, source_type) pairs from ChromaDB
         all_concepts = _get_all_concepts()
-        # Aggregate counts per concept (across source types)
-        concept_counts: dict[str, int] = {}
-        for c in all_concepts:
-            concept_counts[c["concept"]] = concept_counts.get(c["concept"], 0) + c["count"]
-        concepts_to_cluster = [{"concept": name} for name in concept_counts]
+        entries_to_cluster = [
+            {"concept": c["concept"], "source_type": c["source_type"]}
+            for c in all_concepts
+        ]
 
-    progress.total = len(concepts_to_cluster)
-    progress.message = f"Processing {len(concepts_to_cluster)} concept(s)..."
+    progress.total = len(entries_to_cluster)
+    progress.message = f"Processing {len(entries_to_cluster)} concept/source pair(s)..."
     _emit_status(progress)
 
-    # 3. Cluster each concept
-    for idx, concept_info in enumerate(concepts_to_cluster):
-        concept_name = concept_info["concept"]
+    # 3. Cluster each (concept, source_type) pair
+    for idx, entry in enumerate(entries_to_cluster):
+        concept_name = entry["concept"]
+        entry_source = entry["source_type"]
         progress.current = idx + 1
-        progress.message = f"Clustering concept '{concept_name}' ({idx + 1}/{len(concepts_to_cluster)})..."
+        progress.message = f"Clustering '{concept_name}' ({entry_source}) ({idx + 1}/{len(entries_to_cluster)})..."
         _emit_status(progress)
 
-        # Fetch embeddings for this concept
-        doc_ids, embeddings_list, documents, metadatas = _fetch_embeddings_by_concept(concept_name)
+        # Fetch embeddings for this concept + source_type
+        doc_ids, embeddings_list, documents, metadatas = _fetch_embeddings_by_concept(
+            concept_name, source_type=entry_source,
+        )
         n_samples = len(doc_ids)
 
         # Skip if too few prompts (unless forced)
         if n_samples < min_folder_size and not force:
             logger.info(
-                f"Skipping concept '{concept_name}': {n_samples} docs < min_folder_size {min_folder_size}"
+                f"Skipping '{concept_name}' ({entry_source}): {n_samples} docs < min_folder_size {min_folder_size}"
             )
             continue
 
         if n_samples <= 1:
-            logger.info(f"Skipping concept '{concept_name}': only {n_samples} document(s)")
+            logger.info(f"Skipping '{concept_name}' ({entry_source}): only {n_samples} document(s)")
             continue
 
         # Check freshness unless forced
         if not force:
             with get_db() as conn:
-                # Check if intra_folder clustering exists for this folder
                 result = conn.execute(
-                    text("SELECT id FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = :folder_path LIMIT 1"),
-                    {"folder_path": concept_name},
+                    text("SELECT id FROM clusters WHERE cluster_type = 'intra_folder' "
+                         "AND folder_path = :folder_path AND source_type = :source_type LIMIT 1"),
+                    {"folder_path": concept_name, "source_type": entry_source},
                 )
                 existing_cluster = result.fetchone()
 
                 if existing_cluster:
-                    # Check if there are any doc_ids not yet assigned to intra clusters for this folder
                     assigned_result = conn.execute(
                         text("SELECT DISTINCT ca.doc_id FROM cluster_assignments ca "
                              "JOIN clusters c ON ca.cluster_id = c.id "
-                             "WHERE c.cluster_type = 'intra_folder' AND c.folder_path = :folder_path"),
-                        {"folder_path": concept_name},
+                             "WHERE c.cluster_type = 'intra_folder' AND c.folder_path = :folder_path "
+                             "AND c.source_type = :source_type"),
+                        {"folder_path": concept_name, "source_type": entry_source},
                     )
                     assigned_ids = {row._mapping["doc_id"] for row in assigned_result.fetchall()}
                     unassigned = [did for did in doc_ids if did not in assigned_ids]
 
                     if not unassigned:
-                        logger.info(f"Skipping concept '{concept_name}': all docs already assigned, no new docs")
+                        logger.info(f"Skipping '{concept_name}' ({entry_source}): all docs already assigned")
                         continue
 
         # Determine effective k: explicit k param > per-folder override > adaptive tiers
         if not k_explicit:
-            per_folder_k_str = settings.get_setting(f"cluster_k_intra:{concept_name}")
+            per_folder_k_str = settings.get_setting(f"cluster_k_intra:{concept_name}:{entry_source}")
             if per_folder_k_str:
                 effective_base_k = int(per_folder_k_str)
             else:
-                source_types = {m.get("dir_type", "training") for m in metadatas if m}
-                folder_source = "output" if "output" in source_types else "training"
-                effective_base_k = _compute_adaptive_k(n_samples, folder_source)
+                effective_base_k = _compute_adaptive_k(n_samples, entry_source)
         else:
             effective_base_k = k
 
@@ -704,10 +732,10 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
             cluster_idx = int(labels[i])
             centroid = centroids[cluster_idx]
             distance = float(np.linalg.norm(embeddings_np[i] - centroid))
-            source_type = metadatas[i].get("dir_type", "training") if metadatas[i] else "training"
+            doc_source = metadatas[i].get("dir_type", "training") if metadatas[i] else "training"
             assignment_data.append({
                 "doc_id": doc_ids[i],
-                "source_type": source_type,
+                "source_type": doc_source,
                 "cluster_index": cluster_idx,
                 "distance": distance,
             })
@@ -716,26 +744,29 @@ def generate_intra_folder_clusters(folder_path: str | None = None, k: int | None
         started_at = datetime.utcnow().isoformat()
 
         with get_db() as conn:
-            # Clear old intra_folder clusters for this concept
+            # Clear old intra_folder clusters for this (concept, source_type)
             conn.execute(
                 text("DELETE FROM cluster_assignments WHERE cluster_id IN "
-                     "(SELECT id FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = :folder_path)"),
-                {"folder_path": concept_name},
+                     "(SELECT id FROM clusters WHERE cluster_type = 'intra_folder' "
+                     "AND folder_path = :folder_path AND source_type = :source_type)"),
+                {"folder_path": concept_name, "source_type": entry_source},
             )
             conn.execute(
-                text("DELETE FROM clusters WHERE cluster_type = 'intra_folder' AND folder_path = :folder_path"),
-                {"folder_path": concept_name},
+                text("DELETE FROM clusters WHERE cluster_type = 'intra_folder' "
+                     "AND folder_path = :folder_path AND source_type = :source_type"),
+                {"folder_path": concept_name, "source_type": entry_source},
             )
 
             # Insert clusters
             cluster_id_map: dict[int, int] = {}
             for cd in cluster_data:
                 result = conn.execute(
-                    text("INSERT INTO clusters (cluster_type, folder_path, cluster_index, label, centroid, prompt_count) "
-                         "VALUES (:cluster_type, :folder_path, :cluster_index, :label, :centroid, :prompt_count)"),
+                    text("INSERT INTO clusters (cluster_type, folder_path, cluster_index, label, centroid, prompt_count, source_type) "
+                         "VALUES (:cluster_type, :folder_path, :cluster_index, :label, :centroid, :prompt_count, :source_type)"),
                     {"cluster_type": "intra_folder", "folder_path": concept_name,
                      "cluster_index": cd["cluster_index"], "label": cd["label"],
-                     "centroid": cd["centroid"], "prompt_count": cd["prompt_count"]},
+                     "centroid": cd["centroid"], "prompt_count": cd["prompt_count"],
+                     "source_type": entry_source},
                 )
                 cluster_id_map[cd["cluster_index"]] = result.lastrowid
 
@@ -908,18 +939,18 @@ def get_dataset_map() -> dict:
             for row in result.fetchall()
         ]
 
-        # Intra-folder themes grouped by folder
+        # Intra-folder themes grouped by (folder, source_type)
         result = conn.execute(
-            text("SELECT id, folder_path, label, prompt_count FROM clusters "
-                 "WHERE cluster_type = 'intra_folder' ORDER BY folder_path, id")
+            text("SELECT id, folder_path, source_type, label, prompt_count FROM clusters "
+                 "WHERE cluster_type = 'intra_folder' ORDER BY folder_path, source_type, id")
         )
-        intra_by_folder: dict[str, list[dict]] = {}
+        intra_by_folder_source: dict[tuple[str, str], list[dict]] = {}
         for row in result.fetchall():
             r = row._mapping
-            fp = r["folder_path"]
-            if fp not in intra_by_folder:
-                intra_by_folder[fp] = []
-            intra_by_folder[fp].append({
+            key = (r["folder_path"], r["source_type"] or "training")
+            if key not in intra_by_folder_source:
+                intra_by_folder_source[key] = []
+            intra_by_folder_source[key].append({
                 "label": r["label"],
                 "prompt_count": r["prompt_count"],
             })
@@ -966,7 +997,7 @@ def get_dataset_map() -> dict:
             "display_name": parsed["display_name"],
             "source_type": info["source_type"],
             "total_prompts": info["total_prompts"],
-            "intra_themes": intra_by_folder.get(name, []),
+            "intra_themes": intra_by_folder_source.get((name, source_type), []),
             "summary": summaries.get(name, ""),
         }
         folders.append(folder_entry)
@@ -1030,6 +1061,7 @@ def get_dataset_overview() -> dict:
     for (name, source_type), info in sorted(folder_info.items()):
         parsed = parse_concept_name(name)
         folders.append({
+            "name": info["name"],
             "category": parsed["category"],
             "display_name": parsed["display_name"],
             "source_type": info["source_type"],
@@ -1048,29 +1080,31 @@ def get_dataset_overview() -> dict:
     }
 
 
-def get_folder_themes(folder_name: str) -> dict:
-    """Get intra-folder cluster themes for a specific folder.
+def get_folder_themes(folder_name: str, source_type: str = "training") -> dict:
+    """Get intra-folder cluster themes for a specific folder and source type.
 
     Args:
         folder_name: Concept/folder name.
+        source_type: ``"training"`` or ``"output"``.
 
     Returns:
-        Dict with ``folder`` name and ``themes`` list of
+        Dict with ``folder`` name, ``source_type``, and ``themes`` list of
         ``{label, prompt_count}`` dicts.
     """
     with get_db() as conn:
         result = conn.execute(
             text("SELECT label, prompt_count FROM clusters "
                  "WHERE cluster_type = 'intra_folder' AND folder_path = :fp "
+                 "AND source_type = :st "
                  "ORDER BY prompt_count DESC"),
-            {"fp": folder_name},
+            {"fp": folder_name, "st": source_type},
         )
         themes = [
             {"label": r._mapping["label"], "prompt_count": r._mapping["prompt_count"]}
             for r in result.fetchall()
         ]
 
-    return {"folder": folder_name, "themes": themes}
+    return {"folder": folder_name, "source_type": source_type, "themes": themes}
 
 
 # ---------------------------------------------------------------------------
@@ -1311,12 +1345,14 @@ def _fetch_docs_by_ids(doc_ids: list[str], source_type_map: dict[str, str]) -> l
 # Background thread entry point
 # ---------------------------------------------------------------------------
 
-def start_clustering_single(folder_path: str, k: int):
+def start_clustering_single(folder_path: str, k: int, source_type: str | None = None):
     """Start single-folder recluster in a background thread.
 
     Args:
         folder_path: Concept/folder name to recluster.
         k: Number of clusters.
+        source_type: ``"training"`` or ``"output"`` to recluster only one
+            source type. ``None`` reclusters both.
     """
     global _clustering_running
     with _clustering_lock:
@@ -1327,13 +1363,13 @@ def start_clustering_single(folder_path: str, k: int):
 
     thread = threading.Thread(
         target=_run_clustering_single,
-        args=(folder_path, k),
+        args=(folder_path, k, source_type),
         daemon=True,
     )
     thread.start()
 
 
-def _run_clustering_single(folder_path: str, k: int):
+def _run_clustering_single(folder_path: str, k: int, source_type: str | None = None):
     """Single-folder recluster — runs in a background thread."""
     global _clustering_running
     progress = ClusteringProgress()
@@ -1343,7 +1379,7 @@ def _run_clustering_single(folder_path: str, k: int):
         progress.message = f"Reclustering '{folder_path}' with k={k}..."
         _emit_status(progress)
 
-        generate_intra_folder_clusters(folder_path=folder_path, k=k, force=True)
+        generate_intra_folder_clusters(folder_path=folder_path, k=k, force=True, source_type=source_type)
 
         progress.phase = "complete"
         progress.complete = True
@@ -1513,3 +1549,233 @@ def get_clustering_stats() -> dict:
         "cross_folder_clusters": cross_folder_clusters,
         "intra_folder_clusters": intra_folder_clusters,
     }
+
+
+# ── Folder rename ────────────────────────────────────────────────────────
+
+def rename_concept(old_concept: str, new_concept: str, parent_dirs: list[str]) -> dict:
+    """Rename a concept folder on disk and update all DB/ChromaDB references.
+
+    Args:
+        old_concept: Current folder name (e.g. "watercolor_landscapes").
+        new_concept: New folder name (e.g. "style__watercolor_landscapes").
+        parent_dirs: Absolute paths to data directories containing the folder.
+
+    Returns:
+        {"ok": True} on success, {"ok": False, "error": str} on failure.
+    """
+    # 1. Rename physical directories
+    renamed_dirs = []
+    for parent in parent_dirs:
+        old_dir = os.path.join(parent, old_concept)
+        new_dir = os.path.join(parent, new_concept)
+        if not os.path.isdir(old_dir):
+            continue
+        try:
+            os.rename(old_dir, new_dir)
+            renamed_dirs.append((parent, old_dir, new_dir))
+        except OSError as e:
+            # Roll back any renames already done
+            for _, rd_old, rd_new in renamed_dirs:
+                try:
+                    os.rename(rd_new, rd_old)
+                except OSError:
+                    pass
+            return {"ok": False, "error": f"Failed to rename {old_dir}: {e}"}
+
+    if not renamed_dirs:
+        return {"ok": False, "error": f"No directories found for concept '{old_concept}'"}
+
+    # 2. Update SQLite
+    try:
+        with get_db() as conn:
+            _rename_sqlite(conn, old_concept, new_concept, renamed_dirs)
+    except Exception as e:
+        logger.error(f"SQLite update failed during rename: {e}")
+        # Roll back filesystem
+        for _, rd_old, rd_new in renamed_dirs:
+            try:
+                os.rename(rd_new, rd_old)
+            except OSError:
+                pass
+        return {"ok": False, "error": f"Database update failed: {e}"}
+
+    # 3. Update ChromaDB
+    try:
+        _rename_chromadb(old_concept, new_concept, renamed_dirs)
+    except Exception as e:
+        logger.warning(f"ChromaDB update failed during rename (filesystem+SQL already committed): {e}")
+
+    # Invalidate LLM cache since folder names changed in dataset overview
+    from src.services.cache_service import cache_manager
+    cache_manager.invalidate()
+
+    logger.info(f"Renamed concept '{old_concept}' -> '{new_concept}' across {len(renamed_dirs)} dir(s)")
+    return {"ok": True}
+
+
+def _rename_sqlite(conn, old_concept: str, new_concept: str, renamed_dirs: list[tuple]):
+    """Update all SQLite tables for a concept rename."""
+    conn.execute(
+        text("UPDATE clusters SET folder_path = :new WHERE folder_path = :old"),
+        {"new": new_concept, "old": old_concept},
+    )
+    conn.execute(
+        text("UPDATE clustering_runs SET folder_path = :new WHERE folder_path = :old"),
+        {"new": new_concept, "old": old_concept},
+    )
+
+    # folder_summaries (PK = folder_path)
+    row = conn.execute(
+        text("SELECT summary FROM folder_summaries WHERE folder_path = :old"),
+        {"old": old_concept},
+    ).fetchone()
+    if row:
+        conn.execute(
+            text("INSERT OR REPLACE INTO folder_summaries (folder_path, summary, updated_at) "
+                 "VALUES (:new, :summary, CURRENT_TIMESTAMP)"),
+            {"new": new_concept, "summary": row._mapping["summary"]},
+        )
+        conn.execute(
+            text("DELETE FROM folder_summaries WHERE folder_path = :old"),
+            {"old": old_concept},
+        )
+
+    for parent, old_dir, new_dir in renamed_dirs:
+        old_prefix = old_dir + os.sep
+        new_prefix = new_dir + os.sep
+
+        # generated_images.file_path
+        conn.execute(
+            text("UPDATE generated_images SET file_path = :new_prefix || SUBSTR(file_path, :old_len + 1) "
+                 "WHERE file_path LIKE :old_like"),
+            {"new_prefix": new_prefix, "old_len": len(old_prefix), "old_like": old_prefix + "%"},
+        )
+
+        # generated_images.subfolder
+        conn.execute(
+            text("UPDATE generated_images SET subfolder = :new_sub || SUBSTR(subfolder, :old_len + 1) "
+                 "WHERE subfolder LIKE :old_like"),
+            {"new_sub": new_concept, "old_len": len(old_concept), "old_like": old_concept + "%"},
+        )
+
+        # generation_settings.output_folder
+        conn.execute(
+            text("UPDATE generation_settings SET output_folder = :new_sub || SUBSTR(output_folder, :old_len + 1) "
+                 "WHERE output_folder LIKE :old_like"),
+            {"new_sub": new_concept, "old_len": len(old_concept), "old_like": old_concept + "%"},
+        )
+
+        # cluster_assignments.doc_id
+        conn.execute(
+            text("UPDATE cluster_assignments SET doc_id = :new_prefix || SUBSTR(doc_id, :old_len + 1) "
+                 "WHERE doc_id LIKE :old_like"),
+            {"new_prefix": new_prefix, "old_len": len(old_prefix), "old_like": old_prefix + "%"},
+        )
+
+        # thumbnail_cache.file_path
+        conn.execute(
+            text("UPDATE thumbnail_cache SET file_path = :new_prefix || SUBSTR(file_path, :old_len + 1) "
+                 "WHERE file_path LIKE :old_like"),
+            {"new_prefix": new_prefix, "old_len": len(old_prefix), "old_like": old_prefix + "%"},
+        )
+
+    # settings: cluster_k_intra:<old> -> cluster_k_intra:<new>
+    old_key = f"cluster_k_intra:{old_concept}"
+    new_key = f"cluster_k_intra:{new_concept}"
+    row = conn.execute(
+        text("SELECT value FROM settings WHERE key = :old_key"),
+        {"old_key": old_key},
+    ).fetchone()
+    if row:
+        conn.execute(
+            text("INSERT OR REPLACE INTO settings (key, value, updated_at) "
+                 "VALUES (:new_key, :value, CURRENT_TIMESTAMP)"),
+            {"new_key": new_key, "value": row._mapping["value"]},
+        )
+        conn.execute(
+            text("DELETE FROM settings WHERE key = :old_key"),
+            {"old_key": old_key},
+        )
+
+
+def _rename_chromadb(old_concept: str, new_concept: str, renamed_dirs: list[tuple]):
+    """Update ChromaDB: concept metadata + re-key file-path doc IDs."""
+    for source_type in ("training", "output"):
+        collection = vector_store._get_collection(source_type)
+        count = collection.count()
+        if count == 0:
+            continue
+
+        all_data = collection.get(
+            limit=count,
+            include=["metadatas", "embeddings", "documents"],
+            where={"concept": old_concept},
+        )
+        if not all_data["ids"]:
+            continue
+
+        rekey_indices = []
+        metadata_only_indices = []
+
+        for i, doc_id in enumerate(all_data["ids"]):
+            needs_rekey = any(
+                doc_id.startswith(old_dir + os.sep) or doc_id.startswith(old_dir + "/")
+                for _, old_dir, _ in renamed_dirs
+            )
+            if needs_rekey:
+                rekey_indices.append(i)
+            else:
+                metadata_only_indices.append(i)
+
+        # Update metadata-only docs
+        if metadata_only_indices:
+            update_ids = [all_data["ids"][i] for i in metadata_only_indices]
+            update_metas = []
+            for i in metadata_only_indices:
+                meta = dict(all_data["metadatas"][i])
+                meta["concept"] = new_concept
+                update_metas.append(meta)
+            for cs in range(0, len(update_ids), 500):
+                ce = cs + 500
+                collection.update(ids=update_ids[cs:ce], metadatas=update_metas[cs:ce])
+
+        # Re-key docs with file-path IDs
+        if rekey_indices:
+            old_ids = []
+            new_ids = []
+            new_docs = []
+            new_embeds = []
+            new_metas = []
+
+            for i in rekey_indices:
+                old_id = all_data["ids"][i]
+                new_id = old_id
+                for _, old_dir, new_dir in renamed_dirs:
+                    for sep in (os.sep, "/"):
+                        prefix = old_dir + sep
+                        if old_id.startswith(prefix):
+                            new_id = new_dir + sep + old_id[len(prefix):]
+                            break
+                    if new_id != old_id:
+                        break
+
+                meta = dict(all_data["metadatas"][i])
+                meta["concept"] = new_concept
+                old_ids.append(old_id)
+                new_ids.append(new_id)
+                new_docs.append(all_data["documents"][i])
+                new_embeds.append(all_data["embeddings"][i])
+                new_metas.append(meta)
+
+            for cs in range(0, len(old_ids), 500):
+                ce = cs + 500
+                collection.delete(ids=old_ids[cs:ce])
+            for cs in range(0, len(new_ids), 500):
+                ce = cs + 500
+                collection.add(
+                    ids=new_ids[cs:ce],
+                    documents=new_docs[cs:ce],
+                    embeddings=new_embeds[cs:ce],
+                    metadatas=new_metas[cs:ce],
+                )

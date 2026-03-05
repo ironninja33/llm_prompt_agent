@@ -83,10 +83,9 @@ def run_agent_turn(
         try:
             client = llm_service.get_client()
             if client:
-                dataset_overview = clustering_service.get_dataset_overview()
                 cache_name = cache_manager.get_or_create(
                     client, model_agent, full_system_prompt,
-                    TOOL_DECLARATIONS, dataset_overview,
+                    TOOL_DECLARATIONS, clustering_service.get_dataset_overview,
                 )
         except Exception as e:
             logger.warning("Cache creation failed, falling back to uncached: %s", e)

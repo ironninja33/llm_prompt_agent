@@ -98,7 +98,14 @@ def delete_data_directory(dir_id: int) -> bool:
     )
 
     # Remove the directory record from SQLite
-    return settings.delete_data_directory(dir_id)
+    result = settings.delete_data_directory(dir_id)
+
+    # Invalidate LLM cache since dataset overview changed
+    if result:
+        from src.services.cache_service import cache_manager
+        cache_manager.invalidate()
+
+    return result
 
 
 def validate_workflow(workflow_path: str) -> dict:
