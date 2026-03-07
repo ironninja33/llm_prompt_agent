@@ -593,6 +593,23 @@ def generate_cross_folder_clusters(k: int | None = None):
 # Intra-folder clustering
 # ---------------------------------------------------------------------------
 
+
+def _delete_intra_clusters(folder_path: str, source_type: str):
+    """Delete any existing intra_folder clusters and their assignments for a (folder, source_type) pair."""
+    with get_db() as conn:
+        conn.execute(
+            text("DELETE FROM cluster_assignments WHERE cluster_id IN "
+                 "(SELECT id FROM clusters WHERE cluster_type = 'intra_folder' "
+                 "AND folder_path = :fp AND source_type = :st)"),
+            {"fp": folder_path, "st": source_type},
+        )
+        conn.execute(
+            text("DELETE FROM clusters WHERE cluster_type = 'intra_folder' "
+                 "AND folder_path = :fp AND source_type = :st"),
+            {"fp": folder_path, "st": source_type},
+        )
+
+
 def generate_intra_folder_clusters(
     folder_path: str | None = None,
     k: int | None = None,
@@ -660,10 +677,12 @@ def generate_intra_folder_clusters(
             logger.info(
                 f"Skipping '{concept_name}' ({entry_source}): {n_samples} docs < min_folder_size {min_folder_size}"
             )
+            _delete_intra_clusters(concept_name, entry_source)
             continue
 
         if n_samples <= 1:
             logger.info(f"Skipping '{concept_name}' ({entry_source}): only {n_samples} document(s)")
+            _delete_intra_clusters(concept_name, entry_source)
             continue
 
         # Check freshness unless forced
