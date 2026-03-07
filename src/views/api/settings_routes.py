@@ -1,6 +1,8 @@
 """Settings, data directories, ingestion, clustering, stats, and dataset-map endpoints."""
 
 import logging
+import os
+import re
 import queue
 
 from flask import request, jsonify, Response
@@ -9,7 +11,7 @@ from src.views.api import api_bp
 from src.views.api.helpers import _sse_event
 from src.controllers import settings_controller
 from src.services import ingestion_service, clustering_service
-from src.models import vector_store
+from src.models import vector_store, settings as settings_model
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +292,43 @@ def get_dataset_map():
     """Get the dataset map showing themes and folder structure."""
     dataset_map = clustering_service.get_dataset_map()
     return jsonify(dataset_map)
+
+
+@api_bp.route("/folder/rename", methods=["POST"])
+def rename_folder():
+    """Rename a concept folder on disk and update all DB/ChromaDB references."""
+    data = request.get_json(silent=True) or {}
+    old_name = (data.get("old_name") or "").strip()
+    new_name = (data.get("new_name") or "").strip()
+
+    if not old_name or not new_name:
+        return jsonify({"ok": False, "error": "old_name and new_name are required"}), 400
+    if old_name == new_name:
+        return jsonify({"ok": False, "error": "New name is the same as the old name"}), 400
+    if "/" in new_name or "\\" in new_name or "\0" in new_name:
+        return jsonify({"ok": False, "error": "Folder name cannot contain slashes or null bytes"}), 400
+    if re.search(r"^\s|\s$", new_name):
+        return jsonify({"ok": False, "error": "Folder name cannot have leading/trailing whitespace"}), 400
+
+    # Find all data directories that contain a folder with old_name
+    data_dirs = settings_model.get_data_directories(active_only=True)
+    parent_dirs = []
+    for dd in data_dirs:
+        candidate = os.path.join(dd["path"], old_name)
+        if os.path.isdir(candidate):
+            # Check that destination doesn't already exist
+            dest = os.path.join(dd["path"], new_name)
+            if os.path.exists(dest):
+                return jsonify({"ok": False, "error": f"Destination already exists: {dest}"}), 409
+            parent_dirs.append(dd["path"])
+
+    if not parent_dirs:
+        return jsonify({"ok": False, "error": f"No data directory contains folder '{old_name}'"}), 404
+
+    result = clustering_service.rename_concept(old_name, new_name, parent_dirs)
+    if result["ok"]:
+        return jsonify(result)
+    return jsonify(result), 500
 
 
 # ── Stats endpoint ───────────────────────────────────────────────────────

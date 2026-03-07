@@ -335,6 +335,9 @@ MIGRATIONS = [
         """DELETE FROM clusters WHERE folder_path LIKE '%/%'""",
         # ChromaDB metadata fixup is done in Python by _fix_subfolder_concepts()
     ]),
+    (15, "Add source_type column to clusters for per-source-type intra-folder clustering", [
+        """ALTER TABLE clusters ADD COLUMN source_type TEXT DEFAULT 'training'""",
+    ]),
 ]
 
 

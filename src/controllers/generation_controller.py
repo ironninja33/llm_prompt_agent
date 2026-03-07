@@ -256,13 +256,14 @@ def _auto_slot_if_enabled(job_id: str, embedding: list[float], concept: str):
         if "/" in output_folder:
             return
 
-        # Get intra-folder cluster centroids for this concept
+        # Get intra-folder cluster centroids for this concept (output clusters)
         with get_db() as conn:
             result = conn.execute(
                 text("""SELECT id, label, centroid
                    FROM clusters
                    WHERE cluster_type = 'intra_folder'
                    AND folder_path = :concept
+                   AND source_type = 'output'
                    AND centroid IS NOT NULL"""),
                 {"concept": concept},
             )

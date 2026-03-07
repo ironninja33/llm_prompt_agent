@@ -26,7 +26,11 @@
                         <span id="api-key-status" class="hint"></span>
                     </label>
                     <label>Agent Model
-                        <input type="text" id="setting-model-agent" placeholder="gemini-3-pro-preview">
+                        <select id="setting-model-agent">
+                            <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+                            <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                            <option value="gemini-3.1-flash-lite-preview">gemini-3.1-flash-lite-preview</option>
+                        </select>
                     </label>
                     <label>Embedding Model
                         <input type="text" id="setting-model-embedding" placeholder="gemini-embedding-001">

@@ -126,19 +126,28 @@ TOOL_DECLARATIONS = [
         types.FunctionDeclaration(
             name="get_folder_themes",
             description=(
-                "Get the intra-folder cluster themes for a specific concept folder. "
+                "Get the intra-folder cluster themes for a specific concept folder and source type. "
                 "Returns theme labels and prompt counts. Call this to explore the "
-                "thematic variety within a folder before searching."
+                "thematic variety within a folder before searching. Training and output "
+                "have independent themes — specify which you want."
             ),
             parameters=types.Schema(
                 type="OBJECT",
                 properties={
                     "folder_name": types.Schema(
                         type="STRING",
-                        description="The concept folder name (e.g. 'salma', 'clothes_gown')",
+                        description=(
+                            "The concept folder name using the full category__display_name format "
+                            "(e.g. 'action__helpless', 'woman__salma_hayek'). Use the 'name' field "
+                            "from the dataset overview."
+                        ),
+                    ),
+                    "source_type": types.Schema(
+                        type="STRING",
+                        description="Which source's themes to retrieve: 'training' or 'output'",
                     ),
                 },
-                required=["folder_name"],
+                required=["folder_name", "source_type"],
             ),
         ),
         types.FunctionDeclaration(
@@ -572,12 +581,36 @@ def _get_dataset_overview(args: dict) -> dict:
 
 
 def _get_folder_themes(args: dict) -> dict:
-    """Get intra-folder cluster themes for a specific folder."""
+    """Get intra-folder cluster themes for a specific folder and source type."""
     from src.services import clustering_service
+
     folder_name = args.get("folder_name", "")
+    source_type = args.get("source_type", "training")
     if not folder_name:
         return {"error": "folder_name is required"}
-    return clustering_service.get_folder_themes(folder_name)
+    if source_type not in ("training", "output"):
+        return {"error": "source_type must be 'training' or 'output'"}
+
+    result = clustering_service.get_folder_themes(folder_name, source_type=source_type)
+
+    # If no themes found, try fuzzy matching against known folder names
+    if not result.get("themes"):
+        known_concepts = vector_store.list_concepts(source_type=source_type)
+        known_names = sorted({c["concept"] for c in known_concepts})
+
+        # Try suffix match: user may pass just the display_name part
+        matches = [n for n in known_names if n.endswith(f"__{folder_name}") or n == folder_name]
+        if len(matches) == 1:
+            result = clustering_service.get_folder_themes(matches[0], source_type=source_type)
+        elif not matches:
+            # No themes and no fuzzy match — suggest available names
+            result["suggestions"] = known_names[:20]
+            result["hint"] = (
+                "No themes found. Use the full 'category__display_name' format from the dataset overview. "
+                f"Available {source_type} folders: {', '.join(known_names[:10])}"
+            )
+
+    return result
 
 
 def _query_themed_prompts(args: dict) -> dict:

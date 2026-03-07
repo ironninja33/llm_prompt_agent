@@ -130,6 +130,7 @@
     gap: 0.6rem;
     min-width: 0;
     flex: 1;
+    margin-right: 0.4rem;
 }
 
 .folder-name {
@@ -161,6 +162,82 @@
     text-transform: lowercase;
     letter-spacing: 0.02em;
     vertical-align: baseline;
+}
+
+/* Folder rename controls */
+.folder-edit-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.1rem 0.25rem;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+    line-height: 1;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+}
+
+.folder-header:hover .folder-edit-btn {
+    opacity: 0.75;
+}
+
+.folder-edit-btn:hover {
+    opacity: 1 !important;
+    color: var(--accent);
+}
+
+.folder-rename-input {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 0.2rem 0.4rem;
+    flex: 1;
+    min-width: 0;
+    outline: none;
+}
+
+.folder-rename-input:focus {
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+.folder-rename-ok,
+.folder-rename-cancel {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.folder-rename-ok {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.folder-rename-ok:hover {
+    filter: brightness(1.15);
+}
+
+.folder-rename-cancel {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+}
+
+.folder-rename-cancel:hover {
+    background: var(--bg-primary);
+}
+
+.folder-rename-ok:disabled,
+.folder-rename-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .folder-meta {
