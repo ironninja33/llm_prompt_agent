@@ -98,6 +98,7 @@ def run_agent_turn(
         iteration = 0
         tool_call_log = []  # Collect all tool calls for introspection
         generation_job_ids = []  # Track generate_image job IDs for message_id backfill
+        last_chunk = None  # Track last streaming chunk for finish_reason inspection
 
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
@@ -145,6 +146,7 @@ def run_agent_turn(
 
             try:
                 for chunk in response_stream:
+                    last_chunk = chunk
                     if not chunk.candidates:
                         continue
 
@@ -271,6 +273,32 @@ def run_agent_turn(
                 full_response += current_text
                 break
 
+        # Log finish reason for every completed response
+        finish_reason = _get_finish_reason(last_chunk)
+        logger.info("Chat %s response complete: finish_reason=%s, length=%d chars",
+                     chat_id, finish_reason, len(full_response))
+
+        # Detect empty response (entire turn produced nothing)
+        if not full_response and not tool_call_log:
+            if finish_reason and finish_reason not in ("STOP", "FinishReason.STOP", "None"):
+                error_text = f"Response blocked ({finish_reason}). Try rephrasing your message."
+            else:
+                error_text = "Model returned an empty response. This can happen during high load. Please try again."
+            logger.warning("Empty response for chat %s (finish_reason=%s)", chat_id, finish_reason)
+            try:
+                chat_model.add_message(chat_id, "assistant", error_text,
+                                       metadata={"is_error": True})
+            except Exception:
+                pass
+            yield {"type": "error", "message": error_text}
+            return
+
+        # Warn about truncated responses
+        if finish_reason and "MAX_TOKENS" in str(finish_reason):
+            note = "\n\n*(Response truncated due to length limit.)*"
+            full_response += note
+            yield {"type": "token", "text": note}
+
         # Save the assistant response and final agent state.
         # The chat may have been deleted while the agent was streaming
         # (e.g. user closed the tab); guard against the FK violation.
@@ -316,6 +344,17 @@ def run_agent_turn(
         except Exception:
             pass
         yield {"type": "error", "message": error_text}
+
+
+def _get_finish_reason(chunk) -> str | None:
+    """Extract finish_reason string from the last streaming chunk."""
+    try:
+        if chunk and chunk.candidates:
+            reason = chunk.candidates[0].finish_reason
+            return str(reason) if reason else None
+    except Exception:
+        pass
+    return None
 
 
 def _inject_attachments(messages: list[dict], attachments: list[dict]):
@@ -370,6 +409,14 @@ def _build_message_history(chat_id: str) -> list[dict]:
 
         # Skip persisted error messages — they shouldn't be sent to the LLM
         if role == "assistant" and isinstance(msg.get("metadata"), dict) and msg["metadata"].get("is_error"):
+            continue
+
+        # Skip empty assistant messages (from old empty-response bug)
+        if role == "assistant" and not content.strip():
+            continue
+
+        # Skip partial/cancelled responses (incomplete and confuse the model)
+        if role == "assistant" and isinstance(msg.get("metadata"), dict) and msg["metadata"].get("is_partial"):
             continue
 
         if role == "user":

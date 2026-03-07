@@ -773,14 +773,22 @@ def _ws_poll_loop(
     ws_failed = False
     try:
         ws.settimeout(1.0)  # 1s receive timeout for poll loop responsiveness
-        max_time = 600  # 10 minute overall timeout
+        max_queue_time = 1800  # 30 min max waiting in queue
+        max_exec_time = 600   # 10 min max once execution starts
         start = time.monotonic()
+        exec_start_time = None  # set when execution begins
         execution_started = False
         last_queue_remaining = -1  # track for delta-based position updates
         last_http_check = time.monotonic()
         _HTTP_CHECK_INTERVAL = 3.0  # seconds between HTTP fallback checks
 
-        while time.monotonic() - start < max_time:
+        while True:
+            now = time.monotonic()
+            if exec_start_time is not None:
+                if now - exec_start_time > max_exec_time:
+                    break  # execution timeout
+            elif now - start > max_queue_time:
+                break  # queue timeout
             try:
                 raw = ws.recv()
             except websocket.WebSocketTimeoutException:
@@ -815,6 +823,8 @@ def _ws_poll_loop(
                         elif job_progress.status == "running" and not execution_started:
                             # Job started but we missed the WS event
                             execution_started = True
+                            if exec_start_time is None:
+                                exec_start_time = time.monotonic()
                             _notify_listeners(GenerationProgress(
                                 job_id=job_id, prompt_id=prompt_id,
                                 phase="running", progress=0.5,
@@ -857,6 +867,8 @@ def _ws_poll_loop(
 
             elif msg_type == "execution_start":
                 execution_started = True
+                if exec_start_time is None:
+                    exec_start_time = time.monotonic()
                 _notify_listeners(GenerationProgress(
                     job_id=job_id, prompt_id=prompt_id,
                     phase="running", progress=0.0,
@@ -866,6 +878,8 @@ def _ws_poll_loop(
 
             elif msg_type == "progress":
                 execution_started = True
+                if exec_start_time is None:
+                    exec_start_time = time.monotonic()
                 value = data.get("value", 0)
                 max_val = data.get("max", 1)
                 pct = value / max_val if max_val > 0 else 0.0
@@ -894,6 +908,8 @@ def _ws_poll_loop(
                     return
                 else:
                     execution_started = True
+                    if exec_start_time is None:
+                        exec_start_time = time.monotonic()
 
     finally:
         ws.close()
@@ -903,17 +919,36 @@ def _ws_poll_loop(
         _http_poll_loop(job_id, prompt_id, total_images)
         return
 
-    # Timed out
+    # Timed out — do a final completion check before marking failed
+    try:
+        final_progress = get_job_progress(prompt_id)
+        if final_progress.status == "completed":
+            history = get_history(prompt_id)
+            output_images = _extract_output_images(history) if history else []
+            _notify_listeners(GenerationProgress(
+                job_id=job_id, prompt_id=prompt_id,
+                phase="completed", progress=1.0,
+                current_image=total_images, total_images=total_images,
+                message="Generation complete",
+                complete=True, output_images=output_images,
+            ))
+            logger.info("Job %s completed (detected at timeout via final check)", job_id)
+            return
+    except Exception:
+        pass  # final check failed, proceed to mark as failed
+
+    timeout_type = "execution" if exec_start_time is not None else "queue"
+    timeout_duration = "10 minutes" if exec_start_time is not None else "30 minutes"
     _notify_listeners(GenerationProgress(
         job_id=job_id,
         prompt_id=prompt_id,
         phase="failed",
         progress=0.0,
         total_images=total_images,
-        message="Timed out after 10 minutes",
+        message=f"Timed out after {timeout_duration} ({timeout_type} timeout)",
         complete=True,
     ))
-    logger.warning("WebSocket polling timed out for job %s", job_id)
+    logger.warning("WebSocket polling %s timeout for job %s", timeout_type, job_id)
 
 
 def _http_poll_loop(
@@ -922,8 +957,10 @@ def _http_poll_loop(
     total_images: int,
 ) -> None:
     """HTTP-based polling loop — fallback when WebSocket is unavailable."""
-    max_polls = 600  # ~10 minutes at 1s interval
+    max_queue_polls = 1800  # ~30 minutes at 1s interval
+    max_exec_polls = 600    # ~10 minutes at 1s interval
     poll_count = 0
+    exec_poll_count = None  # None = still queued, 0+ = executing
 
     # Emit initial queued status
     _notify_listeners(GenerationProgress(
@@ -935,7 +972,13 @@ def _http_poll_loop(
         message="Job submitted, waiting in queue…",
     ))
 
-    while poll_count < max_polls:
+    while True:
+        # Check appropriate timeout
+        if exec_poll_count is not None:
+            if exec_poll_count > max_exec_polls:
+                break
+        elif poll_count > max_queue_polls:
+            break
         time.sleep(1.0)
         poll_count += 1
 
@@ -978,6 +1021,9 @@ def _http_poll_loop(
             return
 
         elif job_progress.status == "running":
+            if exec_poll_count is None:
+                exec_poll_count = 0  # start execution counter
+            exec_poll_count += 1
             _notify_listeners(GenerationProgress(
                 job_id=job_id,
                 prompt_id=prompt_id,
@@ -1003,14 +1049,33 @@ def _http_poll_loop(
             poll_count, job_id, job_progress.status, job_progress.progress * 100,
         )
 
-    # Timed out
+    # Timed out — do a final completion check before marking failed
+    try:
+        final_progress = get_job_progress(prompt_id)
+        if final_progress.status == "completed":
+            history = get_history(prompt_id)
+            output_images = _extract_output_images(history) if history else []
+            _notify_listeners(GenerationProgress(
+                job_id=job_id, prompt_id=prompt_id,
+                phase="completed", progress=1.0,
+                current_image=total_images, total_images=total_images,
+                message="Generation complete",
+                complete=True, output_images=output_images,
+            ))
+            logger.info("Job %s completed (detected at timeout via final check)", job_id)
+            return
+    except Exception:
+        pass  # final check failed, proceed to mark as failed
+
+    timeout_type = "execution" if exec_poll_count is not None else "queue"
+    timeout_duration = "10 minutes" if exec_poll_count is not None else "30 minutes"
     _notify_listeners(GenerationProgress(
         job_id=job_id,
         prompt_id=prompt_id,
         phase="failed",
         progress=0.0,
         total_images=total_images,
-        message="Polling timed out after 10 minutes",
+        message=f"Polling timed out after {timeout_duration} ({timeout_type} timeout)",
         complete=True,
     ))
-    logger.warning("Polling timed out for job %s after %d polls", job_id, max_polls)
+    logger.warning("Polling %s timeout for job %s after %d polls", timeout_type, job_id, poll_count)
