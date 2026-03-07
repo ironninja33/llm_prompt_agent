@@ -186,37 +186,37 @@ def search_embedding(query: str, offset: int = 0, limit: int = 50) -> dict:
 def poll_new_files(virtual_path: str, since: float) -> dict:
     """Check for new files/directories since timestamp.
 
-    Uses fast_register_images (no parsing) so polls stay lightweight.
-    Also scans immediate subdirectories so newly created output folders
-    (e.g. from a generation with a new subfolder) are detected.
-    Returns has_new_files flag so the frontend can trigger a full reload.
+    Read-only: uses os.stat mtime to detect directory changes without
+    writing to the DB. Actual registration happens on full loadBrowserContents.
+    Also reports agent_busy so the frontend can back off polling.
     """
+    from src.agent import runner
+
     abs_path = _resolve_virtual_path(virtual_path) if virtual_path else None
+    agent_busy = runner.has_active_runs()
 
     if abs_path is None:
-        # Root level: check all output directories + their immediate subdirs
+        # Root level: check all output directories for mtime changes
         roots = browser_model.get_root_directories()
-        new_count = 0
-        for root in roots:
-            new_count += _register_dir_and_subdirs(root["path"])
-        return {"new_count": new_count, "has_new_files": new_count > 0}
+        has_changes = any(_dir_changed_since(root["path"], since) for root in roots)
+        return {"has_new_files": has_changes, "agent_busy": agent_busy}
 
-    # Current directory + immediate subdirectories
-    new_count = _register_dir_and_subdirs(abs_path)
-    return {"new_count": new_count, "has_new_files": new_count > 0}
+    has_changes = _dir_changed_since(abs_path, since)
+    return {"has_new_files": has_changes, "agent_busy": agent_busy}
 
 
-def _register_dir_and_subdirs(abs_path: str) -> int:
-    """Fast-register images in a directory and its immediate subdirectories."""
-    new_count = browser_model.fast_register_images(abs_path)
+def _dir_changed_since(abs_path: str, since: float) -> bool:
+    """Check if a directory or any immediate subdirectory was modified since timestamp."""
     try:
+        if os.stat(abs_path).st_mtime > since:
+            return True
         for entry in os.listdir(abs_path):
             sub = os.path.join(abs_path, entry)
-            if os.path.isdir(sub):
-                new_count += browser_model.fast_register_images(sub)
+            if os.path.isdir(sub) and os.stat(sub).st_mtime > since:
+                return True
     except OSError:
         pass
-    return new_count
+    return False
 
 
 def recluster_folder(virtual_path: str, k: int) -> dict:
@@ -231,11 +231,11 @@ def recluster_folder(virtual_path: str, k: int) -> dict:
     parts = virtual_path.strip("/").split("/")
     concept_name = parts[1] if len(parts) >= 2 else parts[0]
 
-    # Save per-folder k override
-    settings.update_setting(f"cluster_k_intra:{concept_name}", str(k))
+    # Save per-folder k override (browser operates on output folders)
+    settings.update_setting(f"cluster_k_intra:{concept_name}:output", str(k))
 
-    # Start single-folder recluster
-    clustering_service.start_clustering_single(concept_name, k)
+    # Start single-folder recluster for output source type
+    clustering_service.start_clustering_single(concept_name, k, source_type="output")
     return {"ok": True}
 
 
@@ -255,12 +255,13 @@ def suggest_subfolders(virtual_path: str) -> dict:
     parts = virtual_path.strip("/").split("/")
     concept_name = parts[1] if len(parts) >= 2 else parts[0]
 
-    # Get intra-folder clusters for this concept
+    # Get intra-folder clusters for this concept (output source type — browser operates on output dirs)
     with get_db() as conn:
         result = conn.execute(
             text("""SELECT c.id, c.label, c.prompt_count
                FROM clusters c
                WHERE c.cluster_type = 'intra_folder' AND c.folder_path = :folder_path
+               AND c.source_type = 'output'
                ORDER BY c.id"""),
             {"folder_path": concept_name},
         )

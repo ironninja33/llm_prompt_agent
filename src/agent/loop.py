@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 from typing import Generator
 
 import sqlalchemy.exc
@@ -27,6 +28,7 @@ def run_agent_turn(
     user_message: str,
     attachments: list | None = None,
     attachment_urls: list[str] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> Generator[dict, None, None]:
     """Run one agent turn: process user message, stream response.
 
@@ -100,6 +102,18 @@ def run_agent_turn(
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
 
+            # Check for cancellation before each LLM call
+            if cancel_event and cancel_event.is_set():
+                logger.info("Agent run cancelled for chat %s (before LLM call)", chat_id)
+                if full_response:
+                    try:
+                        chat_model.add_message(chat_id, "assistant", full_response,
+                                               metadata={"is_partial": True})
+                    except Exception:
+                        pass
+                yield {"type": "done", "message_id": None}
+                return
+
             try:
                 if cache_name:
                     response_stream = llm_service.generate_stream(
@@ -167,8 +181,19 @@ def run_agent_turn(
                     ),
                 })
 
-                # Execute each tool call
+                # Execute each tool call (check cancellation before each)
                 for fc in tool_calls:
+                    if cancel_event and cancel_event.is_set():
+                        logger.info("Agent run cancelled for chat %s (before tool exec)", chat_id)
+                        if full_response or current_text:
+                            try:
+                                chat_model.add_message(chat_id, "assistant",
+                                                       full_response + current_text,
+                                                       metadata={"is_partial": True})
+                            except Exception:
+                                pass
+                        yield {"type": "done", "message_id": None}
+                        return
                     tool_name = fc.name
                     tool_args = dict(fc.args) if fc.args else {}
 

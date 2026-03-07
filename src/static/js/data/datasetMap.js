@@ -120,51 +120,11 @@ function renderMoreFolders() {
     const start = _datasetMapFoldersRendered;
     const end = Math.min(start + DATASET_MAP_PAGE_SIZE, folders.length);
 
+    const fragment = document.createDocumentFragment();
     for (let i = start; i < end; i++) {
-        const folder = folders[i];
-        const card = document.createElement('div');
-        card.className = 'folder-card';
-
-        const displayName = folder.display_name || folder.name;
-        const categoryBadge = folder.category
-            ? `<span class="category-badge">${escapeHtml(folder.category)}</span>`
-            : '';
-        let headerHtml = `<div class="folder-header" onclick="toggleFolderClusters(this)">
-            <div class="folder-name-group">
-                <span class="folder-name">${escapeHtml(displayName)}</span>
-                ${categoryBadge}
-                ${folder.summary ? `<span class="folder-summary">${escapeHtml(folder.summary)}</span>` : ''}
-            </div>
-            <span class="folder-meta">
-                <span class="source-badge source-${folder.source_type}">${folder.source_type}</span>
-                <span class="doc-count">${folder.total_prompts} docs</span>
-            </span>
-        </div>`;
-
-        let themesHtml = '<div class="folder-themes">';
-        if (folder.intra_themes && folder.intra_themes.length > 0) {
-            themesHtml += '<div class="theme-list">';
-            for (const theme of folder.intra_themes) {
-                themesHtml += `<div class="theme-tag">
-                    <span class="theme-label">${escapeHtml(theme.label)}</span>
-                    <span class="theme-count">${theme.prompt_count}</span>
-                </div>`;
-            }
-            themesHtml += '</div>';
-        } else {
-            themesHtml += '<p class="no-themes">No themes extracted yet</p>';
-        }
-        themesHtml += '</div>';
-
-        card.innerHTML = headerHtml + themesHtml;
-
-        // If global clusters are currently shown, make this new card visible too
-        if (_globalClustersVisible) {
-            card.querySelector('.folder-themes').classList.add('visible');
-        }
-
-        listContainer.appendChild(card);
+        fragment.appendChild(_createFolderCard(folders[i]));
     }
+    listContainer.appendChild(fragment);
 
     _datasetMapFoldersRendered = end;
 
@@ -199,27 +159,96 @@ function _renderAllRemainingFolders() {
     }
 }
 
+let _filterDebounceTimer = null;
+
 function filterDatasetMap(query) {
-    // Render all folders so the filter can search the full list
-    if (_datasetMapData && _datasetMapFoldersRendered < _datasetMapData.folders.length) {
-        _renderAllRemainingFolders();
-    }
+    clearTimeout(_filterDebounceTimer);
+    _filterDebounceTimer = setTimeout(() => _applyDatasetMapFilter(query), 200);
+}
+
+function _applyDatasetMapFilter(query) {
+    if (!_datasetMapData || !_datasetMapData.folders) return;
 
     const q = query.toLowerCase().trim();
-    const cards = document.querySelectorAll('#folder-list-container .folder-card');
+    const listContainer = document.getElementById('folder-list-container');
+    if (!listContainer) return;
 
-    cards.forEach(card => {
-        if (!q) {
-            card.style.display = '';
-            return;
-        }
-        const name = card.querySelector('.folder-name')?.textContent?.toLowerCase() || '';
-        const category = card.querySelector('.category-badge')?.textContent?.toLowerCase() || '';
-        const summary = card.querySelector('.folder-summary')?.textContent?.toLowerCase() || '';
-        const themes = card.querySelector('.folder-themes')?.textContent?.toLowerCase() || '';
-        const match = name.includes(q) || category.includes(q) || summary.includes(q) || themes.includes(q);
-        card.style.display = match ? '' : 'none';
+    if (!q) {
+        // No filter — reset to paginated rendering
+        _datasetMapFoldersRendered = 0;
+        listContainer.innerHTML = '';
+        renderMoreFolders();
+        setupFolderInfiniteScroll();
+        return;
+    }
+
+    // Filter at the data level instead of rendering all then hiding
+    teardownFolderScroll();
+    const matching = _datasetMapData.folders.filter(folder => {
+        const name = (folder.display_name || folder.name || '').toLowerCase();
+        const category = (folder.category || '').toLowerCase();
+        const summary = (folder.summary || '').toLowerCase();
+        const themes = (folder.intra_themes || []).map(t => (t.label || '').toLowerCase()).join(' ');
+        return name.includes(q) || category.includes(q) || summary.includes(q) || themes.includes(q);
     });
+
+    // Re-render only matching folders using DocumentFragment
+    const fragment = document.createDocumentFragment();
+    for (const folder of matching) {
+        fragment.appendChild(_createFolderCard(folder));
+    }
+    listContainer.innerHTML = '';
+    listContainer.appendChild(fragment);
+    _datasetMapFoldersRendered = _datasetMapData.folders.length; // Mark as fully rendered
+
+    // Hide sentinel during filtered view
+    const sentinel = document.getElementById('folder-scroll-sentinel');
+    if (sentinel) sentinel.style.display = 'none';
+}
+
+function _createFolderCard(folder) {
+    const card = document.createElement('div');
+    card.className = 'folder-card';
+
+    const displayName = folder.display_name || folder.name;
+    const categoryBadge = folder.category
+        ? `<span class="category-badge">${escapeHtml(folder.category)}</span>`
+        : '';
+    let headerHtml = `<div class="folder-header" onclick="toggleFolderClusters(this)">
+        <div class="folder-name-group">
+            <span class="folder-name">${escapeHtml(displayName)}</span>
+            ${categoryBadge}
+            <button class="folder-edit-btn" title="Rename folder" onclick="event.stopPropagation(); startFolderRename(this, '${escapeHtml(folder.name)}')"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M11.13 1.47a1.5 1.5 0 0 1 2.12 0l1.28 1.28a1.5 1.5 0 0 1 0 2.12L5.9 13.5a1 1 0 0 1-.42.26l-3.5 1.17a.5.5 0 0 1-.63-.63l1.17-3.5a1 1 0 0 1 .26-.42L11.13 1.47zM12.2 2.53l-8.1 8.1-.78 2.35 2.35-.78 8.1-8.1-1.57-1.57z"/></svg></button>
+            ${folder.summary ? `<span class="folder-summary">${escapeHtml(folder.summary)}</span>` : ''}
+        </div>
+        <span class="folder-meta">
+            <span class="source-badge source-${folder.source_type}">${folder.source_type}</span>
+            <span class="doc-count">${folder.total_prompts} docs</span>
+        </span>
+    </div>`;
+
+    let themesHtml = '<div class="folder-themes">';
+    if (folder.intra_themes && folder.intra_themes.length > 0) {
+        themesHtml += '<div class="theme-list">';
+        for (const theme of folder.intra_themes) {
+            themesHtml += `<div class="theme-tag">
+                <span class="theme-label">${escapeHtml(theme.label)}</span>
+                <span class="theme-count">${theme.prompt_count}</span>
+            </div>`;
+        }
+        themesHtml += '</div>';
+    } else {
+        themesHtml += '<p class="no-themes">No themes extracted yet</p>';
+    }
+    themesHtml += '</div>';
+
+    card.innerHTML = headerHtml + themesHtml;
+
+    if (_globalClustersVisible) {
+        card.querySelector('.folder-themes').classList.add('visible');
+    }
+
+    return card;
 }
 
 function teardownFolderScroll() {
@@ -265,4 +294,88 @@ function setupFolderInfiniteScroll() {
         }
     }
     requestAnimationFrame(fillIfNeeded);
+}
+
+// ── Folder rename ────────────────────────────────────────────────────────
+
+function startFolderRename(btn, rawName) {
+    const nameGroup = btn.closest('.folder-name-group');
+    if (!nameGroup) return;
+
+    // Save original HTML so we can restore on cancel
+    const originalHtml = nameGroup.innerHTML;
+
+    nameGroup.innerHTML = `
+        <input type="text" class="folder-rename-input" value="${escapeHtml(rawName)}" />
+        <button class="folder-rename-ok" onclick="executeFolderRename(this, '${escapeHtml(rawName)}')">OK</button>
+        <button class="folder-rename-cancel" onclick="cancelFolderRename(this)">Cancel</button>
+    `;
+    nameGroup._originalHtml = originalHtml;
+
+    const input = nameGroup.querySelector('.folder-rename-input');
+    input.focus();
+    input.select();
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            executeFolderRename(input, rawName);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelFolderRename(input);
+        }
+    });
+}
+
+function cancelFolderRename(el) {
+    const nameGroup = el.closest('.folder-name-group');
+    if (nameGroup && nameGroup._originalHtml) {
+        nameGroup.innerHTML = nameGroup._originalHtml;
+        delete nameGroup._originalHtml;
+    }
+}
+
+async function executeFolderRename(el, oldName) {
+    const nameGroup = el.closest('.folder-name-group');
+    if (!nameGroup) return;
+
+    const input = nameGroup.querySelector('.folder-rename-input');
+    const newName = (input ? input.value : '').trim();
+
+    if (!newName || newName === oldName) {
+        cancelFolderRename(el);
+        return;
+    }
+
+    // Disable controls while request is in-flight
+    const okBtn = nameGroup.querySelector('.folder-rename-ok');
+    const cancelBtn = nameGroup.querySelector('.folder-rename-cancel');
+    if (input) input.disabled = true;
+    if (okBtn) okBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    try {
+        const resp = await fetch('/api/folder/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ old_name: oldName, new_name: newName }),
+        });
+        const result = await resp.json();
+        if (result.ok) {
+            // Refresh the entire dataset map to reflect the change
+            const container = document.getElementById("dataset-map-content");
+            const response = await fetch("/api/dataset-map");
+            _datasetMapData = await response.json();
+            _datasetMapFoldersRendered = 0;
+            renderDatasetMap(_datasetMapData, container);
+            // Re-activate the folders tab
+            const foldersTab = document.querySelector('.dataset-map-tab[data-map-tab="map-folders"]');
+            if (foldersTab) switchDatasetMapTab(foldersTab);
+        } else {
+            alert('Rename failed: ' + (result.error || 'Unknown error'));
+            cancelFolderRename(el);
+        }
+    } catch (err) {
+        alert('Rename failed: ' + err.message);
+        cancelFolderRename(el);
+    }
 }

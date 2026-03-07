@@ -3,7 +3,7 @@
 import logging
 from src.models import chat as chat_model
 from src.models import tool_calls as tool_calls_model
-from src.agent.loop import run_agent_turn
+from src.agent import runner
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ def get_chat(chat_id: str) -> dict | None:
 
 def delete_chat(chat_id: str) -> bool:
     """Delete a chat and all its messages."""
+    runner.cancel_run(chat_id)
     return chat_model.delete_chat(chat_id)
 
 
@@ -56,40 +57,31 @@ def send_message(
     content: str,
     attachments: list | None = None,
     attachment_urls: list[str] | None = None,
-):
-    """Process a user message through the agent loop.
+) -> runner.AgentRun:
+    """Start a background agent run for the user message.
 
-    Args:
-        chat_id: The chat session ID.
-        content: Text content of the user message.
-        attachments: Optional list of attachment dicts with keys
-            'filename', 'content_type', 'data' (raw bytes).
-        attachment_urls: Optional list of persistent URLs for the attachments.
-
-    Returns a generator that yields SSE event dicts.
+    Returns the AgentRun whose events queue the SSE endpoint reads from.
     """
     # Verify chat exists
     chat = chat_model.get_chat(chat_id)
     if not chat:
-        yield {"type": "error", "message": "Chat not found"}
-        return
+        return None
 
-    # Run agent turn
-    yield from run_agent_turn(
+    return runner.start_run(
         chat_id, content,
         attachments=attachments,
         attachment_urls=attachment_urls,
     )
 
 
-def edit_and_resubmit(chat_id: str, message_id: int, new_content: str):
+def edit_and_resubmit(chat_id: str, message_id: int, new_content: str) -> runner.AgentRun:
     """Edit a user message and resubmit.
 
     Deletes the original message and all messages after it,
-    then resubmits with new content.
+    then starts a new agent run with the new content.
     """
     # Delete the message and everything after it
     chat_model.delete_messages_after(chat_id, message_id)
 
-    # Resubmit
-    yield from run_agent_turn(chat_id, new_content)
+    # Start new agent run
+    return runner.start_run(chat_id, new_content)

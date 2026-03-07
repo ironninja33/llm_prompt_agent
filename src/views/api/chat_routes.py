@@ -2,6 +2,7 @@
 
 import logging
 import os
+import queue
 import re
 import uuid
 
@@ -10,6 +11,7 @@ from flask import request, jsonify, Response, send_from_directory
 from src.views.api import api_bp
 from src.views.api.helpers import _sse_event
 from src.controllers import chat_controller
+from src.agent import runner
 from src.config import BASE_DIR
 
 logger = logging.getLogger(__name__)
@@ -88,21 +90,17 @@ def send_message(chat_id):
             return jsonify({"error": "content is required"}), 400
         content = data["content"]
 
-    def generate():
-        try:
-            for event in chat_controller.send_message(
-                chat_id, content,
-                attachments=attachment_data,
-                attachment_urls=attachment_urls if attachment_urls else None,
-            ):
-                event_type = event.get("type", "unknown")
-                yield _sse_event(event_type, event)
-        except Exception as e:
-            logger.error(f"SSE stream error: {e}", exc_info=True)
-            yield _sse_event("error", {"message": str(e)})
+    agent_run = chat_controller.send_message(
+        chat_id, content,
+        attachments=attachment_data,
+        attachment_urls=attachment_urls if attachment_urls else None,
+    )
+
+    if agent_run is None:
+        return jsonify({"error": "Chat not found"}), 404
 
     return Response(
-        generate(),
+        _stream_from_queue(agent_run),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -139,15 +137,16 @@ def _save_upload(chat_id: str, original_filename: str, data: bytes) -> str:
 
 @api_bp.route("/chats/<chat_id>/cancel", methods=["POST"])
 def cancel_message(chat_id):
-    """Cancel a streaming response. Deletes the user message and any partial assistant reply."""
-    from src.models import chat as chat_model
+    """Cancel a streaming response."""
+    # Signal the background agent to stop
+    runner.cancel_run(chat_id)
 
     data = request.get_json()
     message_id = data.get("message_id") if data else None
-    if not message_id:
-        return jsonify({"error": "message_id is required"}), 400
+    if message_id:
+        from src.models import chat as chat_model
+        chat_model.delete_messages_after(chat_id, message_id)
 
-    chat_model.delete_messages_after(chat_id, message_id)
     return jsonify({"ok": True})
 
 
@@ -160,17 +159,13 @@ def edit_message(chat_id, message_id):
 
     content = data["content"]
 
-    def generate():
-        try:
-            for event in chat_controller.edit_and_resubmit(chat_id, message_id, content):
-                event_type = event.get("type", "unknown")
-                yield _sse_event(event_type, event)
-        except Exception as e:
-            logger.error(f"SSE stream error: {e}", exc_info=True)
-            yield _sse_event("error", {"message": str(e)})
+    agent_run = chat_controller.edit_and_resubmit(chat_id, message_id, content)
+
+    if agent_run is None:
+        return jsonify({"error": "Chat not found"}), 404
 
     return Response(
-        generate(),
+        _stream_from_queue(agent_run),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -178,3 +173,32 @@ def edit_message(chat_id, message_id):
             "Connection": "keep-alive",
         },
     )
+
+
+def _stream_from_queue(agent_run):
+    """Read events from the AgentRun queue and yield SSE strings.
+
+    If the client disconnects, the background thread continues to completion.
+    Yields keepalive comments on queue timeout to detect dead connections.
+    """
+    try:
+        while True:
+            try:
+                event = agent_run.events.get(timeout=0.5)
+            except queue.Empty:
+                # Keepalive — lets Flask detect disconnected clients
+                yield ": keepalive\n\n"
+                continue
+
+            if event is None:
+                # Sentinel — agent run finished
+                break
+
+            event_type = event.get("type", "unknown")
+            yield _sse_event(event_type, event)
+    except GeneratorExit:
+        # Client disconnected — agent thread continues in background
+        logger.debug("SSE client disconnected for chat %s; agent continues", agent_run.chat_id)
+    except Exception as e:
+        logger.error("SSE stream error: %s", e, exc_info=True)
+        yield _sse_event("error", {"message": str(e)})

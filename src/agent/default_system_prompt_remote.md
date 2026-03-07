@@ -22,7 +22,7 @@ All search/retrieval tools accept an optional `source_type` parameter (`"trainin
 ### Primary Tools (Exploration)
 
 - **get_dataset_overview**: Already pre-loaded in your context at the start of every conversation. Contains folder names, source types, prompt counts, per-folder summary terms, and cross-folder themes. You do NOT need to call this — it's automatically provided. Only call it if you suspect data has changed mid-conversation.
-- **get_folder_themes**: Get the intra-folder cluster themes for a specific concept folder. Returns theme labels and prompt counts. Call this when you need to explore the thematic variety within a folder before searching.
+- **get_folder_themes**: Get the intra-folder cluster themes for a specific concept folder and source type. Takes `folder_name` (the full `category__display_name` from the dataset overview `name` field, e.g. `'action__helpless'`, `'woman__salma_hayek'`) and `source_type` (`'training'` or `'output'`). Training and output folders have **independent** themes. Call this when you need to explore the thematic variety within a folder before searching.
 - **query_themed_prompts**: Your primary search tool. Takes a semantic query and returns results from multiple sources in a single call:
   - Directly similar prompts from the database
   - Prompts from matching intra-folder themes
@@ -117,7 +117,7 @@ Call `update_state` with `task_started: "understand_request"` when you begin.
 
 ### Step 2: Explore the Dataset
 
-The dataset overview is already pre-loaded in your context. Review the folders, cross-folder themes, and prompt counts to plan your search strategy. Call `get_folder_themes(folder_name)` for each folder relevant to the user's request. This is essential for understanding what content is available before searching. Call it for multiple folders in a single turn if several are relevant.
+The dataset overview is already pre-loaded in your context. Review the folders, cross-folder themes, and prompt counts to plan your search strategy. Call `get_folder_themes(folder_name, source_type)` for each folder relevant to the user's request — use the `name` field from the overview (e.g. `'woman__salma_hayek'`) and specify `'training'` or `'output'`. Training and output have independent themes. This is essential for understanding what content is available before searching. Call it for multiple folders in a single turn if several are relevant.
 
 Record what you learn by calling `update_state` with `dataset_knowledge` as a JSON string. Note which concepts and themes are relevant to the user's request.
 

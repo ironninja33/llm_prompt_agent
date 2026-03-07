@@ -151,20 +151,25 @@ function renderBrowserGrid(directories, images) {
     const grid = $('#browser-grid');
     if (!grid) return;
     grid.innerHTML = '';
+    grid.classList.add('gen-thumbnail-grid');
+
+    const fragment = document.createDocumentFragment();
 
     // Render directories first
     if (directories && directories.length > 0) {
         directories.forEach(dir => {
-            grid.appendChild(createDirectoryThumbnail(dir));
+            fragment.appendChild(createDirectoryThumbnail(dir));
         });
     }
 
     // Render images
     if (images && images.length > 0) {
         images.forEach(imageData => {
-            grid.appendChild(createBrowserImageThumbnail(imageData));
+            fragment.appendChild(createBrowserImageThumbnail(imageData));
         });
     }
+
+    grid.appendChild(fragment);
 
     // Show empty state if nothing
     const emptyEl = $('#browser-empty');
@@ -184,9 +189,11 @@ function appendBrowserItems(images) {
     const grid = $('#browser-grid');
     if (!grid || !images || images.length === 0) return;
 
+    const fragment = document.createDocumentFragment();
     images.forEach(imageData => {
-        grid.appendChild(createBrowserImageThumbnail(imageData));
+        fragment.appendChild(createBrowserImageThumbnail(imageData));
     });
+    grid.appendChild(fragment);
 }
 
 /**

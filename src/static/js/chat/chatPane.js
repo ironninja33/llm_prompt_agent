@@ -472,6 +472,9 @@ async function sendMessage() {
             addStreamingMessage();
         }
 
+        // Broadcast stream start to other tabs
+        CrossTabSync.broadcast('stream_started', { chatId: sendChatId });
+
         await readSSEStream(response, {
             user_saved(data) {
                 StreamRegistry.setUserMessageId(sendChatId, data.message_id);
@@ -490,6 +493,7 @@ async function sendMessage() {
                 if (currentChatId === sendChatId) {
                     appendToStreamingMessage(text);
                 }
+                CrossTabSync.broadcast('stream_token', { chatId: sendChatId, text });
             },
             status(data) {
                 if (currentChatId === sendChatId) {
@@ -521,6 +525,7 @@ async function sendMessage() {
                     finalizeStreamingAsError(data.message || 'An error occurred');
                 }
                 StreamRegistry.cleanup(sendChatId);
+                CrossTabSync.broadcast('stream_error', { chatId: sendChatId });
                 renderChatList();
             },
             done(data) {
@@ -531,6 +536,7 @@ async function sendMessage() {
                     setStreaming(false);
                 }
                 StreamRegistry.cleanup(sendChatId);
+                CrossTabSync.broadcast('stream_done', { chatId: sendChatId, messageId: data.message_id });
                 // Refresh chat list to pick up new title
                 loadChats();
             },
@@ -615,6 +621,8 @@ async function submitEditedMessage(messageId) {
             addStreamingMessage();
         }
 
+        CrossTabSync.broadcast('stream_started', { chatId: sendChatId });
+
         await readSSEStream(response, {
             user_saved(data) {
                 StreamRegistry.setUserMessageId(sendChatId, data.message_id);
@@ -630,6 +638,7 @@ async function submitEditedMessage(messageId) {
                 if (currentChatId === sendChatId) {
                     appendToStreamingMessage(text);
                 }
+                CrossTabSync.broadcast('stream_token', { chatId: sendChatId, text });
             },
             status(data) {
                 if (currentChatId === sendChatId) {
@@ -658,6 +667,7 @@ async function submitEditedMessage(messageId) {
                     finalizeStreamingAsError(data.message || 'An error occurred');
                 }
                 StreamRegistry.cleanup(sendChatId);
+                CrossTabSync.broadcast('stream_error', { chatId: sendChatId });
                 renderChatList();
             },
             done(data) {
@@ -668,6 +678,7 @@ async function submitEditedMessage(messageId) {
                     setStreaming(false);
                 }
                 StreamRegistry.cleanup(sendChatId);
+                CrossTabSync.broadcast('stream_done', { chatId: sendChatId, messageId: data.message_id });
                 loadChats();
             },
         });
