@@ -288,11 +288,10 @@ def get_generated_thumbnail(job_id, image_id):
     thumb_bytes = _get_thumbnail_bytes(image)
 
     if not thumb_bytes:
-        _cleanup_missing_image(job_id, image_id)
         return Response(
             MISSING_IMAGE_SVG,
             mimetype="image/svg+xml",
-            headers={"Cache-Control": "no-cache"},
+            headers={"Cache-Control": "no-store"},
         )
 
     return Response(
