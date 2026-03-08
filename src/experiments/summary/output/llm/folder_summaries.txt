@@ -1,0 +1,804 @@
+================================================================================
+Folder: woman__angelicfuckdoll
+Data Root: output
+Concept: woman
+TF-IDF Summary: black widow, wide hips, explicit sex
+LLM Summary:    nude, chain, stockings, pedestal, vulva, flirty, hourglass, dim, cinematic, ogling
+  Clusters:
+    • [dimly lit alley, lit alley]: celebrity, nude, stockings, vulnerable, dim, alley, sexual, act, powerful, man
+    • [sex inside, wrists thighs]: massive hips, thick thighs, large breasts, bound, suspended, explicit sex, sci-fi lab, objectification, helpless
+    • [skirt hiked waist, hiked waist]: blonde, busty, office, submissive, exposed, detailed, sexual, cinematic, vulnerable, explicit
+    • [erect penis leaking, bodysuit unzipped breasts]: leather-clad, red-haired, busty, submissive, strip club, blowjob, objectified, cinematic, neon, stage.
+    • [wooden post, rustic dungeon]: nude, bound, large breasts, deep penetration, dark dungeon, steamy, close-up, bondage, moan, intense.
+    • [suspended congress, reverse suspended]: nude man, woman with stockings, garter belt, wide hips, strip club, eye contact, low angle, erotic, suspended, explicit.
+    • [tiny waist, sexual objectification]: exaggerated body, submissive pose, dominant man, blowjob, luxury dungeon, high-contrast lighting
+    • [catching red, lights catching red]: curvy, bare-breasted, leather-clad, submissive, penetrated, office, red-haired, dark, moody, explicit.
+    • [display orgasms, emphasizing display orgasms]: nude man penetrates woman's vagina while she stands, squirts, and orgasms on stage.
+    • [lace garter, lace garter belt]: nude woman, thick legs, black stockings, garter belt, cum dripping, front-facing sex act, neon lighting, luxury penthouse, hourglass figure, moaning orgasms.
+    • [unzipped bodysuit, eroticness wide hips]: curvy hourglass figure, leather bodysuit, standing sex act, strip club stage, wide hips, moaning, cum-covered penis, neon lighting.
+    • [slightly bent, flirty moan]: nude, chain, stockings, pedestal, vulva, flirty, hourglass, dim, private, ogling.
+    • [shadowy lighting, wet glowing]: curvy blonde, leather suit, dominant man, underground lair, exposed penis, helpless expression, steamy atmosphere, tight black bodysuit, wide hips, flushed cheeks
+    • [hiked reveal thighs, thighs garter]: blonde, vulnerable, exposed, office, sexual, detailed, restrained, dark, sensual, pinned
+    • [massive bare erect, bare erect penis]: blonde, bound, vulnerable, exposed, submissive, sexual, forced, naked, vulva, menacing
+================================================================================
+
+================================================================================
+Folder: woman__angelicfuckdoll
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: black widow, wide hips, explicit sex
+LLM Summary:    curvaceous, black bodysuit, exposed cleavage, confident pose, stylized cosplay.
+  Clusters:
+    • [black widow, leather like]: curvaceous, black suit, exposed cleavage, tactical belt, confident pose, white background.
+    • [mirror selfie, black smartphone]: curvaceous, large-breasted, nude, topless, exposed, minimalist, bedroom, smartphone, censored, explicit.
+    • [ring light, white teeth]: voluptuous, large-breasted, topless, posed, sheer, exposed, confident, intimate, lighting, neutral.
+    • [black lingerie, cascades shoulders]: curvy, topless, lingerie-clad, posed, frontal, highlighted, sexual, explicit, large-breasted, explicit.
+================================================================================
+
+================================================================================
+Folder: action__lactate
+Data Root: input_fine_tune
+Concept: action
+TF-IDF Summary: chest level, right breast, fair skinned
+LLM Summary:    lactating women perform intense, forceful milk expulsion in kitchen settings.
+  Clusters:
+    • [red hearts, black mesh]: Lactating women express milk through deliberate, intimate physical gestures.
+    • [stream white, actively squeezing]: Milk expulsion through erect nipples under focused camera angles.
+    • [katerina hartlova, text katerina hartlova]: Lactating woman forcefully ejects milk in kitchen setting.
+    • [volume weight, moment lactation]: Lactation depicted through active milk flow and physical interaction.
+================================================================================
+
+================================================================================
+Folder: woman__alanah_solo
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: alanah rae, eye level, thigh stockings
+LLM Summary:    Caucasian, voluptuous, lace, lingerie, confident, posing, intimate, lighting, vintage, setting.
+  Clusters:
+    • [blue lingerie, lacy blue lingerie]: curvy, large-breasted, blue-laced, submissive, confident, intimate, vintage, red, light, bound.
+    • [stair photoshoot, wooden staircase]: curvaceous, nude, provocative, thigh-high stockings, stair photoshoot, seductive poses, dark settings, intense gazes, explicit body exposure, explicit body details
+    • [text alanahrae, dining room]: curvaceous, topless, exposed, seductive, posing, intimate, lighting, domestic, body, detailed.
+    • [naughty america, blue red]: Caucasian, curvaceous, nude, provocative, explicit, exposed, intimate, sexual, explicit, explicit.
+================================================================================
+
+================================================================================
+Folder: setting__alley
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: dim alley, eye level, brick wall
+LLM Summary:    dim, deserted, urban, alley, night, artificial, high-contrast, shadows, light, darkness.
+  Clusters:
+    • [ground consists, walls constructed]: narrow, dark, urban alleyways with stark artificial lighting and shadowy, weathered brick walls.
+    • [dark trousers, dominated deep]: dim, narrow, urban alleyways with contrasting lighting and industrial elements.
+================================================================================
+
+================================================================================
+Folder: setting__golden_hour
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: red orange hue, golden hour, orange hue
+LLM Summary:    Dramatic skies, intense warm light, vast natural horizons, dark shadows, golden hour ambiance.
+  Clusters:
+    • [wet sand, water surface]: Dramatic oceanic skies with intense, fiery orange and gold lighting.
+    • [living room, throw pillows]: Golden hour, warm light, interior spaces, natural illumination, domestic scenes.
+    • [city skyline, horizon sun]: Dramatic sky, deep silhouette, intense backlighting, vibrant orange hues, stark contrast.
+================================================================================
+
+================================================================================
+Folder: clothes__cosplay
+Data Root: input_fine_tune
+Concept: clothes
+TF-IDF Summary: right hand, form fitting, red carpet
+LLM Summary:    Futuristic, revealing, detailed, layered, tactical, combat, cosplay, bold, geometric, vibrant.
+  Clusters:
+    • [fair skinned, form fitting]: High-impact, form-fitting, metallic, layered, functional superhero attire.
+    • [wig bangs, white studio]: futuristic, revealing, geometric, layered, detailed, stylized, contrasting, intricate, bold, structured
+================================================================================
+
+================================================================================
+Folder: pose__partially_submerged
+Data Root: input_fine_tune
+Concept: pose
+TF-IDF Summary: horizon line, golden hour, positioned low
+LLM Summary:    Relaxed, profiled, water-level, sunlit, bikini-wearing, oceanic, contemplative, low-angle, sand-submerged, sunlit.
+  Clusters:
+    • [buried neck, granular surface]: Buried neck, exposed faces, relaxed supine positions, sand-covered bodies, beach settings.
+    • [water level, just water]: Silhouetted, relaxed, profiled, bikini-clad, sunset-kissed, water-bound, low-angle, contemplative, lit-by-sun, rippling.
+================================================================================
+
+================================================================================
+Folder: sex_act__sucking_breast
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: sucking breast, highlighting subjects, overall composition
+LLM Summary:    oral penetration, close-up, intimate, explicit, sexual, explicit, explicit, explicit, explicit, explicit
+  Clusters:
+    • [alanah rae, left frame]: sucking breasts, close-up, intimate, oral, positioned, focused, detailed, studio, lighting, explicit.
+    • [lighting soft, large round]: intimate oral penetration of large natural breasts in varied positions and settings.
+    • [scoreland logo, logo left]: oral stimulation, intimate positioning, close-up focus, explicit act, detailed action, sexual encounter, explicit positioning, explicit act, close-up, explicit action
+================================================================================
+
+================================================================================
+Folder: sex_act__doggystyle
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: sexual intercourse, hands knees, positioned hands knees
+LLM Summary:    doggystyle intercourse with eye contact and explicit positioning.
+  Clusters:
+    • [positioned directly, mouth open expression]: doggystyle, rear-entry, profile, intimate, explicit, penetration, couple, sexual, act, explicit
+    • [alanah rae, dark wood]: doggystyle intercourse with explicit camera angles and detailed sexual positions.
+    • [aletta ocean, text culioneros]: anal penetration, doggystyle, close-up, rear view, explicit act, vaginal insertion, rear-facing, intimate, sexual position, explicit scene
+================================================================================
+
+================================================================================
+Folder: action__milk_covered
+Data Root: input_fine_tune
+Concept: action
+TF-IDF Summary: bright highlighting, lighting bright highlighting, overall composition
+LLM Summary:    Nude woman pouring milk over chest and genitals in varied settings.
+  Clusters:
+    • [reads ddf, white checkered]: Nude woman pouring milk over chest and genitals in varied settings.
+    • [wide hips, beige tiled]: Milk application, body immersion, sensual rituals, intimate acts.
+    • [milk pouring, white liquid]: Nude women pour milk over their bodies in intimate, sensual acts.
+================================================================================
+
+================================================================================
+Folder: camera__pov_sex
+Data Root: input_fine_tune
+Concept: camera
+TF-IDF Summary: erect penis, sexual act, cowgirl position
+LLM Summary:    high-angle, behind, POV, anal penetration, close-up, from above, doggystyle, sexual act, intimate view, direct gaze
+  Clusters:
+    • [hands knees, text evilangel]: High-angle, behind-the-scenes, intimate, POV, sexual act, penetration, reverse cowgirl, close-up, explicit, voyeuristic.
+    • [wooden floor, legs spread]: High-angle, low-angle, and eye-level perspectives capture intimate sexual encounters.
+    • [aletta ocean, light brown]: high-angle, behind, POV, anal, penetration, thrust, focus, intimate, close-up, explicit
+================================================================================
+
+================================================================================
+Folder: character__jasmine_hourglass
+Data Root: input_fine_tune
+Concept: character
+TF-IDF Summary: blue outfit, princess jasmine, evil lair
+LLM Summary:    Princess Jasmine, blue attire, opulent setting, helpless pose, hourglass confinement.
+  Clusters:
+    • [partially submerged, movie featuring]: Princess Jasmine, blue attire, opulent setting, trapped hourglass, helpless expression.
+    • [evil lair, overall atmosphere]: Turquoise belly-dancer outfit, regal, exotic, mysterious, Middle Eastern aesthetic.
+================================================================================
+
+================================================================================
+Folder: action__trapped
+Data Root: input_fine_tune
+Concept: action
+TF-IDF Summary: christina carter, left corner, heavy breasts
+LLM Summary:    Nude woman suspended, stretching, grasping cage bars dynamically.
+  Clusters:
+    • [reads www, christina carter]: Erotic bondage, submission, restrained movement, intense focus, captive behavior.
+    • [glass door, shower door]: Nude women press palms against glass in voyeuristic poses.
+    • [metal birdcage, inside large]: Nude woman suspended, stretching, grasping cage bars dynamically.
+================================================================================
+
+================================================================================
+Folder: character__stripper_solo
+Data Root: input_fine_tune
+Concept: character
+TF-IDF Summary: stripper pole, brielle taylor, summer brielle taylor
+LLM Summary:    Curvaceous, revealing, seductive, club-dressed, pole-posed women.
+  Clusters:
+    • [black thigh, black thigh stockings]: curvaceous, nude, tattooed, provocative, stage, stripper, lingerie, pole, confident, seductive
+    • [brielle taylor, summer brielle]: nude stripper in glamorous, theatrical, red-hair, satin-gloved, provocative poses.
+    • [viola bailey, ambient lights]: nude woman in black heels, posing sensually on stage.
+    • [lucy li, ddf network]: Curvaceous, revealing, seductive, club, red, leather, platform, pole, exposed, glamorous.
+================================================================================
+
+================================================================================
+Folder: woman__asa akira
+Data Root: output
+Concept: woman
+TF-IDF Summary: asa akira, strip club emphasizes, club emphasizes
+LLM Summary:    asian, athletic, sexualized, provocative, explicit, body, fetish, club, hotel, explicit.
+  Clusters:
+    • [luxurious hotel room, room dark]: asian, athletic, sheer, high heels, cum, voyeuristic, hotel, frontal, orgasm, penetration
+    • [dripping floor, lighting spotlights]: asian, muscular, nude, stockings, strip club, penetration, staged, sexual, explicit, explicit
+    • [lighting dim, stylish sign]: asian athletic woman in stockings, standing fuck, strip club, orgasm, neon lighting.
+    • [blurred evening, rise hotel]: Asian, curvaceous, tanned, long hair, explicit sex acts, high-end setting, detailed, intimate, cinematic, provocative.
+    • [belt cinches, belt cinches waist]: Asian, provocative, office, tight, revealing, sultry, dark, elegant, structured, exposed.
+    • [pregnant large, pregnant large breasts]: asian pregnant stripper with large breasts, stockings, hoop earrings, cum, sex act, strip club, dim lighting, nude man, sticky genitals, front camera.
+    • [highlighting sexualization, flirty moan]: asian, nude, chain, stockings, pedestal, sexualized, flirty, dim, club, hourglass.
+================================================================================
+
+================================================================================
+Folder: woman__asa akira
+Data Root: training
+Concept: woman
+TF-IDF Summary: asa akira, strip club emphasizes, club emphasizes
+LLM Summary:    Asians, muscular, sexual, strip club, staged, provocative, nude, thong, penetration, cum.
+  Clusters:
+    • [pregnant large, pregnant large breasts]: asian pregnant stripper with large breasts, stockings, hoop earrings, cum, sex act, strip club, dim lighting, nude man, sticky genitals, front camera.
+    • [squirting vagina floor, squirting vagina]: asian athletic woman in stockings, standing fuck, strip club, orgasm, neon lighting.
+    • [desires audience vaguely, penis erect]: asian stripper, kneeling, oral, stockings, high heels, dimly lit club, cum, saliva, vulva, submission
+    • [dark wood, dark wood paneling]: Asian, curvaceous, explicit, high-end, sexual, detailed, intimate, hotel, penetration, stockings.
+    • [lighting spotlights, squirting dripping floor]: asian, muscular, sexual, strip club, penetration, stockings, staged, dimly lit, audience, explicit
+    • [legs wrapped, legs wrapped waist]: asian, muscular, nude, thong, strip club, sex act, cum, penetration, camera angle, moaning
+    • [belt cinches, belt cinches waist]: Asian, provocative, office, attire, sultry, lighting, body, posture, setting, explicit.
+================================================================================
+
+================================================================================
+Folder: woman__gabrielle_scream
+Data Root: output
+Concept: woman
+TF-IDF Summary: gabrielle scream, lighting dim, cheerleader skirt
+LLM Summary:    curvy, red-haired, nude man, black stockings, strip club, sex act, orgasm, voyeuristic angle.
+  Clusters:
+    • [vulnerable hot, vulnerable hot celebrity]: celebrity, nude, stockings, hoop earrings, vulnerable, dim alley, sexual act, submissive, cinematic lighting, vulnerable celebrity in alley, submissive celebrity in dim alley, vulnerable celebrity in dim alley, submissive celebrity in dim alley, vulnerable celebrity in dim alley, submissive celebrity in dim alley, vulnerable celebrity in dim alley, submissive celebrity in dim alley, vulnerable celebrity in dim alley, submissive celebrity in dim alley, vulnerable celebrity in dim alley, submissive celebrity in dim alley
+    • [white cheerleader outfit, white cheerleader]: cheerleader outfit, topless, vaginal penetration, cum-covered penis, studio photoshoot.
+    • [stockings garter, stockings garter belt]: strip club stage, nude man, stocking woman, rear entry, orgasmic pose, dim neon lighting.
+    • [black solid, dark nightclub]: posh, leather, reverse cowgirl, black stockings, garter belt, nightclub, explicit penetration, visible belly button, hoop earrings, wedding ring
+    • [lit nightclub, setting private]: nude, large-breasted, curly-haired, rear-positioned sex act in dimly lit nightclub.
+    • [lace garter, moans orgasms]: curvy, red-haired, nude man, black stockings, strip club, sex act, orgasm, voyeuristic angle.
+    • [stylish sign reads, stylish sign]: nude woman, cheerleader skirt, sexual act, strip club, vaginal discharge
+    • [intimate moment, couch straddling legs]: strip club, woman, large breasts, garter belt, stockings, sexual position, dim lighting, explicit act, voyeuristic angle, explicit detail.
+    • [cheer girl, reveal penis penetrating]: cheerleader, vulva exposed, sexual act, strip club, dim lighting, intimate pose.
+    • [carwash photoshoot, outdoors erotic]: erotic outdoor sex act with large-breasted, long-haired, clothed woman in carwash setting.
+================================================================================
+
+================================================================================
+Folder: woman__gabrielle_scream
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: gabrielle scream, lighting dim, cheerleader skirt
+LLM Summary:    nude, provocative, beach, carwash, bikini, red Jeep, sensual, exposed, bold, sensual.
+  Clusters:
+    • [reads private, reads private classics]: curvy, red bikini, beach, confident, sunny, playful, natural, vibrant, athletic, relaxed
+    • [red jeep, carwash photoshoot]: nude, provocative, red Jeep, sensual poses, natural hair, exposed pubic hair, dark backgrounds, outdoor settings, sensual expressions.
+    • [blonde long, slightly seductive]: nude, topless, provocative, sensual, exposed, seductive, natural, large-breasted, vintage, rugged.
+================================================================================
+
+================================================================================
+Folder: woman__jeneveve_jolie_loyalfans
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: jenaveve jolie, eye level, reads www
+LLM Summary:    Latina, curvaceous, nude, bohemian, exposed, sensual, sunlit, rustic, posing, draped.
+  Clusters:
+    • [rocking chair, wooden rocking]: Latina, curvaceous, earth-toned, provocative, outdoor, seductive, natural light.
+    • [positioned close range, close range]: Latina, 40s, exposed cleavage, tight clothing, intimate angles, tanned skin, soft lighting, bedroom setting.
+    • [gold chain, fluffy white faux]: Latina, 40s, nude, exposed, posing, detailed, intimate, clothing, setting, lighting.
+    • [phone case, capture reflection]: latina, athletic, topless, minimal, provocative, mirror, selfie, nude, tattoos, industrial.
+================================================================================
+
+================================================================================
+Folder: body_type__small_breasts
+Data Root: input_fine_tune
+Concept: body_type
+TF-IDF Summary: eye level, positioned eye, positioned eye level
+LLM Summary:    Small, perky breasts, lean torsos, toned physiques, minimal clothing.
+  Clusters:
+    • [breasts fully, stomach flat]: Small, perky breasts, slender figures, toned physiques, exposed skin.
+    • [time videos, 2016 time]: Slender, fit, perky, natural-breasted, athletic builds.
+================================================================================
+
+================================================================================
+Folder: woman__erica_campbell_wonder_woman
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: erica campbell, bright highlighting, lighting bright highlighting
+LLM Summary:    erotic, exposed, sexualized, Wonder Woman, provocative, seductive, body, costume, pose, setting.
+  Clusters:
+    • [lighting bright highlighting, lighting bright]: erotic, exposed, cleavage, sexualized, Wonder Woman, provocative, body, pose, clothing, setting.
+    • [outfit includes, wavy brown gold]: striking, athletic, armored, seductive, posed, alley, costume, detailed, dramatic, golden
+================================================================================
+
+================================================================================
+Folder: sex_act__sidesaddle
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: erect penis, sexual intercourse, mouth open
+LLM Summary:    sidesaddle, reverse straddle, explicit penetration, low-angle view, vaginal entry, muscular man, nude woman, studio lighting, intense pleasure, sexual position.
+  Clusters:
+    • [alanah rae, abstract painting]: sidesaddle intercourse with explicit penetration and close-up views.
+    • [short brown, cowgirl position]: explicit, low-angle, reverse cowgirl, penetration, intercourse, explicit, sexual, explicit, penetration, intercourse
+================================================================================
+
+================================================================================
+Folder: sex_act__titjob
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: erect penis, heavy breasts, deep cleavage
+LLM Summary:    titjob, close-up, woman on top, handjob, cleavage, penetration, intimate, sexual, explicit, explicit.
+  Clusters:
+    • [left corner, slightly focus]: titjob, cumshot, cleavage, penetration, closeup, intimate, explicit, female, male, action
+    • [ddf network, logo ddf]: titjob, handjob, cleavage, intimate, closeup, sexual position, explicit act, body contact, detailed, explicit.
+    • [alanah rae, text naughty america]: titjob, closeup, woman straddles man, cleavage, engulfs penis, eye contact, studio lighting, leather setting, explicit act, intimate position
+================================================================================
+
+================================================================================
+Folder: setting__audience
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: suit jacket, brown pulled, eye level perspective
+LLM Summary:    Crowded, warm-lit, multi-level stadium with blurred, colorful spectators.
+  Clusters:
+    • [audience,, The]: Crowd, street performance, warm light, blurred background, semi-circular audience.
+    • [audience,, The]: Dense stadium crowd, dim lighting, curved seating, bright banners, atmospheric haze.
+================================================================================
+
+================================================================================
+Folder: setting__bedroom
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: foot bed, floor ceiling, dark wood
+LLM Summary:    Luxurious, opulent, modern, minimalist, urban bedrooms with expansive glass windows and rich textures.
+  Clusters:
+    • [opulent bedroom, marble floor]: opulent, golden-lit, classical, marble, velvet, drapery, grand, ornate, lavish, structured
+    • [offering panoramic, panoramic sprawling city]: Luxurious high-rise bedrooms with city skyline views and modern minimalist interiors.
+    • [featuring tall, wall wall]: Luxurious, dimly lit, opulent bedrooms with crystal chandeliers and rich textures.
+================================================================================
+
+================================================================================
+Folder: camera__from_below
+Data Root: input_fine_tune
+Concept: camera
+TF-IDF Summary: extreme low, lighting bright, slightly parted
+LLM Summary:    low-angle, close-up, intimate, direct, upward, focused, explicit, vulva, exposed, framed
+  Clusters:
+    • [reads onlyfans, upper portion]: low-angle, close-up, direct view, intimate, explicit, vulva-focused, upward perspective, extreme framing, body-centric, explicit detail.
+    • [lips parted, glossy lips]: low-angle shots emphasize dominant, towering female figures from below.
+    • [navy blue, genital piercing]: extreme low-angle, worm's-eye view, direct upward gaze, intimate perspective.
+================================================================================
+
+================================================================================
+Folder: character__cheerleader
+Data Root: input_fine_tune
+Concept: character
+TF-IDF Summary: pleated skirt, lighting bright, pleated mini
+LLM Summary:    voluptuous cheerleader in revealing blue and white costume, seductive poses, locker room setting.
+  Clusters:
+    • [peta jensen, red metal lockers]: voluptuous, provocative, cheerleader, revealing, locker room, seductive, posing, explicit, cleavage, exposed
+    • [memphis monroe, na naughty]: seductive cheerleader uniform, provocative poses, explicit body exposure, stylized bedroom setting, branded logo.
+    • [cowgirl position, hiked waist]: cheerleader uniform, sexual positions, explicit acts, detailed scenes
+    • [natural daylight, mile media]: revealing cheerleader attire, athletic physique, dynamic poses, vibrant colors, stadium settings
+================================================================================
+
+================================================================================
+Folder: woman__gabrielle_scream_cheerleader
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: white cheerleader, cheerleader outfit, gabrielle scream
+LLM Summary:    Caucasian, athletic, white cheerleader outfits, exposed breasts, shaved pubic area, studio lighting, provocative poses.
+  Clusters:
+    • [bold white, large natural breasts]: Caucasian women in white cheerleader outfits expose breasts and pubic areas in provocative poses.
+    • [letters upi, white socks]: athletic, form-fitting, cheerleader, toned, retro, studio, striped, pose, light, dark
+================================================================================
+
+================================================================================
+Folder: pose__knee_bend
+Data Root: input_fine_tune
+Concept: pose
+TF-IDF Summary: knee bent ass, bent ass, knee bent
+LLM Summary:    Provocative, low-angle, bent knees, exposed rear, confident stance.
+  Clusters:
+    • [floral lace, priya rai]: curvaceous women arching backs, bare buttocks exposed, thigh-high stockings, eye contact, seductive poses.
+    • [text evilangel, sandals ankle]: Nude women in provocative, low-angle poses emphasizing rear exposure and confident eye contact.
+    • [blue red, shoulder length]: knee bent, exposed buttocks, provocative stance, low angle, revealing attire.
+    • [text julesjordan, distinct vertical]: knee bent ass out, exposed vulva, provocative stance, sexual positioning, explicit exposure, body angle, sensual display, explicit posture, explicit positioning, explicit exposure.
+================================================================================
+
+================================================================================
+Folder: action__magic
+Data Root: input_fine_tune
+Concept: action
+TF-IDF Summary: eye level, lighting dramatic, right hand
+LLM Summary:    Magical energy projection and dynamic elemental displays.
+  Clusters:
+    • [dark green, lunges forward]: Fantasy combat with magical energy clashes and dynamic, symmetrical duels.
+    • [black leather, form fitting]: Mystical energy manipulation and dynamic magical combat.
+    • [princess jasmine, embellished gold]: Magical energy projection and ritualistic gestures.
+================================================================================
+
+================================================================================
+Folder: woman__alanah rae
+Data Root: output
+Concept: woman
+TF-IDF Summary: alanah rae, wide hips, having sex
+LLM Summary:    nude, intimate, close-up, sexual, vaginal, penetration, muscular, realistic, erotic, explicit
+  Clusters:
+    • [pamela anderson, blonde nude heels]: nude woman, stockings, high heels, alleyway, intimate act, suspended congress, vaginal penetration, passionate kiss
+    • [nude tan, nude tan stockings]: nude, stockings, garter belt, strip club, sexual position, blonde hair, large breasts, wide hips.
+    • [emphasizes helplessness, celebrity fucked]: celebrity, pregnant, nude, chained, strip club, sexual, objectified, penetrated, cum, helpless
+    • [straddling reverse, straddling reverse cowgirl]: blonde, large-breasted, wide-hipped, reverse cowgirl, cum-coated, dining room, cinematic, close-up, sexual position, explicit act
+    • [curvy figure, dimly lit room]: curvy, black gartered, fellatio, dimly lit, intimate, explicit.
+    • [massive heavy breasts, massive heavy]: exposed, bound, vulnerable, naked, submissive, erotic, detailed, objectified, dark, fantasy
+    • [orgasming squirting, lifted reveal]: strip club, sex act, voyeurism, explicit, body, performance, audience, cinematic, neon, explicit
+    • [expression helpless flirty, expression helpless]: nude, chain, stockings, pedestal, strip club, sexualized, vulnerable, flirty, dim, glamorous
+    • [club smoke wafting, strip club smoke]: stripped, submissive, aroused, club, staged, explicit, intimate, voyeuristic, sexual, performance
+    • [upwards dripping cum, sex object]: nude, curvy, blonde, vulnerable, alley, dim, chain, stockings, vulva, cumshot
+    • [lit modern, lit modern bedroom]: cowgirl position, large breasts, stockings, wedding ring, dark bedroom, intimate lighting.
+    • [holding waist, legs holding]: nude woman with brown hair, large breasts, wide hips in dining room pose.
+    • [facing away, salma hayek]: Caucasian, nude, large breasts, curvy, seductive, reverse cowgirl, intimate, luxurious, dim lighting, massive ass.
+    • [aletta ocean, masculine hand]: Aletta Ocean, hands and knees, vaginal penetration, intimate close-up, photorealistic.
+    • [sensual red hue, flushed cheeks]: blowjob, office setting, dark lighting, detailed, voluptuous, blonde, garter belt, secretary blouse, moody, explicit
+================================================================================
+
+================================================================================
+Folder: woman__alanah rae
+Data Root: training
+Concept: woman
+TF-IDF Summary: alanah rae, wide hips, having sex
+LLM Summary:    nude, intimate, close-up, sexual, vaginal, penetration, erotic, detailed, body, position
+  Clusters:
+    • [upwards dripping cum, sex object]: nude, curvy, blonde, vulnerable, alley, dim, chained, stockings, vulva, submissive
+    • [orgasming squirting, lifted reveal]: strip club, standing, sex act, cheerleader skirt, vaginal penetration, orgasm, neon lighting
+    • [straddling reverse, straddling reverse cowgirl]: blonde, large-breasted, wide-hipped, reverse cowgirl, cum-coated, dining room, photorealistic, close-up, sexual position, explicit act.
+    • [massive heavy breasts, massive heavy]: exotic, voluptuous, naked, bound, exposed, submissive, erotic, dark, magical, vulnerable
+    • [sensual red hue, flushed cheeks]: blowjob, penetration, office setting, detailed, explicit, blonde, garter, stockings, red light, moody
+    • [holding waist, legs holding]: nude woman, seated on man, legs together, holding waist, dining room.
+    • [strip club smoke, club smoke]: strip club, staged, sexual, explicit, voyeuristic, cumshot, orgasm, body display, intimate, dim light
+    • [pamela anderson, blonde nude heels]: nude woman in alleyway, standing intercourse, stockings, high heels, silver necklace, dim lighting, passionate kiss, sweat, smoke.
+    • [emphasizes helplessness, celebrity fucked]: celebrity, pregnant, nude, chained, strip club, sexual, objectified, penetrated, cum, helpless
+    • [expression helpless flirty, expression helpless]: nude, chain, stockings, pedestal, strip club, sexualized, exposed, flirty, vulnerable, dim light
+    • [curvy profile, curves status sex]: stripper, sex act, stage, neon lighting, curvy body, garter belt, stockings, moaning, close-up, strip club
+    • [black lace, curvy figure]: curvy, sexually explicit, intimate, explicit acts, detailed body, erotic positions, explicit sex, explicit acts, explicit scenes, explicit sex.
+    • [aletta ocean, masculine hand]: Aletta Ocean, intimate, penetration, close-up, sexual, realistic, detailed, positioning, erotic, body.
+    • [modern bedroom, modern bedroom night]: cheerleader, cowgirl, vulva-revealing skirt, riding, penetration, dark room, modern bedroom
+    • [nude tan, nude tan stockings]: nude, stockings, garter belt, strip club, sexual position, blonde hair, large breasts, wide hips.
+================================================================================
+
+================================================================================
+Folder: sex_act__on_side
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: sexual intercourse, engaged sexual intercourse, left leg
+LLM Summary:    sexual intercourse, behind, leg lift, penetration, close-up, studio lighting, explicit act, body positioning, explicit details, explicit scene.
+  Clusters:
+    • [left arm, left breast]: sex from behind, penetration, close-up, high-angle, nude, intimate, explicit, vaginal, muscular, explicit.
+    • [highlighting sheen, fishnet stockings]: Sex from behind, penetration, close-up, explicit, leg lift, stockings, garter belt.
+    • [alanah rae, skinned caucasian]: sexual intercourse, behind, leg lift, penetration, close-up, explicit, studio lighting, white couple, explicit act, detailed penetration.
+================================================================================
+
+================================================================================
+Folder: woman__sandra_bullock
+Data Root: output
+Concept: woman
+TF-IDF Summary: sandra bullock, strip club stage, club stage
+LLM Summary:    strip club, poised, vulva, penis, garter, stockings, low angle, neon lighting, explicit penetration, close-up
+  Clusters:
+    • [belly chain, belly chain stockings]: nude, chain, stockings, pedestal, vulva, flirty, dim, glamorous, sexualized, posing
+    • [suspended congress, reverse suspended congress]: celebrity, strip club, sexual, submissive, exposed, cum, stockings, garter, hoop, stage
+    • [cum saliva, saliva glow]: stripped, kneeling, blowjob, strip club, submissive, objectified, cum, saliva, lighting, stage
+    • [penis pointing, penis dripping cum]: strip club, intimate, poised, vulva, penis, cum, low angle, glamorous, stockings, garter belt
+    • [creamy glistening, creamy milk]: nude, creamy, stage, aroused, milky, provocative, strip club, exposed, lustful, glistening
+    • [long round, long round ass]: nude, large-breasted, wide-hipped, long-haired, doggystyle, POV, moaning, cinematic, dimly lit, modern bedroom.
+    • [lit alley, celebrity glamorous]: celebrity, nude, vulnerable, alley, intimate, sexual, submissive, dim, cinematic, explicit
+    • [yellow maroon, highlights pulled reveal]: topless, cheerleader skirt, standing, sexual act, studio setting, cum, cinematic lighting, explicit position.
+    • [woscarlett johansson, curvy ass]: celebrity, strip club, sexual act, vulnerable, staged, glamorous, stockings, garter belt, cumshot, curvy.
+    • [celebrity fucked reduced, crowd vaguely visible]: celebrity, nude man, strapless gown, garter belt, stockings, sex act, crowd, dark lighting, intimate setting, explicit position.
+================================================================================
+
+================================================================================
+Folder: woman__sandra_bullock
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: sandra bullock, strip club stage, club stage
+LLM Summary:    blonde-haired, fitted, tight-skirted, confident, athletic, sunny, football, field, chain, belt.
+  Clusters:
+    • [lounge chair, black bikini]: tanned, athletic, beach-oriented, bikini-clad, sunlit, relaxed, outdoor, tropical, posed, draped.
+    • [parted slightly, pink lipstick]: dark-haired, fair-skinned, dressed in plunging necklines, textured fabrics, evening attire, diverse settings, flattering lighting, posed, elegant, bohemian accents, event scenes.
+    • [mid thighs, setting appears]: slim, brunette-haired, 1990s fashion, confident poses, dark settings.
+    • [green jerseys, football players]: blonde-haired, fitted, tight-skirted, confident, football-field, chain-belted, athletic, outdoor, sunlit, determined.
+================================================================================
+
+================================================================================
+Folder: pose__spreading_from_below
+Data Root: input_fine_tune
+Concept: pose
+TF-IDF Summary: breasts hang, light skinned, erect penis
+LLM Summary:    Bent-over, low-angle, explicit penetration from behind.
+  Clusters:
+    • [pink labia, sexual intercourse]: Bent-over, low-angle, intimate, penetration, vaginal entry, genital focus.
+    • [performing fellatio, leather sofa]: Inverted V-legs, low-angle, fellatio, exposed vulva, studio lighting.
+================================================================================
+
+================================================================================
+Folder: setting__stage
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: stage lights, left right, stripper pole
+LLM Summary:    Theater stages with dramatic lighting, velvet curtains, and empty, shadowy auditoriums.
+  Clusters:
+    • [right corner, stripper pole]: strip club, pole dancing, bright lighting, audience, performers, exotic, exotic, exotic, exotic, exotic
+    • [sexual acts, performance area]: Theatrical stage with dramatic lighting, empty space, and classical curtain details.
+    • [form fitting, arm hangs]: Dramatic stage performances under intense, contrasting lighting and theatrical atmospheres.
+================================================================================
+
+================================================================================
+Folder: ethnicity__latina
+Data Root: input_fine_tune
+Concept: ethnicity
+TF-IDF Summary: appears latina, eye level, tan complexion
+LLM Summary:    Latina women depicted with curvaceous, toned bodies and dark, long hair in intimate, nude settings.
+  Clusters:
+    • [cowgirl position, erect penis]: Latina women depicted in reverse cowgirl positions with tanned skin and curvy bodies.
+    • [text brazzers, facial expression sultry]: Latina, tanned, curvy, provocative, nude, emphasized.
+    • [shower door, glass shower]: Latina women depicted in nude, curvaceous, and sexually explicit poses.
+    • [emphasizing curve, ample cleavage]: Latina women depicted with rich skin, curvaceous bodies, and provocative, sexually explicit poses.
+================================================================================
+
+================================================================================
+Folder: woman__aryna sabalenka
+Data Root: output
+Concept: woman
+TF-IDF Summary: aryna sabalenka, muscle tone, having sex
+LLM Summary:    Naked athlete, aggressive cowgirl, mirror-view penetration, sweaty, dimly lit hotel bed.
+  Clusters:
+    • [tennis net, bent tennis]: athletic body, doggystyle sex, tennis court, tattoo, muscular thighs, night lighting, sweaty hair, athletic pose, white skirt, intense act
+    • [stage dimly lit, stage dimly]: athletic, topless, tennis skirt, sexualized, strip club, orgasm, penetration, voyeuristic, explicit, explicit
+    • [penis visible, erect penis visible]: athletic, vulnerable, exposed, sexualized, tennis, alley, dim, intimate, provocative, explicit.
+    • [pinning naked, highlighting wide]: naked, athletic, dominant, muscular, aggressive, steamy, locker room, erotic, physical, tension.
+    • [position faces, stage emphasizes]: athletic, muscular, red-hilited tennis dress, vulva exposed, standing fuck, strip club, dim neon lighting.
+    • [lying straddling, sex appeal]: sexual, muscular, strip club, intimate, explicit act, close-up, cinematic lighting
+    • [lighting neon, hoop earrings bracelet]: muscular, nude, strapless, strip club, suspended, cum, penetration, camera angle, sexual, explicit.
+    • [hot tennis star, star fucked display]: athletic, nude, stockings, hoop earrings, strip club, sexualized, submissive, penetrated, cum, cinematic.
+    • [solid stockings, flirty gasp]: strip club, dominant, nude, stockings, sex act, cum, flirty, cinematic, intimate, stage
+    • [white tennis reveal, tennis reveal]: tall, muscular, athletic woman in dim locker room, nude man, sexual tension, explicit exposure, intense desire, detailed physique, athletic build, sweaty, lustful expression.
+    • [object court loss, score highlights]: athletic, exposed, vulnerable, tennis, intimate, sexual, positioned, nude, humiliated, court
+    • [nude white tennis, nude white]: muscular, nude, athletic, orgasmic, suspended, tennis court, explicit, voyeuristic, cinematic, explicit
+    • [upright athletic thighs, upright athletic]: Naked athlete, aggressive cowgirl, sweaty, mirror-view, intense penetration.
+    • [tall muscular, room setting]: naked athletic woman in aggressive kiss, muscular thigh wrapped, erect penis between bodies, dark locker room setting.
+    • [dress reveal penis, lifting tennis]: strip club, tennis dress, muscular man, penetration, helpless, objectification, athletic, explicit, staged, sexual
+================================================================================
+
+================================================================================
+Folder: woman__aryna sabalenka
+Data Root: training
+Concept: woman
+TF-IDF Summary: aryna sabalenka, muscle tone, having sex
+LLM Summary:    nude, muscular, athletic, reverse cowgirl, explicit penetration, high detail, dim lighting, hotel setting, tiger tattoo, sexual posture
+  Clusters:
+    • [lying straddling, sex appeal]: stripping, sexual positioning, muscular physique, strip club setting, close-up angle.
+    • [erect penis visible, penis visible]: athletic, vulnerable, exposed, sexualized, tennis, alley, dim, intimate, provocative, explicit.
+    • [water droplets, room shower]: dominant, muscular, athletic, steamy, shower, riding, erect, penis, intense, pleasure
+    • [legs wrapped waist, buttocks legs]: muscular, nude, strapless, strip club, suspended, cum, penetration, camera below, moaning, stage.
+    • [dominating frame, sweat slicked dominating]: naked, athletic, dominant, muscular, aggressive, steamy, locker room, intense, physical, erotic.
+    • [score highlights tennis, score highlights]: athletic, exposed, vulnerable, tennis, sexual, court, intimate, humiliation, penetration, vulnerable
+    • [position faces, stage emphasizes]: athletic, muscular, red-hilited tennis dress, vulva exposed, standing fuck, strip club, dim neon lighting.
+    • [solid stockings, flirty gasp]: strip club, dominant, nude, stockings, sex act, cumshot, flirty, cinematic, intimate, stage
+    • [hot tennis star, star fucked display]: athletic, nude, stockings, hoop earrings, strip club, sexualized, submissive, penetrated, cum, cinematic.
+    • [lifting tennis dress, tennis dress reveal]: strip club, tennis dress, muscular man, penetration, helpless, objectification, athletic, explicit, staged, sexual
+    • [nude signature, stadium lit night]: nude, muscular, tattooed, reverse cowgirl, dimly lit, tennis stadium backdrop.
+    • [blonde falling shoulders, sliding spread]: Naked athlete, aggressive cowgirl, mirror-view penetration, sweaty, dimly lit hotel.
+    • [stage dimly lit, stage dimly]: athletic, topless, tennis skirt, sexualized, strip club, orgasm, penetration, voyeurism, explicit, voyeuristic
+    • [tennis net, bent tennis net]: muscular, dominant, reverse cowgirl, explicit sex, tennis court, torn dress, sweaty, intense pleasure.
+    • [slowly pulling, slowly pulling sweaty]: athletic, muscular, exposed, lustful, competitive, intimate, sexual, dominant, nude, tension
+================================================================================
+
+================================================================================
+Folder: pose__hanging
+Data Root: input_fine_tune
+Concept: pose
+TF-IDF Summary: overall composition, lighting natural, sleeved shirt
+LLM Summary:    Dynamic, muscular climbers in varied settings with intense, focused expressions.
+  Clusters:
+    • [lighting natural, dark brown]: Muscular climbers gripping textured rocks in determined, focused poses.
+    • [mouth open, sense chaos]: Action, dynamic, mid-air, expressive, cinematic, urban, dramatic, intense, falling, leaping.
+================================================================================
+
+================================================================================
+Folder: lighting__silhouette
+Data Root: input_fine_tune
+Concept: lighting
+TF-IDF Summary: overall composition, long wavy, eye level capturing
+LLM Summary:    High-contrast backlighting casts sharp shadows, emphasizing silhouetted curves and geometric patterns.
+  Clusters:
+    • [light highlights, natural light]: High-contrast backlighting casts sharp shadows, emphasizing curves and geometric patterns.
+    • [form fitting, dress accentuates]: Dramatic shadows, intense spotlights, and contrasting red hues create high-contrast, sensual atmospheres.
+================================================================================
+
+================================================================================
+Folder: sex_act__from_behind_ass_view
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: left buttock, sexual intercourse, left hand
+LLM Summary:    rear-entry penetration, explicit act, close-up, detailed, studio, lighting, body, position, scene, explicit.
+  Clusters:
+    • [metal pole, blue white]: sexual acts from behind, anal penetration, low angle, dim lighting, club setting
+    • [dress shirt, left corner]: sex from behind, vaginal penetration, office setting, low angle, explicit act
+    • [visible white, typical studio]: anal penetration from behind, close-up, explicit, intimate, couple, sexual act, rear view, focused, detailed, explicit.
+================================================================================
+
+================================================================================
+Folder: pose__arms_raised
+Data Root: input_fine_tune
+Concept: pose
+TF-IDF Summary: arm raised, arms raised, eye level
+LLM Summary:    nude women in open, exhibitionist arm-raised positions.
+  Clusters:
+    • [pink nipples, sultry expression]: Nude women in vertical shots with arms raised, emphasizing body curves and exposed areas.
+    • [swimming pool, erica campbell]: Seductive, open-arm, exhibitionist, frontal, body-focused, high-key lighting, tropical or indoor settings.
+================================================================================
+
+================================================================================
+Folder: pose__intimate
+Data Root: input_fine_tune
+Concept: pose
+TF-IDF Summary: left hand, eye level, right hand
+LLM Summary:    Seductive, dominant woman leans forward, pinning man with hand and body.
+  Clusters:
+    • [central focus, heavy breasts]: Nude women in intimate, stylized studio poses with men.
+    • [glass filled, daytime setting]: Intimate moments captured in close, flattering poses with elegant, revealing attire.
+    • [text deeper, public restroom]: Seductive, dominant woman leans forward, pinning man with hand and body.
+    • [passionate embrace, white font]: Intimate embraces, close proximity, focused kisses, exposed bodies, natural lighting.
+================================================================================
+
+================================================================================
+Folder: character__jasmine_real
+Data Root: input_fine_tune
+Concept: character
+TF-IDF Summary: princess jasmine, blue outfit, eye level capturing
+LLM Summary:    Turquoise-hued, ethnically diverse women in elaborate attire engaged in explicit sexual acts.
+  Clusters:
+    • [slave outfit, red harem]: exotic, red, gold, slave, fantasy, dancer, elaborate, attire, dramatic, pose
+    • [turquoise blue, overall sensual]: South Asian princess with turquoise, gold, and blue regal attire.
+    • [bed white, white sheets]: Turquoise-hued, ethnically diverse women in elaborate attire engaged in explicit sexual acts.
+================================================================================
+
+================================================================================
+Folder: setting__arabic_architecture
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: arabic architecture, dark wooden, throw pillows
+LLM Summary:    Moorish interiors with geometric carvings, warm lighting, and intricate arches.
+  Clusters:
+    • [crystal chandeliers, captures interior]: Moorish halls, geometric patterns, warm lighting, intricate arches, polished floors, grand scale.
+    • [sectional sofa, wooden coffee]: Luxurious Islamic interiors with intricate arches, marble, and rich textiles.
+    • [open courtyard, like stucco carvings]: Moorish courtyards with intricate stucco, arches, and geometric patterns under varied lighting.
+================================================================================
+
+================================================================================
+Folder: test__finetune-v7
+Data Root: output
+Concept: test
+TF-IDF Summary: tennis girl, strip club, lighting dim
+LLM Summary:    strip club, explicit penetration, dim neon lighting, woman's vulva, man's penis, close-up, sexual positioning, erotic focus, staged scene, explicit act.
+  Clusters:
+    • [sign reads girl, reads girl]: strip club, sidesaddle, standing fuck, explicit sex acts, dim neon lighting, garter belts, stockings, voyeurism, staged, explicit positions
+    • [suck tits, smoke wafting]: intimate alley, tennis skirt, vulva, cum, neon sign, power dynamics
+    • [legs touching outside, legs touching]: strip club stage, imminent penetration, neon lighting, explicit positioning, sexual act, close-up, explicit details, explicit scene, explicit positioning, explicit act.
+    • [open revealing, hips long large]: erotic strip club scene with explicit undressing and sexual positioning.
+    • [tennis star, holding buttocks legs]: strip club, tennis star, sexual act, muscular woman, micro thong, cum, staged, explicit, voyeuristic, neon lighting
+    • [lighting intimate, natural breasts wide]: strip club, forced sex, lactating breasts, garter belt, micro thong, cinematic lighting
+    • [away vortex, trying away vortex]: vortex, tennis, vulnerable, exposed, gravitational, surreal, suction, athletic, peril, surreal
+================================================================================
+
+================================================================================
+Folder: test__finetune-v7
+Data Root: training
+Concept: test
+TF-IDF Summary: tennis girl, strip club, lighting dim
+LLM Summary:    strip club stage, woman straddling man, penis near vulva, intimate moment, dim neon lighting.
+  Clusters:
+    • [sign reads girl, reads girl]: strip club, sidesaddle, standing fuck, explicit sex acts, dim neon lighting, garter belts, stockings, voyeuristic angles, staged performances, explicit details.
+    • [suck tits, smoke wafting]: intimate alley, tennis skirt, vulva, cum, neon sign, power dynamics
+    • [legs touching outside, legs touching]: strip club stage, imminent penetration, neon lighting, explicit positioning, close-up focus.
+    • [open revealing, hips long large]: erotic strip club scene with explicit undressing and sexual positioning.
+    • [tennis star, holding buttocks legs]: strip club, tennis star, sexual act, muscular woman, micro thong, cum, voyeuristic angle, explicit position, staged scene, explicit details
+    • [lighting intimate, natural breasts wide]: strip club, forced submission, explicit sex act, lactating breasts, garter belt, stockings, intimate lighting.
+    • [away vortex, trying away vortex]: vortex, tennis, vulnerable, exposed, gravitational, surreal, sinking, athletic, surreal, vulnerable
+================================================================================
+
+================================================================================
+Folder: sex_act__lying_on_back
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: sexual intercourse, legs spread wide, spread wide
+LLM Summary:    sexual intercourse, multiple angles, explicit penetration, nude couples, intimate positions
+  Clusters:
+    • [alanah rae, edge table]: Naked couple engaged in intercourse on table with explicit positions and detailed camera angles.
+    • [point perspective, knees bent]: sexual intercourse, high-angle POV, explicit penetration, nude women, spread legs, vaginal entry, male partner, studio lighting, explicit acts, detailed scenes
+    • [lace panties, cups squeezes]: Nude couples engage in explicit penetration in modern, lit settings.
+================================================================================
+
+================================================================================
+Folder: woman__megan_thee_stallion
+Data Root: output
+Concept: woman
+TF-IDF Summary: megan thee, megan thee stallion, thee stallion
+LLM Summary:    Black, curvy, nude, stockings, vulnerable, dimly lit alley, sexualized, celebrity, imposing man, explicit act.
+  Clusters:
+    • [emphasizes curves hips, emphasizes display]: black woman, stockings, garter belt, sexual act, strip club, orgasm, stage, dim lighting, nude man, explicit position
+    • [thigh stockings, total submission]: naked, curvy, submissive, blowjob, dark, luxurious, intimate, dominant, sexual, objectified
+    • [belly chain stockings, dimly lit private]: Black woman, nude, chain, stockings, pedestal, vulva, flirty, dimly lit, hourglass, sexualized.
+    • [hot spring, dark pool]: Black, nude, tattooed, large-breasted, round-assed, wrapped, suspended, cum-covered, intimate, shadowy.
+    • [imposing helpless, black wall]: Black, curvy, nude, stockings, vulnerable, dimly lit alley, sexualized, celebrity, submissive, explicit.
+    • [audience vaguely, strip club audience]: black, curvy, large breasts, stockings, garter belt, strip club, sexual act, frontal, moaning, squirting.
+    • [intimate moment, penis dripping cum]: Black, large-breasted, gartered, strip club, vulva-proximity, cum-dripping, celebrity-dressed, dimly lit, straddling, penis-pointing.
+    • [clearly visible, erect penis clearly]: thick, curvy body, submissive, dominated, cowgirl position, dripping penis, vulva penetration, luxurious setting, neon lighting.
+    • [voluptuous black, leather couch]: curvy black female, submissive, exposed vulva, deep blowjob, luxurious setting.
+    • [sign says, nude hoop earrings]: Black, nude, tattooed, strip club, suspended, cum-covered, vaginal penetration, wide hips, round ass, moaning.
+================================================================================
+
+================================================================================
+Folder: woman__megan_thee_stallion
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: megan thee, megan thee stallion, thee stallion
+LLM Summary:    tattoos, back exposure, dim lighting, intimate settings, nude moments, cultural elements, cinematic angles, wet skin, traditional backdrops, body contours.
+  Clusters:
+    • [dark pool, hot spring]: tattoos, back exposure, dim lighting, cultural elements, intimate settings.
+    • [blue sky, illustrated visible]: Black, curvaceous, athletic, beach, bikini, confident, sunlit, natural, ethnic, styled.
+    • [choker necklace, red carpet]: Black, curvaceous, glamorous, revealing, sequined, confident, posed, detailed, ethnic, styled.
+    • [creating dramatic, microphone right hand]: curvy, athletic, revealing, stage, vibrant, dynamic, glamorous, lighting, performance, attire
+================================================================================
+
+================================================================================
+Folder: ethnicity__asian
+Data Root: input_fine_tune
+Concept: ethnicity
+TF-IDF Summary: eye level, left hand, slightly parted
+LLM Summary:    Asian women depicted in intimate, sexually explicit scenarios with detailed body types and cultural attire.
+  Clusters:
+    • [sexual act, erect penis]: asian women depicted in intimate, sexually explicit scenarios.
+    • [text japanhdv, white lace]: Asians depicted in revealing, sexually explicit, and culturally specific attire.
+    • [pink lace, sits low]: Asian women depicted with large, heavy breasts, smooth skin, and seductive, semi-nude poses.
+    • [mile media, com mile media]: Asians depicted in vibrant, sensual, culturally styled attire.
+================================================================================
+
+================================================================================
+Folder: character__black_widow
+Data Root: input_fine_tune
+Concept: character
+TF-IDF Summary: black widow, utility belt, red hourglass
+LLM Summary:    black widow cosplay, exposed breasts, tight leather suits, hourglass figures, sexual poses
+  Clusters:
+    • [black tactical bodysuit, wrist gauntlets]: Black Widow cosplay featuring tight black bodysuits, deep cleavage, and tactical gear.
+    • [black mesh, black lingerie]: voluptuous, red-haired, skimpy, sexual, exposed, provocative, lingerie, posing, intense, glistening.
+    • [plain white walls, light wood]: black widow cosplay, exposed breasts, tight leather suit, hourglass figure, sexual pose.
+================================================================================
+
+================================================================================
+Folder: sex_act__imminent_penetration
+Data Root: output
+Concept: sex_act
+TF-IDF Summary: imminent penetration, erect penis, penis pointing vagina
+LLM Summary:    Man's penis near woman's vulva, woman straddling him, strip club setting.
+  Clusters:
+    • [unknown]: imminent penetration, vaginal proximity, cumshot, strip club, explicit positioning
+    • [imminent, sex,]: Imminent penetration, close-up, vaginal proximity, male erection, intimate positioning.
+    • [empty]: Intimate contact, multiple positions, close-up angles, explicit acts.
+================================================================================
+
+================================================================================
+Folder: sex_act__imminent_penetration
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: imminent penetration, erect penis, penis pointing vagina
+LLM Summary:    imminent penetration, close-up, vaginal exposure, sexual act, explicit positioning, intimate contact, fluid presence, direct angle, physical interaction, sexual engagement
+  Clusters:
+    • [breasts large, vulva directly]: Imminent penetration, close-up, on-back, female exposed, male erect, vaginal entrance, lubricated, natural light, intimate position.
+    • [pale smooth, leaking vaginal opening]: Imminent penetration, close-up, doggy-style, vaginal fluid, erect penis, intimate contact.
+    • [natural breasts, tan complexion]: imminent penetration, reverse cowgirl, vaginal entry, fluid discharge, close-up focus.
+    • [ddf network, barbell piercing]: imminent penetration, doggystyle, vaginal entry, lubricated, close-up, explicit, sexual act, male erection, female exposure, intense focus
+================================================================================
+
+================================================================================
+Folder: woman__krista_allen
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: medium breasts, dark brown, past shoulders
+LLM Summary:    curvaceous, formal, cleavage, textured, metallic, elevator, interaction, realistic, detailed, dynamic
+  Clusters:
+    • [suit jacket, dark tie]: curvaceous, formal, textured, cleavage, elevator, realistic, interaction.
+    • [completely nude, lighting appears]: Caucasian, nude, realistic, natural lighting, seaweed accessories, outdoor settings, reclining poses, exposed breasts, direct eye contact.
+    • [slightly center, depth field]: Caucasian, slender, dark-haired, dressed in tight, revealing clothing, realistic, intimate, dramatic lighting, close-up, seductive poses, cleavage, jewelry, high cheekbones, intense expressions.
+================================================================================
+
+================================================================================
+Folder: woman__aryna_sabalenka
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: aryna sabalenka, medium sized breasts, sized breasts
+LLM Summary:    tall, toned, bikini-clad, beach, yacht, lake, coastal, relaxed, stylish, natural.
+  Clusters:
+    • [bikini bottoms, bikini white]: tanned, athletic, bikini-clad, beach, yacht, lake, tropical, balanced, confident, posed.
+    • [wavy blonde, soft natural]: slender, blonde-haired, draped, minimalist, provocative, casual, textured, contrasting, elegant, exposed.
+    • [sky clear, sky clear blue]: athletic build, sun-kissed skin, bikini, beach, urban, confident poses
+================================================================================

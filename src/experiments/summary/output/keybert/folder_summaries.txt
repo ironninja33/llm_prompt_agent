@@ -1,0 +1,247 @@
+================================================================================
+Folder: lighting__dim
+Data Root: input_fine_tune
+Concept: lighting
+TF-IDF Summary: intimate lighting, dimly lit, deep shadows
+KeyBERT Summary:    sex dimly lit, penis dark, sex text, intercourse, darker
+================================================================================
+
+================================================================================
+Folder: character__jasmine_hourglass
+Data Root: input_fine_tune
+Concept: character
+TF-IDF Summary: blue outfit, princess jasmine, evil lair
+KeyBERT Summary:    hourglass princess jasmine, hourglass princess, hourglass, richly decorated dimly, depicting woman
+================================================================================
+
+================================================================================
+Folder: sex_act__cowgirl
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: cowgirl position, erect penis, sexual intercourse
+KeyBERT Summary:    alanah rae cowgirl, alanah rae, alanah, cowgirl stance, bed looking
+================================================================================
+
+================================================================================
+Folder: clothes__ripped_leggings
+Data Root: input_fine_tune
+Concept: clothes
+TF-IDF Summary: cowgirl position, erect penis, sexual intercourse
+KeyBERT Summary:    ripped leggings image, leggings image, leggings, woman dark, pubic hair grey
+================================================================================
+
+================================================================================
+Folder: woman__krista_allen
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: medium breasts, dark brown, past shoulders
+KeyBERT Summary:    looking face krista, visible krista, steady gaze hazel, krista, brown hair light
+================================================================================
+
+================================================================================
+Folder: woman__vittoria_risi
+Data Root: output
+Concept: woman
+TF-IDF Summary: vittoria risi, marble wall, hourglass curves
+KeyBERT Summary:    dress vittoria risi, dress vittoria, vittoria, vulva features, pubic hair vulva
+================================================================================
+
+================================================================================
+Folder: woman__vittoria_risi
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: vittoria risi, marble wall, hourglass curves
+KeyBERT Summary:    dress vittoria risi, dress vittoria, vittoria, vulva features, pubic hair vulva
+================================================================================
+
+================================================================================
+Folder: action__magic
+Data Root: input_fine_tune
+Concept: action
+TF-IDF Summary: eye level, lighting dramatic, right hand
+KeyBERT Summary:    golden runes glows, shadowy magic, jacket magic powers, opposing demonic figure, golden energy
+================================================================================
+
+================================================================================
+Folder: woman__aryna_sabalenka_tennis
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: aryna sabalenka, captures tennis, captures tennis player
+KeyBERT Summary:    female tennis player, female tennis, tennis, lighting highlighting athletic, highlighting athletic
+================================================================================
+
+================================================================================
+Folder: woman__gabrielle_scream_cheerleader
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: white cheerleader, cheerleader outfit, gabrielle scream
+KeyBERT Summary:    gabrielle scream cheerleader, cheerleader outfit, gabrielle scream, cheerleader, gabrielle
+================================================================================
+
+================================================================================
+Folder: pose__cum_covered
+Data Root: input_fine_tune
+Concept: pose
+TF-IDF Summary: cum covered, bright highlighting, lighting bright highlighting
+KeyBERT Summary:    cum covered priya, breasts background, features nude woman, breasts texture liquid, vulva visible clitoral
+================================================================================
+
+================================================================================
+Folder: object__sand
+Data Root: input_fine_tune
+Concept: object
+TF-IDF Summary: depth field, text visible, shallow depth field
+KeyBERT Summary:    grains background, beneath mound grain, grain, pile lighting, shaped seeds create
+================================================================================
+
+================================================================================
+Folder: sex_act__imminent_penetration
+Data Root: output
+Concept: sex_act
+TF-IDF Summary: imminent penetration, erect penis, penis pointing vagina
+KeyBERT Summary:    penetration cowgirl position, vulva appears, vagina vulva appears, cowgirl position, vulva
+================================================================================
+
+================================================================================
+Folder: sex_act__imminent_penetration
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: imminent penetration, erect penis, penis pointing vagina
+KeyBERT Summary:    penetration cowgirl position, vulva appears, vagina vulva appears, cowgirl position, vulva
+================================================================================
+
+================================================================================
+Folder: setting__golden_hour
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: red orange hue, golden hour, orange hue
+KeyBERT Summary:    golden sunset lighting, golden sunlight, resembling hazy sunrise, sky ocean takes, ocean appearing
+================================================================================
+
+================================================================================
+Folder: sex_act__suspended_congress
+Data Root: input_fine_tune
+Concept: sex_act
+TF-IDF Summary: suspended congress, reverse suspended, reverse suspended congress
+KeyBERT Summary:    suspended congress sexually, suspended sexual, congress image, stand visible, depicting
+================================================================================
+
+================================================================================
+Folder: setting__floor
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: far end, floor ceiling, eye level
+KeyBERT Summary:    reflective floor, floor exceptionally reflective, end hall lighting, dark structures, illumination
+================================================================================
+
+================================================================================
+Folder: clothes__lingerie
+Data Root: input_fine_tune
+Concept: clothes
+TF-IDF Summary: right corner watermark, corner watermark, overall composition
+KeyBERT Summary:    lingerie photograph features, lingerie photograph, lingerie, features blonde, blonde woman fair
+================================================================================
+
+================================================================================
+Folder: clothes__cosplay
+Data Root: input_fine_tune
+Concept: clothes
+TF-IDF Summary: right hand, form fitting, red carpet
+KeyBERT Summary:    cammy street fighter, fighter attire, character cammy, black tactical straps, attire
+================================================================================
+
+================================================================================
+Folder: character__villain
+Data Root: input_fine_tune
+Concept: character
+TF-IDF Summary: right hand, gold trim, princess jasmine
+KeyBERT Summary:    cosplayers portraying jafar, villain jafar, jafar, colorful toy parrot, colossal menacing figure
+================================================================================
+
+================================================================================
+Folder: object__hourglass
+Data Root: output
+Concept: object
+TF-IDF Summary: sand falling, inside hourglass, bulbous hourglass
+KeyBERT Summary:    illuminating hourglass, light illuminating hourglass, sands lighting, hourglass, dark shadows wooden
+================================================================================
+
+================================================================================
+Folder: object__hourglass
+Data Root: input_fine_tune
+Concept: object
+TF-IDF Summary: sand falling, inside hourglass, bulbous hourglass
+KeyBERT Summary:    illuminating hourglass, light illuminating hourglass, sands lighting, hourglass, dark shadows wooden
+================================================================================
+
+================================================================================
+Folder: woman__erica_campbell
+Data Root: output
+Concept: woman
+TF-IDF Summary: erica campbell, wide hips, strip club
+KeyBERT Summary:    portrait erica campbell, portrait erica, features nude woman, erica, breasts light
+================================================================================
+
+================================================================================
+Folder: woman__erica_campbell
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: erica campbell, wide hips, strip club
+KeyBERT Summary:    portrait erica campbell, portrait erica, features nude woman, erica, breasts light
+================================================================================
+
+================================================================================
+Folder: woman__alanah_solo
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: alanah rae, eye level, thigh stockings
+KeyBERT Summary:    dress alanah rae, dress alanah, blue lingerie initimate, lingerie contrasts, eyeshadow
+================================================================================
+
+================================================================================
+Folder: woman__aryna sabalenka
+Data Root: output
+Concept: woman
+TF-IDF Summary: aryna sabalenka, muscle tone, having sex
+KeyBERT Summary:    aryna sabalenka tennis, reveal vulva tennis, vulva tennis, tennis, aryna standing
+================================================================================
+
+================================================================================
+Folder: woman__aryna sabalenka
+Data Root: training
+Concept: woman
+TF-IDF Summary: aryna sabalenka, muscle tone, having sex
+KeyBERT Summary:    aryna sabalenka tennis, reveal vulva tennis, vulva tennis, tennis, aryna standing
+================================================================================
+
+================================================================================
+Folder: action__trapped
+Data Root: input_fine_tune
+Concept: action
+TF-IDF Summary: christina carter, left corner, heavy breasts
+KeyBERT Summary:    illuminating torso face, trapped bdsm christina, illuminating torso, bdsm christina, helpless woman shoulder
+================================================================================
+
+================================================================================
+Folder: woman__salma_hayek
+Data Root: output
+Concept: woman
+TF-IDF Summary: salma hayek, strip club, wide hips
+KeyBERT Summary:    salma hayek dusk, dawn woman, attractive tanned individual, photograph salma, dawn
+================================================================================
+
+================================================================================
+Folder: woman__salma_hayek
+Data Root: input_lora
+Concept: woman
+TF-IDF Summary: salma hayek, strip club, wide hips
+KeyBERT Summary:    salma hayek dusk, dawn woman, attractive tanned individual, photograph salma, dawn
+================================================================================
+
+================================================================================
+Folder: setting__lair
+Data Root: input_fine_tune
+Concept: setting
+TF-IDF Summary: far end, left right, text visible
+KeyBERT Summary:    lair dungeon image, lair dungeon, light illuminates cavern, lair, details masonry
+================================================================================
