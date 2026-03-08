@@ -420,6 +420,137 @@
     text-align: center;
 }
 
+/* ── Cross-folder theme rows ─────────────────────────────────── */
+.cross-theme-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.cross-theme-row {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.7rem;
+}
+
+.cross-theme-summary {
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    margin-bottom: 0.25rem;
+}
+
+.cross-theme-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.cross-theme-meta .theme-count {
+    font-size: 0.65rem;
+}
+
+.contributing-folders {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    overflow: hidden;
+    flex-wrap: nowrap;
+}
+
+.contrib-folder {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.contrib-more {
+    white-space: nowrap;
+    cursor: pointer;
+    position: relative;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    padding: 0.1rem 0.4rem;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.contrib-more:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.contrib-more-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-tertiary, #2a2a2e);
+    border: 1px solid var(--border-color, #444);
+    border-radius: 8px;
+    padding: 0.5rem;
+    z-index: 100;
+    min-width: 180px;
+    flex-direction: column;
+    gap: 0.35rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.contrib-more:hover .contrib-more-tooltip {
+    display: flex;
+}
+
+.contributing-folders .category-badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: #b39ddb;
+    background: rgba(179, 157, 219, 0.12);
+    border: 1px solid rgba(179, 157, 219, 0.25);
+    border-radius: 9px;
+    padding: 0px 5px;
+    text-transform: lowercase;
+    vertical-align: baseline;
+}
+
+/* ── Intra-folder theme rows ─────────────────────────────────── */
+.intra-theme-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.intra-theme-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0;
+    font-size: 0.8rem;
+}
+
+.intra-theme-row .theme-label {
+    color: var(--text-primary);
+    flex: 1;
+}
+
+.intra-theme-row .theme-count {
+    flex-shrink: 0;
+    min-width: 1.6rem;
+}
+
+.contributing-folders .source-badge {
+    font-size: 0.55rem;
+    padding: 0.1rem 0.3rem;
+}
+
 .no-themes {
     color: var(--text-muted);
     font-size: 0.8rem;

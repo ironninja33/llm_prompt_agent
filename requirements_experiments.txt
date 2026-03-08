@@ -1,0 +1,7 @@
+# LLM experiment
+vllm>=0.8.0
+tqdm
+
+# KeyBERT experiment
+keybert>=0.8.0
+sentence-transformers>=2.2.0

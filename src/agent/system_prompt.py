@@ -2,7 +2,7 @@
 
 import os
 
-_PROMPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROMPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 _DEFAULT_PROMPT_PATH = os.path.join(_PROMPT_DIR, "default_system_prompt.md")
 
 

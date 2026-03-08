@@ -12,6 +12,7 @@
                 <button class="tab" data-tab="tab-dirs" onclick="switchTab(this)">Data Directories</button>
                 <button class="tab" data-tab="tab-query" onclick="switchTab(this)">Query</button>
                 <button class="tab" data-tab="tab-clustering" onclick="switchTab(this)">Clustering</button>
+                <button class="tab" data-tab="tab-summarizer" onclick="switchTab(this)">Summarizer</button>
                 <button class="tab" data-tab="tab-comfyui" onclick="switchTab(this)">ComfyUI</button>
                 <button class="tab" data-tab="tab-look" onclick="switchTab(this)">Look &amp; Feel</button>
             </div>
@@ -206,6 +207,44 @@
                     </div>
                 </div>
 
+                <!-- Summarizer tab -->
+                <div id="tab-summarizer" class="tab-pane hidden">
+                    <h3 class="settings-group-title">LLM Summarizer</h3>
+                    <p class="settings-group-desc">Configure the local LLM used to generate cluster and folder summaries.</p>
+
+                    <label>Model ID
+                        <input type="text" id="setting-summarizer-model" placeholder="Qwen/Qwen3-4B-FP8">
+                        <span class="setting-help">HuggingFace model ID for the summarizer LLM</span>
+                    </label>
+
+                    <label>Max Tags
+                        <input type="number" id="setting-summarizer-max-tags" min="1" max="20" step="1" placeholder="5">
+                        <span class="setting-help">Maximum number of comma-separated tags per summary</span>
+                    </label>
+
+                    <label>Max Words per Tag
+                        <input type="number" id="setting-summarizer-max-words" min="1" max="30" step="1" placeholder="12">
+                        <span class="setting-help">Maximum words per tag in the summary</span>
+                    </label>
+
+                    <label>System Prompt
+                        <textarea id="setting-summarizer-system-prompt" rows="6" placeholder="Summarizer system prompt..."></textarea>
+                    </label>
+
+                    <label>Cross-folder Template
+                        <textarea id="setting-summarizer-cross-folder" rows="6" placeholder="Cross-folder prompt template..."></textarea>
+                    </label>
+
+                    <label>Folder Template
+                        <textarea id="setting-summarizer-folder" rows="8" placeholder="Folder prompt template..."></textarea>
+                    </label>
+
+                    <div class="btn-row">
+                        <button class="btn-secondary" onclick="resetSummarizerDefaults()">Reset to Defaults</button>
+                        <button class="btn-primary" onclick="saveSummarizerSettings()">Save</button>
+                    </div>
+                </div>
+
                 <!-- Clustering tab -->
                 <div id="tab-clustering" class="tab-pane hidden">
                     <h3 class="settings-group-title">Adaptive Clusters per Folder</h3>
@@ -229,11 +268,6 @@
                     <label>Minimum Folder Size
                         <input type="number" id="setting-cluster-min-folder-size" min="5" max="100" step="1">
                         <span class="setting-help">Folders with fewer documents than this won't be clustered</span>
-                    </label>
-
-                    <label>Cluster Label Terms
-                        <input type="number" id="setting-cluster-label-terms" min="1" max="10" step="1">
-                        <span class="setting-help">Number of TF-IDF terms used to generate cluster descriptions</span>
                     </label>
 
                     <div class="btn-row">

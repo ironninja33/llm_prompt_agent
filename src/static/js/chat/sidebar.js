@@ -7,13 +7,13 @@
 
 // ── Chat List ───────────────────────────────────────────────────────────
 
-async function loadChats() {
+async function loadChats(skipAutoSelect = false) {
     chats = await API.listChats();
     renderChatList();
 
     // Auto-select first chat if available
-    if (chats.length > 0 && !currentChatId) {
-        selectChat(chats[0].id);
+    if (!skipAutoSelect && chats.length > 0 && !currentChatId) {
+        await selectChat(chats[0].id);
     }
 }
 

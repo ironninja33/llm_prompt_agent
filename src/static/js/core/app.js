@@ -23,13 +23,16 @@ function escapeHtml(text) {
 
 // ── Initialization ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+    // Detect refine params early — skip auto-select to avoid racing with refine handler
+    const hasRefineParams = new URLSearchParams(window.location.search).has('refine');
+
     // Each init task is independent — one failure must not block the others.
     // loadChats() is critical for page render so it gets retry with backoff.
     if (typeof loadChats === 'function') {
         let loaded = false;
         for (let attempt = 1; attempt <= 3 && !loaded; attempt++) {
             try {
-                await loadChats();
+                await loadChats(hasRefineParams);
                 loaded = true;
             } catch (err) {
                 console.warn(`loadChats attempt ${attempt}/3 failed:`, err);
@@ -43,10 +46,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     try { monitorIngestion(); } catch (e) { console.warn('monitorIngestion failed:', e); }
 
     // Handle browser-to-chat refine URL params: ?refine=<prompt>&attach=<jobId/imgId>
-    try { _handleRefineParams(); } catch (e) { console.warn('_handleRefineParams failed:', e); }
+    if (hasRefineParams) {
+        try { await _handleRefineParams(); } catch (e) { console.warn('_handleRefineParams failed:', e); }
+    }
 });
 
-function _handleRefineParams() {
+async function _handleRefineParams() {
     const params = new URLSearchParams(window.location.search);
     const refinePrompt = params.get('refine');
     if (!refinePrompt) return;
@@ -65,27 +70,28 @@ function _handleRefineParams() {
     } catch (e) { /* ignore */ }
 
     // Set refine context if the function exists (chat page only)
-    if (typeof setRefineContext === 'function') {
-        const chatId = params.get('chat');
-        // Select existing chat or create a new one
-        const chatReady = chatId && typeof selectChat === 'function'
-            ? selectChat(chatId)
-            : (typeof createNewChat === 'function' ? createNewChat() : Promise.resolve());
+    if (typeof setRefineContext !== 'function') return;
 
-        chatReady.then(() => {
-            setRefineContext(decodeURIComponent(refinePrompt));
+    const chatId = params.get('chat');
+    // Select existing chat or create a new one
+    if (chatId && typeof selectChat === 'function') {
+        await selectChat(chatId);
+    } else if (typeof createNewChat === 'function') {
+        await createNewChat();
+    }
 
-            // Persist source image settings as the chat's generation defaults
-            if (refineSettings && typeof setRefineGenerationSettings === 'function') {
-                setRefineGenerationSettings(refineSettings);
-            }
+    // params.get() already URL-decodes the value — no double decode
+    setRefineContext(refinePrompt);
 
-            // Handle optional attachment
-            const attach = params.get('attach');
-            if (attach && typeof addAttachmentFromBrowser === 'function') {
-                addAttachmentFromBrowser(attach);
-            }
-        });
+    // Persist source image settings as the chat's generation defaults
+    if (refineSettings && typeof setRefineGenerationSettings === 'function') {
+        setRefineGenerationSettings(refineSettings);
+    }
+
+    // Handle optional attachment
+    const attach = params.get('attach');
+    if (attach && typeof addAttachmentFromBrowser === 'function') {
+        addAttachmentFromBrowser(attach);
     }
 }
 
@@ -324,7 +330,7 @@ function monitorClustering() {
                 starting: "Initializing...",
                 cross_folder: "Cross-folder clustering",
                 intra_folder: "Intra-folder clustering",
-                labeling: "Generating cluster labels",
+                summarizing: "Generating LLM summaries",
             };
             detail.textContent = phaseLabels[data.phase] || data.phase;
         }

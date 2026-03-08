@@ -54,10 +54,16 @@
     color: var(--text-primary);
     font-size: 0.95rem;
     margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .detail-text {
     font-size: 0.8rem;
     color: var(--text-muted, #999);
     margin-top: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

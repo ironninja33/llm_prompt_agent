@@ -81,6 +81,15 @@ def reset_custom_cluster_k():
     return jsonify({"ok": True, "deleted": deleted})
 
 
+# ── Summarizer defaults endpoint ──────────────────────────────────────────
+
+@api_bp.route("/summarizer/defaults", methods=["GET"])
+def get_summarizer_defaults():
+    """Return bundled default summarizer prompt templates."""
+    from src.services.summarizer.prompts import load_default_templates
+    return jsonify(load_default_templates())
+
+
 # ── Data directory endpoints ─────────────────────────────────────────────
 
 @api_bp.route("/data-directories", methods=["GET"])

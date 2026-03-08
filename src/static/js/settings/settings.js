@@ -36,8 +36,6 @@ async function openSettings() {
     // Load clustering settings
     $('#setting-cluster-k-cross').value = settings.cluster_k_cross || '15';
     $('#setting-cluster-min-folder-size').value = settings.cluster_min_folder_size || '20';
-    $('#setting-cluster-label-terms').value = settings.cluster_label_terms || '3';
-
     // Load adaptive K tier tables
     const defaultTraining = [{"max_prompts": 40, "k": 2}, {"max_prompts": 80, "k": 3}, {"max_prompts": 150, "k": 4}, {"max_prompts": null, "k": 5}];
     const defaultOutput = [{"max_prompts": 30, "k": 3}, {"max_prompts": 100, "k": 7}, {"max_prompts": 300, "k": 10}, {"max_prompts": null, "k": 15}];
@@ -79,6 +77,10 @@ function switchTab(btn) {
     // Lazy-load Look & Feel settings
     if (tabId === 'tab-look' && typeof loadLookFeelSettings === 'function') {
         loadLookFeelSettings();
+    }
+    // Lazy-load Summarizer settings
+    if (tabId === 'tab-summarizer' && typeof loadSummarizerSettings === 'function') {
+        loadSummarizerSettings();
     }
 }
 
@@ -151,7 +153,6 @@ async function saveClusterSettings() {
         adaptive_k_output: JSON.stringify(outputTiers),
         cluster_k_cross: $('#setting-cluster-k-cross').value,
         cluster_min_folder_size: $('#setting-cluster-min-folder-size').value,
-        cluster_label_terms: $('#setting-cluster-label-terms').value,
     };
 
     const response = await fetch('/api/settings', {
@@ -306,6 +307,63 @@ async function loadLookFeelSettings() {
         console.warn('Failed to load look & feel settings:', err);
     }
 }
+
+// ── Summarizer Settings ───────────────────────────────────────────────────
+
+async function loadSummarizerSettings() {
+    try {
+        const settings = await API.getSettings();
+        $('#setting-summarizer-model').value = settings.summarizer_model || 'Qwen/Qwen3-4B-FP8';
+        $('#setting-summarizer-max-tags').value = settings.summarizer_max_tags || '5';
+        $('#setting-summarizer-max-words').value = settings.summarizer_max_words || '12';
+        $('#setting-summarizer-system-prompt').value = settings.summarizer_system_prompt || '';
+        $('#setting-summarizer-cross-folder').value = settings.summarizer_cross_folder_template || '';
+        $('#setting-summarizer-folder').value = settings.summarizer_folder_template || '';
+    } catch (err) {
+        console.warn('Failed to load summarizer settings:', err);
+    }
+}
+
+async function saveSummarizerSettings() {
+    const data = {
+        summarizer_model: $('#setting-summarizer-model').value.trim(),
+        summarizer_max_tags: $('#setting-summarizer-max-tags').value,
+        summarizer_max_words: $('#setting-summarizer-max-words').value,
+        summarizer_system_prompt: $('#setting-summarizer-system-prompt').value,
+        summarizer_cross_folder_template: $('#setting-summarizer-cross-folder').value,
+        summarizer_folder_template: $('#setting-summarizer-folder').value,
+    };
+
+    const response = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+
+    if (response.ok) {
+        alert('Summarizer settings saved');
+    }
+}
+
+async function resetSummarizerDefaults() {
+    try {
+        const response = await fetch('/api/summarizer/defaults');
+        const defaults = await response.json();
+        if (defaults.summarizer_system_prompt !== undefined) {
+            $('#setting-summarizer-system-prompt').value = defaults.summarizer_system_prompt;
+        }
+        if (defaults.summarizer_cross_folder_template !== undefined) {
+            $('#setting-summarizer-cross-folder').value = defaults.summarizer_cross_folder_template;
+        }
+        if (defaults.summarizer_folder_template !== undefined) {
+            $('#setting-summarizer-folder').value = defaults.summarizer_folder_template;
+        }
+    } catch (err) {
+        alert('Failed to load defaults: ' + err.message);
+    }
+}
+
+// ── Look & Feel Settings ─────────────────────────────────────────────────
 
 async function saveLookFeelSettings() {
     const thumbChat = ($('#setting-thumb-chat') || {}).value || 'large';

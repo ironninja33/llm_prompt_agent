@@ -1,0 +1,6 @@
+Top contributing folders: {contributing_folders}
+
+Here are {sample_count} example prompts which represent this theme:
+{sample_prompts}
+
+Summarize the shared theme(s) in ten words or less.

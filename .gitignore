@@ -6,7 +6,10 @@ workflows
 docs/plans
 tests
 __pycache__
-src/agent/default_system_prompt_local.md
+src/agent/prompts/default_system_prompt.md
 src/agent/default_system_prompt.md
+summarizer_cross_folder.txt
+summarizer_folder.txt
+summarizer_system_prompt.md
+summarizer_concept_overlays
 CLAUDE.md
-

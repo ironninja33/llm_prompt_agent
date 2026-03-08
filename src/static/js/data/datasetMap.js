@@ -70,11 +70,33 @@ function renderDatasetMap(data, container) {
     html += '<div id="map-themes" class="dataset-map-pane active">';
     if (data.cross_folder_themes && data.cross_folder_themes.length > 0) {
         html += '<div class="dataset-section">';
-        html += '<div class="theme-list">';
+        html += '<div class="cross-theme-list">';
         for (const theme of data.cross_folder_themes) {
-            html += `<div class="theme-tag">
-                <span class="theme-label">${escapeHtml(theme.label)}</span>
-                <span class="theme-count">${theme.prompt_count}</span>
+            let contribHtml = '';
+            if (theme.contributing_folders && theme.contributing_folders.length > 0) {
+                const MAX_VISIBLE = 3;
+                const allChips = theme.contributing_folders.map(f => {
+                    const name = f.folder_path || '';
+                    const category = name.includes('__') ? name.split('__')[0] : '';
+                    const display = name.includes('__') ? name.split('__')[1] : name;
+                    const srcType = f.source_type || 'training';
+                    const srcLabel = srcType === 'training' ? 'TRN' : 'OUT';
+                    const sourceBadge = `<span class="source-badge source-${srcType}">${srcLabel}</span>`;
+                    const categoryPart = category ? `<span class="category-badge">${escapeHtml(category)}</span> ` : '';
+                    return `<span class="contrib-folder">${sourceBadge} ${categoryPart}${escapeHtml(display)}</span>`;
+                });
+                const visibleChips = allChips.slice(0, MAX_VISIBLE).join('');
+                const moreHtml = allChips.length > MAX_VISIBLE
+                    ? `<span class="contrib-more">+${allChips.length - MAX_VISIBLE} more<span class="contrib-more-tooltip">${allChips.slice(MAX_VISIBLE).join('')}</span></span>`
+                    : '';
+                contribHtml = `<span class="contributing-folders">${visibleChips}${moreHtml}</span>`;
+            }
+            html += `<div class="cross-theme-row">
+                <div class="cross-theme-summary">${escapeHtml(theme.label)}</div>
+                <div class="cross-theme-meta">
+                    <span class="theme-count">${theme.prompt_count} prompts</span>
+                    ${contribHtml}
+                </div>
             </div>`;
         }
         html += '</div></div>';
@@ -229,11 +251,11 @@ function _createFolderCard(folder) {
 
     let themesHtml = '<div class="folder-themes">';
     if (folder.intra_themes && folder.intra_themes.length > 0) {
-        themesHtml += '<div class="theme-list">';
+        themesHtml += '<div class="intra-theme-list">';
         for (const theme of folder.intra_themes) {
-            themesHtml += `<div class="theme-tag">
-                <span class="theme-label">${escapeHtml(theme.label)}</span>
+            themesHtml += `<div class="intra-theme-row">
                 <span class="theme-count">${theme.prompt_count}</span>
+                <span class="theme-label">${escapeHtml(theme.label)}</span>
             </div>`;
         }
         themesHtml += '</div>';
