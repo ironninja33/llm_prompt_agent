@@ -338,6 +338,10 @@ MIGRATIONS = [
     (15, "Add source_type column to clusters for per-source-type intra-folder clustering", [
         """ALTER TABLE clusters ADD COLUMN source_type TEXT DEFAULT 'training'""",
     ]),
+    (16, "Add sequence and iteration columns to tool_calls for ordering and metrics", [
+        """ALTER TABLE tool_calls ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0""",
+        """ALTER TABLE tool_calls ADD COLUMN iteration INTEGER NOT NULL DEFAULT 1""",
+    ]),
 ]
 
 
@@ -604,7 +608,17 @@ def _insert_default_settings(conn):
         "comfyui_default_scheduler": "",
         "comfyui_default_steps": "",
         "auto_organize_output": "false",
+        "summarizer_model": "Qwen/Qwen3-4B-FP8",
+        "summarizer_max_tags": "5",
+        "summarizer_max_words": "12",
     }
+
+    # Load bundled prompt templates for summarizer defaults
+    try:
+        from src.services.summarizer.prompts import load_default_templates
+        defaults.update(load_default_templates())
+    except Exception as e:
+        logger.warning(f"Could not load summarizer prompt defaults: {e}")
 
     for key, value in defaults.items():
         conn.execute(

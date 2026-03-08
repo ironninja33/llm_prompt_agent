@@ -306,11 +306,10 @@ TOOL_DECLARATIONS = [
         types.FunctionDeclaration(
             name="get_last_generated_prompts",
             description=(
-                "Get the actual prompts submitted in the most recent generation jobs. "
+                "Get the actual prompts submitted in recent generation jobs from this conversation. "
                 "These may differ from your generated_prompts if the user edited them "
                 "before submitting. Use for refinement when the user wants to tweak "
-                "a previously generated prompt. Set current_chat=true to only look at "
-                "generations from this conversation."
+                "a previously generated prompt, or to see what edits the user made."
             ),
             parameters=types.Schema(
                 type="OBJECT",
@@ -322,7 +321,7 @@ TOOL_DECLARATIONS = [
                     ),
                     "current_chat": types.Schema(
                         type="BOOLEAN",
-                        description="If true, only search generations from the current chat (default: false)",
+                        description="Scope to current chat (default: true). Set false to search across all chats.",
                         nullable=True,
                     ),
                 },
@@ -332,10 +331,8 @@ TOOL_DECLARATIONS = [
         types.FunctionDeclaration(
             name="update_state",
             description=(
-                "Update the agent's working state to track progress through the workflow. "
-                "Call this to record prompt requirements as you learn them (as a JSON string of key-value pairs), "
-                "record dataset knowledge, manage tasks, change the workflow phase, or save generated prompts. "
-                "You MUST call this whenever you learn new requirements or change phase."
+                "Update your working state. Batch all changes into one call. "
+                "Never call this twice in a row."
             ),
             parameters=types.Schema(
                 type="OBJECT",
@@ -343,50 +340,35 @@ TOOL_DECLARATIONS = [
                     "phase": types.Schema(
                         type="STRING",
                         description=(
-                            "Current workflow phase: 'gathering_info', 'searching', "
-                            "'generating', 'refining', or 'complete'"
+                            "Optional phase hint. Common values: gathering_info, searching, "
+                            "generating, refining, complete. You may use other values if "
+                            "the workflow doesn't fit these."
                         ),
-                        nullable=True,
-                    ),
-                    "task_completed": types.Schema(
-                        type="STRING",
-                        description="Name of a task to mark as completed (moves from in_progress/pending to completed)",
-                        nullable=True,
-                    ),
-                    "task_started": types.Schema(
-                        type="STRING",
-                        description="Name of a task to start working on (moves from pending to in_progress)",
-                        nullable=True,
-                    ),
-                    "task_added": types.Schema(
-                        type="STRING",
-                        description="Name of a new task to add to pending",
                         nullable=True,
                     ),
                     "prompt_requirements": types.Schema(
                         type="STRING",
                         description=(
-                            "JSON string of prompt requirements to merge into state. "
-                            "Agent decides the keys (e.g. subject, style, mood, lighting, etc.)"
+                            "JSON string of requirements to merge "
+                            "(e.g. {\"subject\": \"...\", \"lighting\": \"...\"})"
                         ),
                         nullable=True,
                     ),
-                    "dataset_knowledge": types.Schema(
+                    "generated_prompts": types.Schema(
                         type="STRING",
                         description=(
-                            "JSON string of dataset knowledge to merge into state. "
-                            "Agent records what it learns about the dataset (e.g. relevant concepts, themes, folder notes)"
+                            "JSON array of prompt strings to save "
+                            "(e.g. [\"prompt 1\", \"prompt 2\"]). State keeps last 5."
                         ),
                         nullable=True,
                     ),
-                    "generated_prompt": types.Schema(
+                    "context": types.Schema(
                         type="STRING",
-                        description="A prompt you just generated, to save in the state",
-                        nullable=True,
-                    ),
-                    "refinement_note": types.Schema(
-                        type="STRING",
-                        description="A note about a refinement requested by the user",
+                        description=(
+                            "Brief note on current progress — what you explored, active "
+                            "feedback, key decisions. Replaces previous context. "
+                            "Keep to 1-2 sentences."
+                        ),
                         nullable=True,
                     ),
                 },
@@ -448,9 +430,7 @@ def execute_tool(name: str, args: dict, context: dict | None = None) -> dict:
 
 
 _UPDATE_STATE_FIELDS = {
-    "phase", "task_completed", "task_started", "task_added",
-    "prompt_requirements", "dataset_knowledge",
-    "generated_prompt", "refinement_note",
+    "phase", "prompt_requirements", "generated_prompts", "context",
 }
 
 
@@ -776,7 +756,10 @@ def _get_last_generated_prompts(args: dict, context: dict) -> dict:
     from src.models import generation as gen_model
 
     count = args.get("count", 1) or 1
-    chat_id = context.get("chat_id") if args.get("current_chat") else None
+    current_chat = args.get("current_chat")
+    if current_chat is None:
+        current_chat = True
+    chat_id = context.get("chat_id") if current_chat else None
     jobs = gen_model.get_recent_job_prompts(count=count, chat_id=chat_id)
 
     if not jobs:

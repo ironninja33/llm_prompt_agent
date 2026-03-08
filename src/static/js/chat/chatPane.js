@@ -175,6 +175,21 @@ function finalizeStreamingAsError(errorText) {
     addEditButtonToLastUserMessage();
 }
 
+function finalizeStreamingAsCutoff(errorText) {
+    const el = $('#streaming-message');
+    if (el) {
+        // Keep partial content, just stop streaming animation
+        el.classList.remove('streaming');
+        el.classList.add('message-cutoff');
+        el.id = '';
+    }
+    // Add red error bubble below
+    addErrorMessage(errorText);
+    // Add edit/resend affordance to the user message
+    addDeleteButtonToLastUserMessage();
+    addEditButtonToLastUserMessage();
+}
+
 function addEditButtonToLastUserMessage() {
     const msgs = $$('.message.user');
     const lastUser = msgs[msgs.length - 1];
@@ -214,55 +229,78 @@ function buildToolCallsSection(toolCalls) {
     const details = document.createElement('details');
     details.className = 'tool-calls-section';
 
+    // Sort by sequence to guarantee execution order
+    const sorted = [...toolCalls].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+
+    // Group by iteration
+    const iterations = new Map();
+    sorted.forEach(call => {
+        const iter = call.iteration || 1;
+        if (!iterations.has(iter)) iterations.set(iter, []);
+        iterations.get(iter).push(call);
+    });
+
+    const iterCount = iterations.size;
     const summary = document.createElement('summary');
     summary.className = 'tool-calls-toggle';
+    const iterLabel = iterCount > 1 ? ` across ${iterCount} iterations` : '';
     summary.innerHTML =
         `<span class="tool-calls-icon">🔧</span>` +
-        `<span>${toolCalls.length} tool call${toolCalls.length !== 1 ? 's' : ''}</span>` +
+        `<span>${sorted.length} tool call${sorted.length !== 1 ? 's' : ''}${iterLabel}</span>` +
         `<span class="tool-calls-chevron">▶</span>`;
     details.appendChild(summary);
 
     const list = document.createElement('div');
     list.className = 'tool-calls-list';
 
-    toolCalls.forEach(call => {
-        const item = document.createElement('div');
-        item.className = 'tool-call-item';
+    iterations.forEach((calls, iterNum) => {
+        // Show iteration header when there are multiple iterations
+        if (iterCount > 1) {
+            const iterHeader = document.createElement('div');
+            iterHeader.className = 'tool-calls-iteration-header';
+            iterHeader.textContent = `Iteration ${iterNum}`;
+            list.appendChild(iterHeader);
+        }
 
-        const header = document.createElement('div');
-        header.className = 'tool-call-header';
-        header.innerHTML = `<span class="tool-call-name">${escapeHtml(call.tool)}</span>`;
-        item.appendChild(header);
+        calls.forEach(call => {
+            const item = document.createElement('div');
+            item.className = 'tool-call-item';
 
-        const detailsDiv = document.createElement('div');
-        detailsDiv.className = 'tool-call-details';
+            const header = document.createElement('div');
+            header.className = 'tool-call-header';
+            header.innerHTML = `<span class="tool-call-name">${escapeHtml(call.tool)}</span>`;
+            item.appendChild(header);
 
-        // Args
-        const argsDiv = document.createElement('div');
-        argsDiv.className = 'tool-call-args';
-        const argsLabel = document.createElement('span');
-        argsLabel.className = 'tool-call-label';
-        argsLabel.textContent = 'Args:';
-        const argsPre = document.createElement('pre');
-        argsPre.textContent = JSON.stringify(call.args, null, 2);
-        argsDiv.appendChild(argsLabel);
-        argsDiv.appendChild(argsPre);
-        detailsDiv.appendChild(argsDiv);
+            const detailsDiv = document.createElement('div');
+            detailsDiv.className = 'tool-call-details';
 
-        // Result
-        const resultDiv = document.createElement('div');
-        resultDiv.className = 'tool-call-result';
-        const resultLabel = document.createElement('span');
-        resultLabel.className = 'tool-call-label';
-        resultLabel.textContent = 'Result:';
-        const resultPre = document.createElement('pre');
-        resultPre.textContent = JSON.stringify(call.result, null, 2);
-        resultDiv.appendChild(resultLabel);
-        resultDiv.appendChild(resultPre);
-        detailsDiv.appendChild(resultDiv);
+            // Args
+            const argsDiv = document.createElement('div');
+            argsDiv.className = 'tool-call-args';
+            const argsLabel = document.createElement('span');
+            argsLabel.className = 'tool-call-label';
+            argsLabel.textContent = 'Args:';
+            const argsPre = document.createElement('pre');
+            argsPre.textContent = JSON.stringify(call.args, null, 2);
+            argsDiv.appendChild(argsLabel);
+            argsDiv.appendChild(argsPre);
+            detailsDiv.appendChild(argsDiv);
 
-        item.appendChild(detailsDiv);
-        list.appendChild(item);
+            // Result
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'tool-call-result';
+            const resultLabel = document.createElement('span');
+            resultLabel.className = 'tool-call-label';
+            resultLabel.textContent = 'Result:';
+            const resultPre = document.createElement('pre');
+            resultPre.textContent = JSON.stringify(call.result, null, 2);
+            resultDiv.appendChild(resultLabel);
+            resultDiv.appendChild(resultPre);
+            detailsDiv.appendChild(resultDiv);
+
+            item.appendChild(detailsDiv);
+            list.appendChild(item);
+        });
     });
 
     details.appendChild(list);
@@ -475,7 +513,7 @@ async function sendMessage() {
         // Broadcast stream start to other tabs
         CrossTabSync.broadcast('stream_started', { chatId: sendChatId });
 
-        await readSSEStream(response, {
+        const streamResult = await readSSEStream(response, {
             user_saved(data) {
                 StreamRegistry.setUserMessageId(sendChatId, data.message_id);
                 // Tag the DOM element so delete/edit buttons can reference it
@@ -541,6 +579,31 @@ async function sendMessage() {
                 loadChats();
             },
         });
+
+        // Handle premature stream close (connection dropped without done/error)
+        if (!streamResult.complete && StreamRegistry.isActive(sendChatId)) {
+            StreamRegistry.setError(sendChatId);
+            if (currentChatId === sendChatId) {
+                removeStatusMessages();
+                // Agent may still be running — wait briefly then check DB
+                setTimeout(async () => {
+                    try {
+                        const messages = await API.getMessages(sendChatId);
+                        const lastMsg = messages[messages.length - 1];
+                        if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.is_partial) {
+                            await loadMessages(sendChatId);
+                        } else {
+                            finalizeStreamingAsCutoff('Connection lost — response may be incomplete.');
+                        }
+                    } catch {
+                        finalizeStreamingAsCutoff('Connection lost. Please try again.');
+                    }
+                    setStreaming(false);
+                }, 1500);
+            }
+            StreamRegistry.cleanup(sendChatId);
+            renderChatList();
+        }
 
     } catch (err) {
         if (err.name === 'AbortError') return;  // Cancelled by user
@@ -623,7 +686,7 @@ async function submitEditedMessage(messageId) {
 
         CrossTabSync.broadcast('stream_started', { chatId: sendChatId });
 
-        await readSSEStream(response, {
+        const editStreamResult = await readSSEStream(response, {
             user_saved(data) {
                 StreamRegistry.setUserMessageId(sendChatId, data.message_id);
                 if (currentChatId === sendChatId) {
@@ -682,6 +745,30 @@ async function submitEditedMessage(messageId) {
                 loadChats();
             },
         });
+
+        // Handle premature stream close
+        if (!editStreamResult.complete && StreamRegistry.isActive(sendChatId)) {
+            StreamRegistry.setError(sendChatId);
+            if (currentChatId === sendChatId) {
+                removeStatusMessages();
+                setTimeout(async () => {
+                    try {
+                        const messages = await API.getMessages(sendChatId);
+                        const lastMsg = messages[messages.length - 1];
+                        if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.is_partial) {
+                            await loadMessages(sendChatId);
+                        } else {
+                            finalizeStreamingAsCutoff('Connection lost — response may be incomplete.');
+                        }
+                    } catch {
+                        finalizeStreamingAsCutoff('Connection lost. Please try again.');
+                    }
+                    setStreaming(false);
+                }, 1500);
+            }
+            StreamRegistry.cleanup(sendChatId);
+            renderChatList();
+        }
 
     } catch (err) {
         if (err.name === 'AbortError') return;  // Cancelled by user

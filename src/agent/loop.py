@@ -3,6 +3,7 @@
 import json
 import logging
 import threading
+import time
 from typing import Generator
 
 import sqlalchemy.exc
@@ -143,9 +144,12 @@ def run_agent_turn(
             current_text = ""
             tool_calls = []
             function_call_parts = []
+            chunk_count = 0
+            stream_start = time.monotonic()
 
             try:
                 for chunk in response_stream:
+                    chunk_count += 1
                     last_chunk = chunk
                     if not chunk.candidates:
                         continue
@@ -164,6 +168,9 @@ def run_agent_turn(
                             function_call_parts.append(part)
 
             except Exception as e:
+                stream_duration = time.monotonic() - stream_start
+                logger.warning("Chat %s stream error after %d chunks, %.1fs: %s",
+                               chat_id, chunk_count, stream_duration, e)
                 error_text = f"Streaming error: {str(e)}"
                 try:
                     chat_model.add_message(chat_id, "assistant", error_text,
@@ -172,6 +179,10 @@ def run_agent_turn(
                     pass
                 yield {"type": "error", "message": error_text}
                 return
+
+            stream_duration = time.monotonic() - stream_start
+            logger.info("Chat %s stream stats: chunks=%d, duration=%.1fs, text_len=%d, tool_calls=%d",
+                        chat_id, chunk_count, stream_duration, len(current_text), len(tool_calls))
 
             # If there were tool calls, execute them and continue the loop
             if tool_calls:
@@ -208,11 +219,12 @@ def run_agent_turn(
                     result = execute_tool(tool_name, tool_args,
                                           context={"chat_id": chat_id})
 
-                    # Record for introspection (ephemeral, not persisted)
+                    # Record for introspection and persistence
                     tool_call_log.append({
                         "tool": tool_name,
                         "args": tool_args,
                         "result": result,
+                        "iteration": iteration,
                     })
 
                     # Handle update_state specially: apply updates to agent state
@@ -293,11 +305,18 @@ def run_agent_turn(
             yield {"type": "error", "message": error_text}
             return
 
-        # Warn about truncated responses
-        if finish_reason and "MAX_TOKENS" in str(finish_reason):
-            note = "\n\n*(Response truncated due to length limit.)*"
+        # Warn about partial responses with non-STOP finish_reason
+        finish_reason_str = str(finish_reason) if finish_reason else None
+        if full_response and finish_reason_str and finish_reason_str not in ("STOP", "FinishReason.STOP", "None"):
+            if "MAX_TOKENS" in finish_reason_str:
+                note = "\n\n*(Response truncated due to length limit.)*"
+            elif "SAFETY" in finish_reason_str:
+                note = "\n\n*(Response cut short by content filter.)*"
+            else:
+                note = f"\n\n*(Response incomplete: {finish_reason_str})*"
             full_response += note
             yield {"type": "token", "text": note}
+            logger.warning("Chat %s partial response: finish_reason=%s", chat_id, finish_reason_str)
 
         # Save the assistant response and final agent state.
         # The chat may have been deleted while the agent was streaming

@@ -68,6 +68,11 @@
     border-left: 3px solid var(--danger);
 }
 
+.message-cutoff {
+    opacity: 0.7;
+    border-left: 3px solid var(--danger, #e53935);
+}
+
 .message.status {
     align-self: center;
     background: var(--msg-status-bg);
@@ -236,6 +241,21 @@
     flex-direction: column;
     gap: 6px;
     padding: 4px 10px 10px;
+}
+
+.tool-calls-iteration-header {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    padding: 4px 2px 2px;
+    margin-top: 4px;
+    border-bottom: 1px solid var(--border);
+}
+
+.tool-calls-iteration-header:first-child {
+    margin-top: 0;
 }
 
 .tool-call-item {
