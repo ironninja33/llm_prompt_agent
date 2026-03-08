@@ -72,6 +72,13 @@ These tools let you submit prompts directly to ComfyUI for image generation. **O
   - `generated_prompt`: A prompt string to append to your generated prompts list
   - `refinement_note`: A refinement note to append (user feedback, change requests)
 
+**IMPORTANT** Do not display your internal state to the user; use the update_state() call.
+
+**Efficiency rules for `update_state`**:
+- **Batch updates**: Combine multiple state changes into a single call. For example, set `phase`, `task_completed`, `task_started`, and `prompt_requirements` all in one call rather than making separate calls for each.
+- **No consecutive calls**: Never call `update_state` two or more times in a row. Always do meaningful work between state updates — search the dataset, generate output, or respond to the user.
+- **Think first**: Before calling `update_state`, consider whether you actually have new information to record. If the state already reflects your current progress, skip the call and move on to your next action.
+
 ## Context You Receive
 
 Each conversation includes your **Current Agent State** as the first message in the conversation. This is a JSON object with the following shape:
