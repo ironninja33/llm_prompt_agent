@@ -652,6 +652,10 @@ class GenerationProgress:
 _status_listeners: list[Callable[[GenerationProgress], Any]] = []
 _listeners_lock = threading.Lock()
 
+# In-memory cache of generation job progress for polling
+_job_progress_cache: dict[str, dict] = {}
+_job_progress_cache_lock = threading.Lock()
+
 
 def add_status_listener(callback: Callable[[GenerationProgress], Any]) -> None:
     """Register a callback for generation progress updates.
@@ -671,6 +675,22 @@ def remove_status_listener(callback: Callable[[GenerationProgress], Any]) -> Non
 
 def _notify_listeners(progress: GenerationProgress) -> None:
     """Broadcast a progress update to all registered listeners."""
+    # Update in-memory cache for polling
+    with _job_progress_cache_lock:
+        _job_progress_cache[progress.job_id] = {
+            "job_id": progress.job_id,
+            "prompt_id": progress.prompt_id,
+            "phase": progress.phase,
+            "progress": progress.progress,
+            "current_image": progress.current_image,
+            "total_images": progress.total_images,
+            "message": progress.message,
+            "complete": progress.complete,
+            "output_images": progress.output_images,
+            "queue_position": progress.queue_position,
+            "_updated_at": time.monotonic(),
+        }
+
     with _listeners_lock:
         listeners = _status_listeners[:]
 
@@ -679,6 +699,30 @@ def _notify_listeners(progress: GenerationProgress) -> None:
             listener(progress)
         except Exception as exc:
             logger.error("Error in ComfyUI status listener: %s", exc)
+
+
+def get_cached_job_progress(job_id: str) -> dict | None:
+    """Return cached progress for a job, or None if not tracked."""
+    with _job_progress_cache_lock:
+        return _job_progress_cache.get(job_id)
+
+
+def get_active_job_ids() -> list[str]:
+    """Return job IDs that are currently in progress (not complete)."""
+    now = time.monotonic()
+    active = []
+    stale = []
+    with _job_progress_cache_lock:
+        for job_id, entry in _job_progress_cache.items():
+            if entry.get("complete"):
+                # Remove completed entries older than 60s
+                if now - entry.get("_updated_at", 0) > 60:
+                    stale.append(job_id)
+            else:
+                active.append(job_id)
+        for job_id in stale:
+            del _job_progress_cache[job_id]
+    return active
 
 
 def poll_job(

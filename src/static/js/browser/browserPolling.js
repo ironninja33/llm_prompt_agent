@@ -7,59 +7,30 @@
  * Depends on: api.js, browserState.js, browserGrid.js
  */
 
-const POLL_INTERVAL_NORMAL = 10000;   // 10s default
-const POLL_INTERVAL_BUSY = 30000;     // 30s when agent is streaming
-
 /**
- * Start polling for new files.
+ * Start polling for new files via PollManager.
  */
 function startBrowserPolling() {
-    stopBrowserPolling();
-    _schedulePoll(POLL_INTERVAL_NORMAL);
+    PollManager.register('browser', (data) => {
+        if (BrowserState.isSearchActive || BrowserState.isLoading || BrowserState.deletePending) {
+            return;
+        }
+        if (data.has_new_files) {
+            BrowserState.offset = 0;
+            BrowserState.pollTimestamp = Date.now() / 1000;
+            loadBrowserContents();
+        }
+    }, () => ({
+        browser_path: BrowserState.currentPath || '',
+        browser_since: String(BrowserState.pollTimestamp || 0),
+    }));
 }
 
 /**
  * Stop polling.
  */
 function stopBrowserPolling() {
-    if (BrowserState.pollTimer) {
-        clearTimeout(BrowserState.pollTimer);
-        BrowserState.pollTimer = null;
-    }
-}
-
-function _schedulePoll(delay) {
-    BrowserState.pollTimer = setTimeout(async () => {
-        BrowserState.pollTimer = null;
-
-        if (BrowserState.isSearchActive || BrowserState.isLoading || BrowserState.deletePending) {
-            _schedulePoll(POLL_INTERVAL_NORMAL);
-            return;
-        }
-
-        let nextDelay = POLL_INTERVAL_NORMAL;
-        try {
-            const result = await API.browserPoll(
-                BrowserState.currentPath,
-                BrowserState.pollTimestamp
-            );
-
-            // Adaptive backoff when agent is busy
-            if (result.agent_busy) {
-                nextDelay = POLL_INTERVAL_BUSY;
-            }
-
-            if (result.has_new_files) {
-                BrowserState.offset = 0;
-                BrowserState.pollTimestamp = Date.now() / 1000;
-                await loadBrowserContents();
-            }
-        } catch (err) {
-            // Silently ignore poll failures
-        }
-
-        _schedulePoll(nextDelay);
-    }, delay);
+    PollManager.unregister('browser');
 }
 
 /**

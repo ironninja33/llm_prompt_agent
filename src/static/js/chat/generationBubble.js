@@ -13,8 +13,8 @@
  *                            createCircularProgress, getGridStatus)
  */
 
-// Track active SSE connections for cleanup
-let _activeGenerationPollers = {};
+// Track active generation jobs for PollManager
+let _activeGenJobIds = new Set();
 
 /** Check if the messages container is scrolled near the bottom (within 150px). */
 function _isNearBottom() {
@@ -262,31 +262,57 @@ function _updateBubbleStatusFromGrid(grid) {
     statusEl.className = `gen-bubble-status gen-status-${status.phase}`;
 }
 
-// ── SSE polling ──────────────────────────────────────────────────────────
+// ── Polling via PollManager ───────────────────────────────────────────────
 
 /**
- * Start SSE polling for a generation job.
+ * Register a generation job for polling.
  */
 function _startProgressPolling(jobId) {
-    const evtSource = new EventSource(`/api/generate/${jobId}/status`);
-    _activeGenerationPollers[jobId] = evtSource;
+    _activeGenJobIds.add(jobId);
+}
 
-    evtSource.addEventListener('generation_status', (e) => {
-        const data = JSON.parse(e.data);
-        _handleProgressUpdate(data);
+// Register generation handler with PollManager (runs once on script load)
+if (typeof PollManager !== 'undefined') {
+    PollManager.register('generation', (data) => {
+        for (const [jobId, status] of Object.entries(data)) {
+            if (status.complete) {
+                _handleGenerationComplete({
+                    job_id: jobId,
+                    phase: status.phase,
+                    ...status,
+                });
+                _activeGenJobIds.delete(jobId);
+            } else {
+                _handleProgressUpdate({
+                    job_id: jobId,
+                    ...status,
+                });
+            }
+        }
+    }, () => ({
+        gen_jobs: Array.from(_activeGenJobIds).join(','),
+    }));
+
+    // Fresh-tab discovery: pick up in-progress jobs from _active_generation_jobs
+    PollManager.onEveryPoll((data) => {
+        if (data._active_generation_jobs) {
+            for (const jobId of data._active_generation_jobs) {
+                if (!_activeGenJobIds.has(jobId)) {
+                    _activeGenJobIds.add(jobId);
+                    // Create spinner if this job's bubble isn't already in the DOM
+                    const existing = document.querySelector(
+                        `.gen-thumbnail-pending[data-job-id="${jobId}"]`
+                    );
+                    if (!existing) {
+                        // We don't have enough info to create a full spinner yet,
+                        // but the next poll will deliver progress data.
+                        // The spinner will be created when the job appears in chat
+                        // generation bubbles via loadGenerationBubbles.
+                    }
+                }
+            }
+        }
     });
-
-    evtSource.addEventListener('generation_complete', (e) => {
-        const data = JSON.parse(e.data);
-        _handleGenerationComplete(data);
-        evtSource.close();
-        delete _activeGenerationPollers[jobId];
-    });
-
-    evtSource.onerror = () => {
-        evtSource.close();
-        delete _activeGenerationPollers[jobId];
-    };
 }
 
 /**
@@ -590,44 +616,10 @@ async function loadGenerationBubbles(chatId) {
 }
 
 /**
- * Clean up all active pollers (called on chat switch).
+ * Clean up tracked generation jobs (called on chat switch).
  */
 function cleanupGenerationPollers() {
-    Object.values(_activeGenerationPollers).forEach(es => es.close());
-    _activeGenerationPollers = {};
-}
-
-/**
- * Check all active generation pollers against the server.
- * If a job completed or failed while the tab was hidden, handle
- * completion and close the stale EventSource.
- */
-async function refreshStaleGenerationPollers() {
-    const jobIds = Object.keys(_activeGenerationPollers);
-    if (jobIds.length === 0 || !currentChatId) return;
-
-    try {
-        const jobs = await API.getChatGenerations(currentChatId);
-        const jobMap = {};
-        for (const j of jobs) jobMap[j.id] = j;
-
-        for (const jobId of jobIds) {
-            const job = jobMap[jobId];
-            if (!job) continue;
-            if (job.status === 'completed' || job.status === 'failed') {
-                // Job finished while tab was hidden — trigger completion
-                _handleGenerationComplete({
-                    job_id: jobId,
-                    phase: job.status,
-                });
-                const es = _activeGenerationPollers[jobId];
-                if (es) es.close();
-                delete _activeGenerationPollers[jobId];
-            }
-        }
-    } catch (err) {
-        console.error('Failed to refresh stale generation pollers:', err);
-    }
+    _activeGenJobIds.clear();
 }
 
 // ── Event Listeners ─────────────────────────────────────────────────────

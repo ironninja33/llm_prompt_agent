@@ -9,6 +9,7 @@ async function readSSEStream(response, handlers) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let receivedTerminal = false;
 
     while (true) {
         const { done, value } = await reader.read();
@@ -22,8 +23,13 @@ async function readSSEStream(response, handlers) {
 
         for (const part of parts) {
             const event = parseSSEEvent(part);
-            if (event && handlers[event.type]) {
-                handlers[event.type](event.data);
+            if (event) {
+                if (event.type === 'done' || event.type === 'error') {
+                    receivedTerminal = true;
+                }
+                if (handlers[event.type]) {
+                    handlers[event.type](event.data);
+                }
             }
         }
     }
@@ -31,10 +37,17 @@ async function readSSEStream(response, handlers) {
     // Process any remaining data in buffer
     if (buffer.trim()) {
         const event = parseSSEEvent(buffer);
-        if (event && handlers[event.type]) {
-            handlers[event.type](event.data);
+        if (event) {
+            if (event.type === 'done' || event.type === 'error') {
+                receivedTerminal = true;
+            }
+            if (handlers[event.type]) {
+                handlers[event.type](event.data);
+            }
         }
     }
+
+    return { complete: receivedTerminal };
 }
 
 function parseSSEEvent(raw) {

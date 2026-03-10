@@ -460,6 +460,27 @@ def _search_similar(args: dict) -> dict:
     source_type = args.get("source_type")
     concept = args.get("concept")
 
+    # Validate concept exists in target collection(s) before embedding
+    if concept:
+        concept_counts = _check_concept_availability(concept, source_type)
+        if not any(c["count"] > 0 for c in concept_counts):
+            available_in = [
+                c for c in _check_concept_availability(concept, source_type=None)
+                if c["count"] > 0
+            ]
+            msg = f"Concept '{concept}' has 0 documents"
+            if source_type:
+                msg += f" in {source_type} collection"
+            if available_in:
+                details = ", ".join(
+                    f"{c['source_type']} ({c['count']})" for c in available_in
+                )
+                msg += f". Found in: {details}"
+            else:
+                msg += ". This concept does not exist in any collection"
+            msg += ". Try removing the source_type or concept filter."
+            return {"query": query, "count": 0, "prompts": [], "warning": msg}
+
     query_embedding = embedding_service.embed(query)
     results = vector_store.search_similar(
         query_embedding, k=k, source_type=source_type, concept=concept
@@ -478,6 +499,36 @@ def _search_similar(args: dict) -> dict:
             for r in results
         ],
     }
+
+
+def _check_concept_availability(
+    concept: str, source_type: str | None = None
+) -> list[dict]:
+    """Check how many documents exist for a concept in each collection."""
+    collections = []
+    if source_type:
+        collections.append((vector_store._get_collection(source_type), source_type))
+    else:
+        collections.append((vector_store._training_collection, "training"))
+        collections.append((vector_store._generated_collection, "output"))
+
+    results = []
+    for collection, stype in collections:
+        try:
+            matched = collection.get(
+                where={"concept": concept}, include=[], limit=1
+            )
+            count = len(matched["ids"])
+            # If we got 1, do a full count
+            if count > 0:
+                matched = collection.get(
+                    where={"concept": concept}, include=[]
+                )
+                count = len(matched["ids"])
+            results.append({"source_type": stype, "count": count})
+        except Exception:
+            results.append({"source_type": stype, "count": 0})
+    return results
 
 
 def _search_diverse(args: dict) -> dict:

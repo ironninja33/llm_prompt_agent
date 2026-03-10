@@ -11,6 +11,7 @@ from .orchestration import (
     is_running,
     start_clustering,
     start_clustering_single,
+    get_current_status,
 )
 
 from .core import (
@@ -47,4 +48,5 @@ __all__ = [
     "get_themed_prompts",
     "get_clustering_stats",
     "rename_concept",
+    "get_current_status",
 ]

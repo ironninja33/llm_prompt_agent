@@ -11,3 +11,4 @@ from src.views.api import comfyui_routes   # noqa: F401, E402
 from src.views.api import generation_routes  # noqa: F401, E402
 from src.views.api import browser_routes     # noqa: F401, E402
 from src.views.api import cleanup_routes     # noqa: F401, E402
+from src.views.api import poll_routes        # noqa: F401, E402

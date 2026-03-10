@@ -42,8 +42,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try { loadStats(); } catch (e) { console.warn('loadStats failed:', e); }
-    try { startComfyUIPolling(); } catch (e) { console.warn('startComfyUIPolling failed:', e); }
-    try { monitorIngestion(); } catch (e) { console.warn('monitorIngestion failed:', e); }
+
+    // Register poll modules and start unified polling
+    PollManager.register('comfyui', (data) => {
+        updateComfyUIStatusIndicator(data.ok, data.queue_size);
+    });
+    PollManager.register('ingestion', (data) => {
+        if (data.phase !== 'idle' && !data.complete) {
+            showIngestionOverlay(data);
+        } else if (data.complete && data.phase !== 'idle') {
+            hideIngestionOverlay();
+            loadStats();
+        }
+    });
+    PollManager.register('clustering', (data) => {
+        if (data.phase !== 'idle' && !data.complete) {
+            showClusteringOverlay(data);
+        } else if (data.complete && data.phase !== 'idle') {
+            hideClusteringOverlay(data);
+            loadStats();
+        }
+    });
+    PollManager.start();
 
     // Handle browser-to-chat refine URL params: ?refine=<prompt>&attach=<jobId/imgId>
     if (hasRefineParams) {
@@ -101,9 +121,6 @@ async function _handleRefineParams() {
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
 
-    if (typeof refreshStaleGenerationPollers === 'function') {
-        refreshStaleGenerationPollers();
-    }
     if (typeof refreshStaleChatStream === 'function') {
         refreshStaleChatStream();
     }
@@ -111,46 +128,28 @@ document.addEventListener('visibilitychange', () => {
 
 // ── ComfyUI Status ──────────────────────────────────────────────────────
 
-let _comfyStatusInterval = null;
-
-async function pollComfyUIStatus() {
+function updateComfyUIStatusIndicator(ok, queueSize) {
     const container = $('#comfyui-status');
     if (!container) return;
-    const dot = container.querySelector('.comfyui-dot');
     const queueEl = container.querySelector('.comfyui-queue');
-    if (!dot || !queueEl) return;
+    if (!queueEl) return;
 
-    try {
-        const status = await API.getComfyUIStatus();
-        if (status.ok) {
-            container.classList.add('online');
-            container.classList.remove('offline');
-            if (status.queue_size > 0) {
-                queueEl.textContent = status.queue_size;
-                queueEl.classList.remove('hidden');
-                container.title = `ComfyUI: ${status.queue_size} job${status.queue_size !== 1 ? 's' : ''} queued`;
-            } else {
-                queueEl.classList.add('hidden');
-                container.title = 'ComfyUI: connected, queue empty';
-            }
+    if (ok) {
+        container.classList.add('online');
+        container.classList.remove('offline');
+        if (queueSize > 0) {
+            queueEl.textContent = queueSize;
+            queueEl.classList.remove('hidden');
+            container.title = `ComfyUI: ${queueSize} job${queueSize !== 1 ? 's' : ''} queued`;
         } else {
-            container.classList.add('offline');
-            container.classList.remove('online');
             queueEl.classList.add('hidden');
-            container.title = 'ComfyUI: offline';
+            container.title = 'ComfyUI: connected, queue empty';
         }
-    } catch (_) {
+    } else {
         container.classList.add('offline');
         container.classList.remove('online');
         queueEl.classList.add('hidden');
         container.title = 'ComfyUI: offline';
-    }
-}
-
-function startComfyUIPolling() {
-    pollComfyUIStatus();
-    if (!_comfyStatusInterval) {
-        _comfyStatusInterval = setInterval(pollComfyUIStatus, 10000);
     }
 }
 
@@ -185,28 +184,24 @@ async function loadStats() {
 
 // ── Ingestion Monitoring ────────────────────────────────────────────────
 
-function monitorIngestion() {
+let _ingestionOverlayShown = false;
+
+function showIngestionOverlay(data) {
     const overlay = $('#ingestion-overlay');
     const progressBar = $('#ingestion-progress-bar');
     const statusMsg = $('#ingestion-status-message');
     const detail = $('#ingestion-detail');
+    if (!overlay) return;
 
-    // Open SSE connection for ingestion status
-    const evtSource = new EventSource('/api/ingestion/status');
-    let hasShownOverlay = false;
+    if (!_ingestionOverlayShown) {
+        overlay.classList.remove('hidden');
+        _ingestionOverlayShown = true;
+    }
 
-    evtSource.addEventListener('ingestion_status', (e) => {
-        const data = JSON.parse(e.data);
+    if (statusMsg) statusMsg.textContent = data.message || 'Processing...';
+    if (detail) detail.textContent = data.current_dir || '';
 
-        // Show overlay on first real status update
-        if (!hasShownOverlay && data.phase !== 'idle') {
-            overlay.classList.remove('hidden');
-            hasShownOverlay = true;
-        }
-
-        statusMsg.textContent = data.message || 'Processing...';
-        detail.textContent = data.current_dir || '';
-
+    if (progressBar) {
         if (data.phase === 'discovery') {
             progressBar.classList.add('indeterminate');
             progressBar.style.width = '';
@@ -215,36 +210,29 @@ function monitorIngestion() {
             const pct = Math.round((data.current / data.new_files) * 100);
             progressBar.style.width = pct + '%';
         }
-    });
+    }
+}
 
-    evtSource.addEventListener('ingestion_complete', (e) => {
-        const data = JSON.parse(e.data);
-        evtSource.close();
+function hideIngestionOverlay() {
+    const overlay = $('#ingestion-overlay');
+    const progressBar = $('#ingestion-progress-bar');
+    const statusMsg = $('#ingestion-status-message');
+    const detail = $('#ingestion-detail');
 
-        if (hasShownOverlay) {
-            statusMsg.textContent = data.message || 'Indexing complete';
+    if (_ingestionOverlayShown && overlay) {
+        if (statusMsg) statusMsg.textContent = 'Indexing complete';
+        if (progressBar) {
             progressBar.classList.remove('indeterminate');
             progressBar.style.width = '100%';
-            detail.textContent = '';
-
-            // Hide overlay after a brief moment
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                progressBar.style.width = '0%';
-            }, 1200);
         }
+        if (detail) detail.textContent = '';
 
-        // Refresh stats
-        loadStats();
-    });
-
-    evtSource.onerror = () => {
-        evtSource.close();
-        // If ingestion never started, just hide
-        if (!hasShownOverlay) {
+        setTimeout(() => {
             overlay.classList.add('hidden');
-        }
-    };
+            if (progressBar) progressBar.style.width = '0%';
+        }, 1200);
+        _ingestionOverlayShown = false;
+    }
 }
 
 // ── Clustering ──────────────────────────────────────────────────────────
@@ -295,26 +283,23 @@ async function triggerClustering() {
     }
 }
 
-function monitorClustering() {
+let _clusteringOverlayShown = false;
+
+function showClusteringOverlay(data) {
     const overlay = document.getElementById("clustering-overlay");
     const progressBar = document.getElementById("clustering-progress-bar");
     const statusMsg = document.getElementById("clustering-status-message");
     const detail = document.getElementById("clustering-detail");
+    if (!overlay) return;
 
-    const evtSource = new EventSource("/api/clustering/status");
-    let hasShownOverlay = false;
+    if (!_clusteringOverlayShown) {
+        overlay.classList.remove("hidden");
+        _clusteringOverlayShown = true;
+    }
 
-    evtSource.addEventListener("clustering_status", (e) => {
-        const data = JSON.parse(e.data);
+    if (statusMsg) statusMsg.textContent = data.message || "Processing...";
 
-        if (!hasShownOverlay && data.phase !== "idle") {
-            overlay.classList.remove("hidden");
-            hasShownOverlay = true;
-        }
-
-        statusMsg.textContent = data.message || "Processing...";
-
-        // Update progress bar
+    if (progressBar) {
         if (data.total && data.total > 0) {
             progressBar.classList.remove("indeterminate");
             const pct = Math.round((data.current / data.total) * 100);
@@ -323,63 +308,52 @@ function monitorClustering() {
             progressBar.classList.add("indeterminate");
             progressBar.style.width = "";
         }
+    }
 
-        // Show phase info in detail
-        if (data.phase) {
-            const phaseLabels = {
-                starting: "Initializing...",
-                cross_folder: "Cross-folder clustering",
-                intra_folder: "Intra-folder clustering",
-                summarizing: "Generating LLM summaries",
-            };
-            detail.textContent = phaseLabels[data.phase] || data.phase;
+    if (detail && data.phase) {
+        const phaseLabels = {
+            starting: "Initializing...",
+            cross_folder: "Cross-folder clustering",
+            intra_folder: "Intra-folder clustering",
+            summarizing: "Generating LLM summaries",
+        };
+        detail.textContent = phaseLabels[data.phase] || data.phase;
+    }
+}
+
+function hideClusteringOverlay(data) {
+    const overlay = document.getElementById("clustering-overlay");
+    const progressBar = document.getElementById("clustering-progress-bar");
+    const statusMsg = document.getElementById("clustering-status-message");
+    const detail = document.getElementById("clustering-detail");
+    if (!overlay) return;
+
+    if (_clusteringOverlayShown || !overlay.classList.contains("hidden")) {
+        const isError = data && data.phase === "error";
+        if (statusMsg) statusMsg.textContent = isError
+            ? (data.message || "Clustering failed")
+            : (data?.message || "Clustering complete");
+        if (progressBar && !isError) {
+            progressBar.classList.remove("indeterminate");
+            progressBar.style.width = "100%";
         }
-    });
+        if (detail) detail.textContent = "";
 
-    evtSource.addEventListener("clustering_complete", (e) => {
-        const data = JSON.parse(e.data);
-        evtSource.close();
-
-        if (hasShownOverlay || !overlay.classList.contains("hidden")) {
-            if (data.phase === "error") {
-                statusMsg.textContent = data.message || "Clustering failed";
-                detail.textContent = "";
-                setTimeout(() => {
-                    overlay.classList.add("hidden");
-                    progressBar.classList.remove("indeterminate");
-                    progressBar.style.width = "0%";
-                    statusMsg.textContent = "Starting...";
-                    detail.textContent = "";
-                }, 3000);
-            } else {
-                statusMsg.textContent = data.message || "Clustering complete";
-                progressBar.classList.remove("indeterminate");
-                progressBar.style.width = "100%";
-                detail.textContent = "";
-
-                setTimeout(() => {
-                    overlay.classList.add("hidden");
-                    progressBar.style.width = "0%";
-                    statusMsg.textContent = "Starting...";
-                    detail.textContent = "";
-                }, 2000);
-            }
-        }
-
-        // Refresh stats
-        loadStats();
-    });
-
-    evtSource.onerror = () => {
-        evtSource.close();
-        if (!overlay.classList.contains("hidden")) {
-            setTimeout(() => {
-                overlay.classList.add("hidden");
+        setTimeout(() => {
+            overlay.classList.add("hidden");
+            if (progressBar) {
                 progressBar.classList.remove("indeterminate");
                 progressBar.style.width = "0%";
-                statusMsg.textContent = "Starting...";
-                detail.textContent = "";
-            }, 1000);
-        }
-    };
+            }
+            if (statusMsg) statusMsg.textContent = "Starting...";
+            if (detail) detail.textContent = "";
+        }, isError ? 3000 : 2000);
+        _clusteringOverlayShown = false;
+    }
+}
+
+function monitorClustering() {
+    // Legacy — clustering is now monitored via PollManager.
+    // This function is kept so triggerClustering() doesn't break.
+    // The PollManager 'clustering' handler already handles overlay updates.
 }

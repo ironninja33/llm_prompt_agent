@@ -319,6 +319,25 @@ async function loadSummarizerSettings() {
         $('#setting-summarizer-system-prompt').value = settings.summarizer_system_prompt || '';
         $('#setting-summarizer-cross-folder').value = settings.summarizer_cross_folder_template || '';
         $('#setting-summarizer-folder').value = settings.summarizer_folder_template || '';
+
+        // Self-heal: if prompt templates are empty, fetch bundled defaults
+        const promptFields = [
+            ['summarizer_system_prompt', '#setting-summarizer-system-prompt'],
+            ['summarizer_cross_folder_template', '#setting-summarizer-cross-folder'],
+            ['summarizer_folder_template', '#setting-summarizer-folder'],
+        ];
+        const needsDefaults = promptFields.some(([key]) => !settings[key]);
+        if (needsDefaults) {
+            try {
+                const resp = await fetch('/api/summarizer/defaults');
+                const defaults = await resp.json();
+                for (const [key, selector] of promptFields) {
+                    if (!settings[key] && defaults[key]) {
+                        $(selector).value = defaults[key];
+                    }
+                }
+            } catch (_) { /* silent fallback */ }
+        }
     } catch (err) {
         console.warn('Failed to load summarizer settings:', err);
     }

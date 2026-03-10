@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 _ingestion_lock = threading.Lock()
 _ingestion_running = False
 _status_listeners: list = []  # list of callback functions
+_current_status: dict = {"phase": "idle", "complete": True}
 
 
 @dataclass
@@ -52,11 +53,29 @@ def remove_status_listener(callback):
 
 def _emit_status(progress: IngestionProgress):
     """Notify all listeners of a status update."""
+    global _current_status
+    _current_status = {
+        "phase": progress.phase,
+        "message": progress.message,
+        "directories_scanned": progress.directories_scanned,
+        "total_files": progress.total_files,
+        "new_files": progress.new_files,
+        "already_indexed": progress.already_indexed,
+        "current": progress.current,
+        "current_dir": progress.current_dir,
+        "errors": progress.errors,
+        "complete": progress.complete,
+    }
     for listener in _status_listeners[:]:
         try:
             listener(progress)
         except Exception as e:
             logger.error(f"Error in status listener: {e}")
+
+
+def get_current_status() -> dict:
+    """Return the latest ingestion status snapshot for polling."""
+    return _current_status
 
 
 def is_running() -> bool:

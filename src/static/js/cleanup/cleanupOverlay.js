@@ -11,8 +11,7 @@
 let _cleanupOpen = false;
 let _cleanupCurrentFolder = null;
 let _cleanupCurrentWave = 1;
-let _cleanupParseTimer = null;
-let _cleanupBatchTimer = null;
+// Cleanup polling is handled by PollManager (no local timers needed)
 
 // ── Open / Close ─────────────────────────────────────────────────
 
@@ -62,15 +61,9 @@ function closeCleanupOverlay() {
     modal.classList.add('hidden');
     _cleanupOpen = false;
 
-    // Cleanup
-    if (_cleanupParseTimer) {
-        clearInterval(_cleanupParseTimer);
-        _cleanupParseTimer = null;
-    }
-    if (_cleanupBatchTimer) {
-        clearInterval(_cleanupBatchTimer);
-        _cleanupBatchTimer = null;
-    }
+    // Unregister poll handlers
+    PollManager.unregister('cleanup_parse');
+    PollManager.unregister('cleanup_batch');
 }
 
 // ── Parse (blocking) ─────────────────────────────────────────────
@@ -131,29 +124,19 @@ function _hideParseBlocker() {
 }
 
 function _startParsePolling() {
-    if (_cleanupParseTimer) return;
-    _cleanupParseTimer = setInterval(async () => {
+    PollManager.register('cleanup_parse', (data) => {
         if (!_cleanupOpen) {
-            clearInterval(_cleanupParseTimer);
-            _cleanupParseTimer = null;
+            PollManager.unregister('cleanup_parse');
             return;
         }
-        try {
-            const res = await fetch('/api/cleanup/parse-status');
-            const status = await res.json();
-            _showParseBlocker(status);
-
-            if (!status.running) {
-                clearInterval(_cleanupParseTimer);
-                _cleanupParseTimer = null;
-                _hideParseBlocker();
-                // Parse done — now load the actual cleanup content
-                await _loadCleanupContent();
-            }
-        } catch (e) {
-            console.error('Parse poll error:', e);
+        if (data.running) {
+            _showParseBlocker(data);
+        } else {
+            PollManager.unregister('cleanup_parse');
+            _hideParseBlocker();
+            _loadCleanupContent();
         }
-    }, 2000);
+    });
 }
 
 // ── Batch status ─────────────────────────────────────────────────
@@ -189,26 +172,16 @@ function _hideBatchBar() {
 }
 
 function _startBatchPolling() {
-    if (_cleanupBatchTimer) return;
-    _cleanupBatchTimer = setInterval(async () => {
-        try {
-            const res = await fetch('/api/cleanup/batch-status');
-            const data = await res.json();
-
-            if (!data.batch || data.batch.status === 'completed' || data.batch.status === 'failed') {
-                clearInterval(_cleanupBatchTimer);
-                _cleanupBatchTimer = null;
-                _hideBatchBar();
-                // Refresh grid and wave counts
-                await loadCleanupGrid();
-                await loadCleanupWaveCounts();
-            } else {
-                _showBatchStatus(data.batch);
-            }
-        } catch (e) {
-            console.error('Batch poll error:', e);
+    PollManager.register('cleanup_batch', (data) => {
+        if (!data.batch || data.batch.status === 'completed' || data.batch.status === 'failed') {
+            PollManager.unregister('cleanup_batch');
+            _hideBatchBar();
+            loadCleanupGrid();
+            loadCleanupWaveCounts();
+        } else {
+            _showBatchStatus(data.batch);
         }
-    }, 30000);
+    });
 }
 
 // ── Wave switching ───────────────────────────────────────────────

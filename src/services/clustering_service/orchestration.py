@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _clustering_lock = threading.Lock()
 _clustering_running = False
 _status_listeners: list = []
+_current_status: dict = {"phase": "idle", "complete": True}
 
 
 @dataclass
@@ -37,11 +38,24 @@ def remove_status_listener(callback):
 
 def _emit_status(progress: ClusteringProgress):
     """Notify all listeners of a status update."""
+    global _current_status
+    _current_status = {
+        "phase": progress.phase,
+        "message": progress.message,
+        "current": progress.current,
+        "total": progress.total,
+        "complete": progress.complete,
+    }
     for listener in _status_listeners[:]:
         try:
             listener(progress)
         except Exception as e:
             logger.error(f"Error in clustering status listener: {e}")
+
+
+def get_current_status() -> dict:
+    """Return the latest clustering status snapshot for polling."""
+    return _current_status
 
 
 def is_running() -> bool:
