@@ -15,7 +15,7 @@ from src.services.cache_service import cache_manager
 from src.models import settings, chat as chat_model
 from src.models import tool_calls as tool_calls_model
 from src.models import generation as gen_model
-from src.agent.tools import TOOL_DECLARATIONS, execute_tool
+from src.agent.tools import TOOL_DECLARATIONS, execute_tool, summarize_tool_result
 from src.agent.state import create_initial_state, state_to_context, apply_state_update
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ def run_agent_turn(
         full_system_prompt = system_prompt
 
         # Build conversation history with agent state as first message pair
-        history = _build_message_history(chat_id)
+        history = _build_message_history(chat_id, agent_state)
         state_prefix = [
             {"role": "user", "content": state_to_context(agent_state)},
             {"role": "model", "content": "Acknowledged."},
@@ -103,6 +103,19 @@ def run_agent_turn(
 
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
+
+            # Emit context size to frontend before each LLM call
+            context_chars = sum(
+                len(m.get("content", ""))
+                + sum(len(str(p)) for p in m.get("parts", []))
+                for m in messages
+            )
+            yield {
+                "type": "context_status",
+                "context_chars": context_chars,
+                "iteration": iteration,
+                "max_iterations": MAX_TOOL_ITERATIONS,
+            }
 
             # Check for cancellation before each LLM call
             if cancel_event and cancel_event.is_set():
@@ -267,16 +280,22 @@ def run_agent_turn(
                             },
                         }
 
-                    # Add tool result to messages
+                    # Add tool result to messages (with metadata for truncation)
                     messages.append({
                         "role": "tool",
                         "parts": [types.Part.from_function_response(
                             name=tool_name,
                             response=result,
                         )],
+                        "_iteration": iteration,
+                        "_tool_name": tool_name,
+                        "_tool_args": tool_args,
+                        "_tool_result": result,
                     })
 
                 full_response += current_text
+                # Summarize stale tool results from older iterations
+                _summarize_stale_tool_results(messages, iteration)
                 # Continue the loop to let the LLM process tool results
                 continue
 
@@ -413,11 +432,15 @@ def _inject_attachments(messages: list[dict], attachments: list[dict]):
             break
 
 
-def _build_message_history(chat_id: str) -> list[dict]:
+def _build_message_history(chat_id: str, agent_state: dict | None = None) -> list[dict]:
     """Build the messages array for the LLM from chat history.
 
     Messages are kept clean — agent state is provided via the system prompt,
     not injected into user messages.
+
+    When *agent_state* has meaningful content (context or prompt_requirements),
+    older DB history is trimmed to a sliding window — the state already
+    captures that knowledge.
     """
     db_messages = chat_model.get_messages(chat_id)
 
@@ -443,7 +466,24 @@ def _build_message_history(chat_id: str) -> list[dict]:
         elif role == "assistant":
             messages.append({"role": "model", "content": content})
 
+    # Sliding window: if agent state has captured context from prior turns,
+    # older DB history is redundant — the state carries that knowledge.
+    if agent_state and _state_has_content(agent_state):
+        max_messages = int(settings.get_setting("context_history_pairs") or 3) * 2
+        if len(messages) > max_messages:
+            trimmed = len(messages) - max_messages
+            messages = messages[-max_messages:]
+            logger.info("Trimmed %d old history messages (keeping %d)", trimmed, max_messages)
+
     return messages
+
+
+def _state_has_content(agent_state: dict) -> bool:
+    """Check if agent state has meaningful content worth preserving over history."""
+    return bool(
+        agent_state.get("context")
+        or agent_state.get("prompt_requirements")
+    )
 
 
 def _maybe_summarize_chat(chat_id: str):
@@ -473,3 +513,45 @@ def _maybe_summarize_chat(chat_id: str):
 
     except Exception as e:
         logger.error(f"Error summarizing chat: {e}")
+
+
+def _summarize_stale_tool_results(messages: list[dict], current_iteration: int):
+    """Summarize tool results from iterations that are stale.
+
+    Modifies messages in-place.  Keeps the most recent N iterations' results
+    full (N read from the ``context_stale_iterations`` setting).  Only touches
+    messages with ``_iteration`` metadata (in-memory tool results, not DB
+    history).
+    """
+    keep_iterations = int(settings.get_setting("context_stale_iterations") or 2)
+    stale_cutoff = current_iteration - keep_iterations + 1
+    if stale_cutoff < 1:
+        return  # nothing can be stale yet
+
+    summarized = 0
+    for i, msg in enumerate(messages):
+        if (msg.get("role") == "tool"
+                and not msg.get("_summarized")
+                and msg.get("_iteration") is not None
+                and msg["_iteration"] < stale_cutoff):
+            messages[i] = _summarize_tool_message(msg)
+            summarized += 1
+
+    if summarized:
+        logger.info("Summarized %d stale tool results (iterations < %d)",
+                     summarized, stale_cutoff)
+
+
+def _summarize_tool_message(msg: dict) -> dict:
+    """Replace a tool result message with a compact summary."""
+    tool_name = msg.get("_tool_name", "unknown")
+    summary = summarize_tool_result(
+        tool_name, msg.get("_tool_args", {}), msg.get("_tool_result", {}),
+    )
+    return {
+        "role": "tool",
+        "parts": [types.Part.from_function_response(name=tool_name, response=summary)],
+        "_iteration": msg.get("_iteration"),
+        "_tool_name": tool_name,
+        "_summarized": True,
+    }

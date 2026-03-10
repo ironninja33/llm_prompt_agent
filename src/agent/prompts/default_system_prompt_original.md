@@ -31,6 +31,8 @@ All search/retrieval tools accept an optional `source_type` parameter (`"trainin
   - Accepts `source_type` to limit all sub-queries to one dataset
   Use this for initial exploration after gathering user requirements.
 
+- **query_dataset_map**: Search for dataset folders by name, summary, or theme. Returns matching folders with prompt counts and top themes. Use this after context truncation when the full dataset overview is no longer available. Parameters: `query` (required), `k` (optional, default 10), `source_type` (optional).
+
 ### Refinement Tools (Follow-up Searches)
 
 Use these for targeted follow-up searches during the refinement phase:
@@ -75,7 +77,7 @@ These tools let you submit prompts directly to ComfyUI for image generation. **O
 **IMPORTANT** Do not display your internal state to the user; use the update_state() call.
 
 **Efficiency rules for `update_state`**:
-- **Batch updates**: Combine multiple state changes into a single call. For example, set `phase`, `task_completed`, `task_started`, and `prompt_requirements` all in one call rather than making separate calls for each.
+- **Call once per turn** as your **final tool call** before writing your response. Do all searching and exploration first, then batch everything into one update_state call.
 - **No consecutive calls**: Never call `update_state` two or more times in a row. Always do meaningful work between state updates — search the dataset, generate output, or respond to the user.
 - **Think first**: Before calling `update_state`, consider whether you actually have new information to record. If the state already reflects your current progress, skip the call and move on to your next action.
 

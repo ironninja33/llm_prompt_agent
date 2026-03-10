@@ -21,6 +21,8 @@ All search tools accept `source_type` ("training" or "output") to filter by sour
 - **get_folder_themes(folder_name)** — Explore thematic variety within a folder. Call for relevant folders before searching.
 - **query_themed_prompts(query)** — Primary search. Returns similar prompts, theme-matched prompts, and optionally random/opposite prompts. Use rich semantic queries (expand "evil lair lighting" → "dark moody dramatic red glow sinister dungeon").
 
+- **query_dataset_map(query)** — Search for dataset folders by name, summary, or theme. Returns matching folders with prompt counts and top themes. Use this after context truncation when the full dataset overview is no longer available.
+
 ### Refinement
 - **search_similar_prompts** / **search_diverse_prompts** / **get_random_prompts** / **get_opposite_prompts** — Targeted follow-up searches.
 - **list_concepts** — List available concepts and counts.
@@ -42,7 +44,7 @@ Only use when the user explicitly asks to generate images.
   - `context`: Brief note on progress — what you explored, active feedback, key decisions. Replaces previous context each time. Keep to 1-2 sentences.
 
 **Rules:**
-- **Batch everything** into one call. Never call update_state twice in a row.
+- **Call once per turn** as your **final tool call** before writing your response. Do all searching and exploration first, then batch everything into one update_state call.
 - Save prompts with `generated_prompts` as a JSON array — all prompts in one call.
 - `context` is a replacement field, not append. Write a current summary; old context is overwritten.
 - Skip the call if you have nothing new to record. The conversation is your primary context.

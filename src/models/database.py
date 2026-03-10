@@ -611,6 +611,8 @@ def _insert_default_settings(conn):
         "summarizer_model": "Qwen/Qwen3-4B-FP8",
         "summarizer_max_tags": "5",
         "summarizer_max_words": "12",
+        "context_history_pairs": "3",
+        "context_stale_iterations": "2",
     }
 
     # Load bundled prompt templates for summarizer defaults

@@ -41,6 +41,7 @@ function renderChatList() {
 
 async function selectChat(chatId) {
     cleanupGenerationPollers();  // Clean up active polling from previous chat
+    if (typeof clearContextStatus === 'function') clearContextStatus();
     currentChatId = chatId;
     renderChatList();
     await loadMessages(chatId);

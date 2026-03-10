@@ -551,6 +551,11 @@ async function sendMessage() {
                 pendingToolCalls = data.calls;
                 StreamRegistry.setToolCalls(sendChatId, data.calls);
             },
+            context_status(data) {
+                if (currentChatId === sendChatId) {
+                    updateContextStatus(data);
+                }
+            },
             generation_submitted(data) {
                 if (currentChatId === sendChatId && data.job) {
                     handleStreamingGeneration(data.job);
@@ -717,6 +722,11 @@ async function submitEditedMessage(messageId) {
             tool_calls(data) {
                 pendingToolCalls = data.calls;
                 StreamRegistry.setToolCalls(sendChatId, data.calls);
+            },
+            context_status(data) {
+                if (currentChatId === sendChatId) {
+                    updateContextStatus(data);
+                }
             },
             generation_submitted(data) {
                 if (currentChatId === sendChatId && data.job) {
@@ -890,6 +900,34 @@ async function refreshStaleChatStream() {
         }
     } catch (err) {
         console.error('Failed to refresh stale chat stream:', err);
+    }
+}
+
+// ── Context Status Indicator ─────────────────────────────────────────────
+
+function updateContextStatus(data) {
+    const el = $('#context-status');
+    if (!el) return;
+
+    const chars = data.context_chars;
+    let label;
+    if (chars >= 1000000) {
+        label = (chars / 1000000).toFixed(1) + 'M';
+    } else if (chars >= 1000) {
+        label = (chars / 1000).toFixed(1) + 'k';
+    } else {
+        label = String(chars);
+    }
+
+    el.textContent = `ctx: ${label} · iter ${data.iteration}/${data.max_iterations}`;
+    el.classList.remove('hidden');
+}
+
+function clearContextStatus() {
+    const el = $('#context-status');
+    if (el) {
+        el.textContent = '';
+        el.classList.add('hidden');
     }
 }
 

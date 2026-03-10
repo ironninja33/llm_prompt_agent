@@ -32,6 +32,8 @@ async function openSettings() {
     $('#setting-query-k-theme-intra').value = settings.query_k_theme_intra || '5';
     $('#setting-query-k-theme-cross').value = settings.query_k_theme_cross || '5';
     $('#setting-query-k-random').value = settings.query_k_random || '3';
+    $('#setting-context-history-pairs').value = settings.context_history_pairs || '3';
+    $('#setting-context-stale-iterations').value = settings.context_stale_iterations || '2';
 
     // Load clustering settings
     $('#setting-cluster-k-cross').value = settings.cluster_k_cross || '15';
@@ -131,6 +133,8 @@ async function saveQuerySettings() {
         query_k_theme_intra: $('#setting-query-k-theme-intra').value,
         query_k_theme_cross: $('#setting-query-k-theme-cross').value,
         query_k_random: $('#setting-query-k-random').value,
+        context_history_pairs: $('#setting-context-history-pairs').value,
+        context_stale_iterations: $('#setting-context-stale-iterations').value,
     };
 
     const response = await fetch('/api/settings', {

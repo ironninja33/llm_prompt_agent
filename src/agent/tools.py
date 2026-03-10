@@ -14,6 +14,151 @@ from src.models import vector_store
 logger = logging.getLogger(__name__)
 
 
+# ── Tool result summarizers ──────────────────────────────────────────────
+# Each summarizer takes (args, result) and returns a compact dict.
+# Used by context truncation to replace verbose tool results with summaries.
+
+def _unique_values(items: list[dict], key: str, limit: int = 3) -> list[str]:
+    """Extract unique values for *key* from a list of dicts, up to *limit*."""
+    seen = []
+    for item in items:
+        val = item.get(key, "")
+        if val and val not in seen:
+            seen.append(val)
+            if len(seen) >= limit:
+                break
+    return seen
+
+
+def _summarize_search_similar(args: dict, result: dict) -> dict:
+    summary = {"query": args.get("query", ""), "count": result.get("count", 0)}
+    if args.get("source_type"):
+        summary["source_type"] = args["source_type"]
+    if args.get("concept"):
+        summary["concept"] = args["concept"]
+    summary["top_concepts"] = _unique_values(result.get("prompts", []), "concept")
+    if result.get("warning"):
+        summary["warning"] = result["warning"]
+    return summary
+
+
+def _summarize_search_diverse(args: dict, result: dict) -> dict:
+    return {
+        "query": args.get("query", ""),
+        "count": result.get("count", 0),
+        "top_concepts": _unique_values(result.get("prompts", []), "concept"),
+    }
+
+
+def _summarize_get_random(args: dict, result: dict) -> dict:
+    return {
+        "count": result.get("count", 0),
+        "top_concepts": _unique_values(result.get("prompts", []), "concept"),
+    }
+
+
+def _summarize_get_opposite(args: dict, result: dict) -> dict:
+    return {
+        "query": args.get("query", ""),
+        "count": result.get("count", 0),
+        "top_concepts": _unique_values(result.get("prompts", []), "concept"),
+    }
+
+
+def _summarize_list_concepts(args: dict, result: dict) -> dict:
+    return {"count": result.get("count", 0)}
+
+
+def _summarize_dataset_overview(args: dict, result: dict) -> dict:
+    return {
+        "total_prompts": result.get("total_prompts", 0),
+        "folder_count": len(result.get("folders", [])),
+        "cross_theme_count": len(result.get("cross_folder_themes", [])),
+    }
+
+
+def _summarize_folder_themes(args: dict, result: dict) -> dict:
+    themes = result.get("themes", [])
+    return {
+        "folder": args.get("folder_name", ""),
+        "source_type": args.get("source_type", ""),
+        "theme_count": len(themes),
+        "top_themes": [t.get("label", "") for t in themes[:5]],
+    }
+
+
+def _summarize_query_themed(args: dict, result: dict) -> dict:
+    summary = {"query": args.get("query", "")}
+    for section in ("similar", "intra_folder_themes", "cross_folder_themes", "random", "opposite"):
+        data = result.get(section)
+        if data and isinstance(data, dict):
+            summary[section] = data.get("count", len(data.get("prompts", [])))
+        elif data and isinstance(data, list):
+            summary[section] = len(data)
+    return summary
+
+
+def _summarize_generate_image(args: dict, result: dict) -> dict:
+    summary = {"status": result.get("status", result.get("error", "unknown"))}
+    if result.get("job_id"):
+        summary["job_id"] = result["job_id"]
+    prompt = args.get("prompt", "")
+    summary["prompt_preview"] = prompt[:80] + ("..." if len(prompt) > 80 else "")
+    return summary
+
+
+def _summarize_get_loras(args: dict, result: dict) -> dict:
+    return {"count": result.get("count", 0)}
+
+
+def _summarize_get_output_dirs(args: dict, result: dict) -> dict:
+    return {"count": result.get("count", 0)}
+
+
+def _summarize_last_gen_settings(args: dict, result: dict) -> dict:
+    s = result.get("settings", {})
+    return {"found": bool(s), "model": s.get("base_model", "")}
+
+
+def _summarize_last_gen_prompts(args: dict, result: dict) -> dict:
+    return {"count": result.get("count", 0)}
+
+
+def _summarize_update_state(args: dict, result: dict) -> dict:
+    return {"status": result.get("status", "ok")}
+
+
+def _summarize_query_dataset_map(args: dict, result: dict) -> dict:
+    return {"query": args.get("query", ""), "count": result.get("count", 0)}
+
+
+TOOL_SUMMARIES = {
+    "search_similar_prompts": _summarize_search_similar,
+    "search_diverse_prompts": _summarize_search_diverse,
+    "get_random_prompts": _summarize_get_random,
+    "get_opposite_prompts": _summarize_get_opposite,
+    "list_concepts": _summarize_list_concepts,
+    "get_dataset_overview": _summarize_dataset_overview,
+    "get_folder_themes": _summarize_folder_themes,
+    "query_themed_prompts": _summarize_query_themed,
+    "generate_image": _summarize_generate_image,
+    "get_available_loras": _summarize_get_loras,
+    "get_output_directories": _summarize_get_output_dirs,
+    "get_last_generation_settings": _summarize_last_gen_settings,
+    "get_last_generated_prompts": _summarize_last_gen_prompts,
+    "update_state": _summarize_update_state,
+    "query_dataset_map": _summarize_query_dataset_map,
+}
+
+
+def summarize_tool_result(tool_name: str, args: dict, result: dict) -> dict:
+    """Return a compact summary of a tool result for context truncation."""
+    summarizer = TOOL_SUMMARIES.get(tool_name)
+    if summarizer:
+        return summarizer(args, result)
+    return {"_summary": True, "tool": tool_name, "status": "completed"}
+
+
 # ── Tool declarations for Gemini ─────────────────────────────────────────
 
 TOOL_DECLARATIONS = [
@@ -175,6 +320,35 @@ TOOL_DECLARATIONS = [
                     "include_opposite": types.Schema(
                         type="BOOLEAN",
                         description="Include opposite/contrasting prompts (default: false)",
+                        nullable=True,
+                    ),
+                    "source_type": types.Schema(
+                        type="STRING",
+                        description="Filter by source: 'training', 'output', or null for both",
+                        nullable=True,
+                    ),
+                },
+                required=["query"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="query_dataset_map",
+            description=(
+                "Search for dataset folders matching a query. Returns folder names, "
+                "source types, prompt counts, summaries, and top themes. Use this when "
+                "you need to find relevant folders after context has been truncated and "
+                "the full dataset overview is no longer available."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "query": types.Schema(
+                        type="STRING",
+                        description="Search query to match against folder names, summaries, and themes",
+                    ),
+                    "k": types.Schema(
+                        type="INTEGER",
+                        description="Max folders to return (default 10)",
                         nullable=True,
                     ),
                     "source_type": types.Schema(
@@ -410,6 +584,8 @@ def execute_tool(name: str, args: dict, context: dict | None = None) -> dict:
             return _get_folder_themes(args)
         elif name == "query_themed_prompts":
             return _query_themed_prompts(args)
+        elif name == "query_dataset_map":
+            return _query_dataset_map(args)
         elif name == "generate_image":
             return _generate_image(args, context or {})
         elif name == "get_available_loras":
@@ -669,6 +845,60 @@ def _query_themed_prompts(args: dict) -> dict:
     )
 
     return result
+
+
+def _query_dataset_map(args: dict) -> dict:
+    """Search for dataset folders matching a query string."""
+    from src.services import clustering_service
+
+    query = args.get("query", "").lower()
+    k = args.get("k", 10)
+    source_type = args.get("source_type")
+
+    overview = clustering_service.get_dataset_overview()
+    query_terms = query.split()
+
+    scored = []
+    for folder in overview.get("folders", []):
+        if source_type and folder.get("source_type") != source_type:
+            continue
+
+        # Build searchable text from folder metadata
+        searchable = " ".join([
+            folder.get("name", ""),
+            folder.get("category", ""),
+            folder.get("display_name", ""),
+            folder.get("summary", ""),
+        ]).lower()
+
+        # Score by term matches (full + partial)
+        score = sum(1 for t in query_terms if t in searchable)
+        partial = sum(0.5 for t in query_terms
+                      for w in searchable.split() if t in w and t != w)
+        total = score + partial
+
+        if total > 0:
+            scored.append((total, folder))
+
+    scored.sort(key=lambda x: -x[0])
+
+    # Enrich top results with intra-folder themes
+    results = []
+    for _, folder in scored[:k]:
+        themes = clustering_service.get_folder_themes(
+            folder["name"], source_type=folder.get("source_type", "training")
+        )
+        results.append({
+            "name": folder["name"],
+            "category": folder.get("category", ""),
+            "display_name": folder.get("display_name", ""),
+            "source_type": folder.get("source_type", ""),
+            "total_prompts": folder.get("total_prompts", 0),
+            "summary": folder.get("summary", ""),
+            "top_themes": [t["label"] for t in themes.get("themes", [])[:3]],
+        })
+
+    return {"query": query, "count": len(results), "folders": results}
 
 
 # ── Generation tool implementations ──────────────────────────────────────

@@ -157,6 +157,21 @@
     to { transform: rotate(360deg); }
 }
 
+/* ── Context Status Indicator ───────────────────────────────── */
+.context-status {
+    text-align: right;
+    padding: 2px 16px 4px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.context-status.hidden {
+    display: none;
+}
+
 /* ── Markdown inside messages ────────────────────────────────── */
 .message code {
     background: rgba(0, 0, 0, 0.25);

@@ -202,6 +202,19 @@
                         <span class="setting-help">Number of random prompts returned by get_random tool</span>
                     </label>
 
+                    <h3 class="settings-group-title" style="margin-top:1.5rem">Context Management</h3>
+                    <p class="settings-group-desc">Controls how the agent manages conversation context to reduce token usage in long conversations.</p>
+
+                    <label>History Pairs to Keep
+                        <input type="number" id="setting-context-history-pairs" min="1" max="20" step="1">
+                        <span class="setting-help">Number of recent user/assistant message pairs kept from previous turns when agent state is populated. Older history is dropped since the agent state captures that context.</span>
+                    </label>
+
+                    <label>Recent Iterations to Keep Full
+                        <input type="number" id="setting-context-stale-iterations" min="1" max="10" step="1">
+                        <span class="setting-help">Tool results from iterations older than this (relative to current) are summarized to save tokens. Only affects long multi-step agent turns.</span>
+                    </label>
+
                     <div class="btn-row">
                         <button class="btn-primary" onclick="saveQuerySettings()">Save</button>
                     </div>
