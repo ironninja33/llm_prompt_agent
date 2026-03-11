@@ -320,7 +320,7 @@ def _auto_slot_if_enabled(job_id: str, embedding: list[float], concept: str):
             # file_path is often NULL for freshly-generated images; resolve
             # from filename + subfolder against the output data directories.
             if not file_path:
-                file_path = comfyui_service._resolve_image_path(
+                file_path = comfyui_service.resolve_image_path(
                     img.get("filename", ""), img.get("subfolder", ""),
                 )
             if not file_path or not os.path.isfile(file_path):

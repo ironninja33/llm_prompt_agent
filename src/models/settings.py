@@ -3,6 +3,14 @@
 import logging
 from sqlalchemy import text
 from src.models.database import get_db, row_to_dict
+from src.config import (
+    DEFAULT_MODEL_AGENT,
+    DEFAULT_MODEL_EMBEDDING,
+    DEFAULT_MODEL_SUMMARY,
+    DEFAULT_GEMINI_RATE_LIMIT,
+    DEFAULT_COMFYUI_BASE_URL,
+)
+from src.agent.system_prompt import DEFAULT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -133,3 +141,59 @@ def delete_data_directory(dir_id: int) -> bool:
             {"id": dir_id},
         )
         return result.rowcount > 0
+
+
+def insert_default_settings(conn):
+    """Insert default settings if they don't already exist."""
+    defaults = {
+        "gemini_api_key": "",
+        "model_agent": DEFAULT_MODEL_AGENT,
+        "model_embedding": DEFAULT_MODEL_EMBEDDING,
+        "model_summary": DEFAULT_MODEL_SUMMARY,
+        "system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "gemini_rate_limit": str(DEFAULT_GEMINI_RATE_LIMIT),
+        "query_k_similar": "10",
+        "query_k_theme_intra": "5",
+        "query_k_theme_cross": "5",
+        "query_k_random": "3",
+        "adaptive_k_training": '[{"max_prompts": 40, "k": 2}, {"max_prompts": 80, "k": 3}, {"max_prompts": 150, "k": 4}, {"max_prompts": null, "k": 5}]',
+        "adaptive_k_output": '[{"max_prompts": 30, "k": 3}, {"max_prompts": 100, "k": 7}, {"max_prompts": 300, "k": 10}, {"max_prompts": null, "k": 15}]',
+        "cluster_k_cross": "15",
+        "cluster_min_folder_size": "20",
+        "cluster_label_terms": "2",
+        "comfyui_base_url": DEFAULT_COMFYUI_BASE_URL,
+        "comfyui_default_model": "",
+        "comfyui_default_negative": "",
+        "comfyui_workflow_filename": "",
+        "comfyui_workflow_json": "",
+        "comfyui_workflow_hash": "",
+        "comfyui_workflow_api_cache": "",
+        "comfyui_object_info_cache": "",
+        "thumbnail_size_chat": "large",
+        "thumbnail_size_browser": "medium",
+        "search_mode": "keyword",
+        "viewer_sidebar_visible": "true",
+        "comfyui_default_sampler": "",
+        "comfyui_default_cfg": "",
+        "comfyui_default_scheduler": "",
+        "comfyui_default_steps": "",
+        "auto_organize_output": "false",
+        "summarizer_model": "Qwen/Qwen3-4B-FP8",
+        "summarizer_max_tags": "5",
+        "summarizer_max_words": "12",
+        "context_history_pairs": "3",
+        "context_stale_iterations": "2",
+    }
+
+    # Load bundled prompt templates for summarizer defaults
+    try:
+        from src.services.summarizer.prompts import load_default_templates
+        defaults.update(load_default_templates())
+    except Exception as e:
+        logger.warning(f"Could not load summarizer prompt defaults: {e}")
+
+    for key, value in defaults.items():
+        conn.execute(
+            text("INSERT OR IGNORE INTO settings (key, value) VALUES (:key, :value)"),
+            {"key": key, "value": value}
+        )

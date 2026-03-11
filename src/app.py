@@ -37,7 +37,7 @@ def create_app() -> Flask:
     # One-time fixup: repair subfolder concepts in ChromaDB (needs vector store)
     from src.models.settings import get_setting, update_setting
     if get_setting("subfolder_concepts_fixed") != "true":
-        from src.models.database import fix_subfolder_concepts
+        from src.models.fixups import fix_subfolder_concepts
         fix_subfolder_concepts()
         update_setting("subfolder_concepts_fixed", "true")
 
