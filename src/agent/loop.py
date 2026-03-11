@@ -74,7 +74,35 @@ def run_agent_turn(
             {"role": "user", "content": state_to_context(agent_state)},
             {"role": "model", "content": "Acknowledged."},
         ]
-        messages = state_prefix + history
+
+        # Inject dataset overview as droppable messages for early turns.
+        # Once the agent has accumulated state, the overview is omitted —
+        # the agent can use query_dataset_map to re-query if needed.
+        overview_prefix = []
+        if not _state_has_content(agent_state):
+            try:
+                overview = clustering_service.get_dataset_overview()
+                overview_json = json.dumps(overview, separators=(",", ":"))
+                overview_prefix = [
+                    {"role": "user", "content": (
+                        "Dataset overview (pre-loaded context \u2014 do not call "
+                        "get_dataset_overview, this data is already available):\n"
+                        + overview_json
+                    )},
+                    {"role": "model", "content": (
+                        "I have the dataset overview with folder structure, "
+                        "cross-folder themes, and statistics. I'll call "
+                        "get_folder_themes when I need intra-folder details "
+                        "for a specific folder. Ready to help."
+                    )},
+                ]
+                logger.info("Injected dataset overview into messages (%d chars)",
+                            len(overview_json))
+            except Exception as e:
+                logger.warning("Failed to load dataset overview, agent will use "
+                               "query_dataset_map: %s", e)
+
+        messages = state_prefix + overview_prefix + history
 
         # If attachments were provided, enhance the last user message with
         # inline image parts so the LLM can see the images.
@@ -88,7 +116,7 @@ def run_agent_turn(
             if client:
                 cache_name = cache_manager.get_or_create(
                     client, model_agent, full_system_prompt,
-                    TOOL_DECLARATIONS, clustering_service.get_dataset_overview,
+                    TOOL_DECLARATIONS,
                 )
         except Exception as e:
             logger.warning("Cache creation failed, falling back to uncached: %s", e)

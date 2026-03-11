@@ -1,6 +1,5 @@
 """Gemini explicit caching for static agent content."""
 
-import json
 import logging
 import threading
 
@@ -19,13 +18,13 @@ _DB_KEY_MODEL = "gemini_cache_model"
 class CacheManager:
     """Lazily creates and reuses a Gemini cached-content object.
 
-    The cache holds: system prompt + tool declarations + dataset overview.
-    It is invalidated explicitly when content changes (settings update,
-    ingestion, reclustering, folder rename/delete), or on Gemini TTL expiry.
+    The cache holds: system prompt + tool declarations (no conversation
+    content).  The dataset overview is injected as droppable messages
+    by the agent loop and excluded once the agent has accumulated state.
 
-    The dataset overview is snapshotted at cache-creation time and reused
-    until invalidation, so minor count changes between chats don't bust
-    the cache.
+    The cache is invalidated explicitly when content changes (settings
+    update, ingestion, reclustering, folder rename/delete), or on
+    Gemini TTL expiry.
     """
 
     def __init__(self):
@@ -39,22 +38,18 @@ class CacheManager:
         model: str,
         system_prompt: str,
         tools: list,
-        dataset_overview_fn,  # callable returning dict
         ttl: str = "3600s",
     ) -> str:
         """Return the cache name, creating a new cache if needed.
 
-        The dataset_overview_fn is only called when creating a new cache.
-        On subsequent calls the existing cache is reused as long as
-        it hasn't been invalidated and hasn't expired on Gemini's side.
+        The cache contains only the system prompt and tool declarations.
+        The dataset overview is handled separately by the agent loop.
 
         Args:
             client: Initialized genai.Client.
             model: Model name (e.g. "gemini-2.5-pro").
             system_prompt: Base system prompt (no agent state).
             tools: TOOL_DECLARATIONS list.
-            dataset_overview_fn: Callable returning get_dataset_overview() dict.
-                Only invoked when a new cache must be created.
             ttl: Cache time-to-live.
 
         Returns:
@@ -88,27 +83,12 @@ class CacheManager:
                         logger.debug("DB cache expired or invalid, will recreate")
                         self._clear_db()
 
-            # Create new cache with fresh dataset overview snapshot
-            dataset_overview = dataset_overview_fn()
-            overview_json = json.dumps(dataset_overview, separators=(",", ":"))
+            # Create new cache with system prompt and tools only
             cache = client.caches.create(
                 model=model,
                 config=types.CreateCachedContentConfig(
                     system_instruction=system_prompt,
                     tools=tools,
-                    contents=[
-                        types.Content(role="user", parts=[types.Part.from_text(
-                            text="Dataset overview (pre-loaded context \u2014 do not call "
-                            "get_dataset_overview, this data is already available):\n"
-                            + overview_json
-                        )]),
-                        types.Content(role="model", parts=[types.Part.from_text(
-                            text="I have the dataset overview with folder structure, "
-                            "cross-folder themes, and statistics. I'll call "
-                            "get_folder_themes when I need intra-folder details "
-                            "for a specific folder. Ready to help."
-                        )]),
-                    ],
                     ttl=ttl,
                 ),
             )
