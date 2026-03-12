@@ -1,0 +1,36 @@
+# Tool Study Queries
+# Lines starting with # are comments
+# Mix of real agent queries from Phase 1 analysis + hand-crafted examples
+
+# --- Real agent queries (from database, multi-concept combinations) ---
+sofia vergara elegant luxurious hotel bedroom warm dim lighting lingerie foreplay sex photoshoot
+suspended congress against a pillar in arabic architecture camera angles wide shot close-up low angle top down side profile view
+erica campbell stockings high heels dim intimate lighting large penis dripping cum curves foreplay sex photoshoot
+erotic bdsm bound thick ropes forced squat heavy breasts wide hips helpless dark steamy moody warm torchlight deep shadows photorealistic explicit sex
+POV blowjob over the shoulder looking past man back foreground
+angelicfuckdoll showing off her curves, on display, helpless expression, steamy erotic setting, shadowy cinematic lighting
+
+# --- Real agent queries (single-concept / short) ---
+angelicfuckdoll
+scared helpless bound cornered frightened vulnerable crying tears
+dark shadows dim low-key chiaroscuro pitch black lighting
+helpless demeanor vulnerable overwhelmed submission no bdsm
+
+# --- Real agent queries (refinement-style verbose) ---
+aletta ocean blonde black lace lingerie black leather sofa white fireplace dark moody lighting reverse cowgirl doggystyle wide hips augmented breasts pink nails
+man lifting woman up high back pressed firmly against marble pillar, suspended congress, deep shadows, intimate lighting, voluptuous woman Vittoria Risi, heavy breasts, round buttocks, wide hips, arched back, intense pleasure, mouth open, head tilted back, high contrast cinematic photography
+
+# --- Hand-crafted: single-concept ---
+elegant gown fashion photography
+dramatic lighting portrait
+against wall leaning pose
+sitting on chair relaxed
+looking over shoulder
+full body standing pose
+
+# --- Hand-crafted: thematic/mood ---
+dark and moody atmospheric portrait
+bright cheerful summer vibes
+ethereal dreamy soft focus
+cinematic mood noir aesthetic
+intimate close-up emotional

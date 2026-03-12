@@ -1,5 +1,7 @@
 chroma_db
 app.db
+app.db-shm
+app.db-wal
 data
 uploads
 workflows
@@ -13,3 +15,4 @@ summarizer_folder.txt
 summarizer_system_prompt.md
 summarizer_concept_overlays
 CLAUDE.md
+src/experiments/tool_study/output/

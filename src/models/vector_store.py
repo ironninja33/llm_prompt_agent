@@ -125,6 +125,7 @@ def search_similar(
     k: int = 10,
     source_type: str | None = None,
     concept: str | None = None,
+    include_embeddings: bool = False,
 ) -> list[dict]:
     """Search for similar prompts by embedding."""
     where_filter = None
@@ -137,6 +138,10 @@ def search_similar(
     else:
         collections = [_training_collection, _generated_collection]
 
+    include_fields = ["documents", "metadatas", "distances"]
+    if include_embeddings:
+        include_fields.append("embeddings")
+
     all_results = []
     for collection in collections:
         if collection.count() == 0:
@@ -147,19 +152,61 @@ def search_similar(
                 query_embeddings=[query_embedding],
                 n_results=actual_k,
                 where=where_filter,
+                include=include_fields,
             )
             for i in range(len(result["ids"][0])):
-                all_results.append({
+                entry = {
                     "id": result["ids"][0][i],
                     "document": result["documents"][0][i],
                     "metadata": result["metadatas"][0][i] if result["metadatas"] else {},
                     "distance": result["distances"][0][i] if result["distances"] else 0,
-                })
+                }
+                if include_embeddings and result.get("embeddings"):
+                    entry["embedding"] = result["embeddings"][0][i]
+                all_results.append(entry)
         except Exception as e:
             logger.error(f"Error searching collection: {e}")
 
     all_results.sort(key=lambda x: x["distance"])
     return all_results[:k]
+
+
+def deduplicate_by_similarity(
+    candidates: list[dict],
+    threshold: float = 0.92,
+) -> list[dict]:
+    """Greedy deduplication by cosine similarity on embeddings.
+
+    Iterates candidates (assumed sorted by distance) and accepts each only
+    if its cosine similarity to all previously accepted results is below
+    the threshold. Requires each candidate dict to have an ``embedding`` key.
+
+    Returns the filtered list in the same order.
+    """
+    import numpy as np
+
+    accepted = []
+    accepted_embs = []
+
+    for candidate in candidates:
+        emb = np.array(candidate["embedding"])
+        norm = np.linalg.norm(emb)
+        if norm == 0:
+            continue
+
+        emb_normed = emb / norm
+        is_duplicate = False
+        for acc_emb in accepted_embs:
+            similarity = float(np.dot(emb_normed, acc_emb))
+            if similarity >= threshold:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            accepted.append(candidate)
+            accepted_embs.append(emb_normed)
+
+    return accepted
 
 
 def search_diverse(
