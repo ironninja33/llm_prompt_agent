@@ -54,7 +54,8 @@ def cleanup_delete():
         return jsonify({"error": "image_ids required"}), 400
 
     image_ids = data["image_ids"]
-    result = cleanup_controller.delete_images(image_ids)
+    # Cleanup deletions are always 'space'
+    result = cleanup_controller.delete_images(image_ids, reason="space")
     return jsonify(result)
 
 

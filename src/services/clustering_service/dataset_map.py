@@ -147,35 +147,23 @@ def get_dataset_map() -> dict:
 
 def get_dataset_overview() -> dict:
     """Lightweight dataset overview — no intra-folder cluster details."""
-    counts = vector_store.get_collection_counts()
-    total_docs = counts.get("training", 0) + counts.get("generated", 0)
-
     concept_list = vector_store.list_concepts()
     folder_info: dict[tuple[str, str], dict] = {}
     for c in concept_list:
         name = c["concept"]
         key = (name, c["source_type"])
         if key not in folder_info:
-            folder_info[key] = {"name": name, "source_type": c["source_type"], "total_prompts": 0}
-        folder_info[key]["total_prompts"] += c["count"]
+            folder_info[key] = {"name": name, "source_type": c["source_type"]}
 
     with get_db() as conn:
         result = conn.execute(
-            text("SELECT label, prompt_count FROM clusters "
-                 "WHERE cluster_type = 'cross_folder' ORDER BY prompt_count DESC")
+            text("SELECT label FROM clusters "
+                 "WHERE cluster_type = 'cross_folder' ORDER BY label")
         )
-        cross_themes = [
-            {"label": r._mapping["label"], "prompt_count": r._mapping["prompt_count"]}
-            for r in result.fetchall()
-        ]
+        cross_themes = [{"label": r._mapping["label"]} for r in result.fetchall()]
 
         result = conn.execute(text("SELECT folder_path, summary FROM folder_summaries"))
         summaries = {r._mapping["folder_path"]: r._mapping["summary"] for r in result.fetchall()}
-
-        result = conn.execute(
-            text("SELECT COUNT(*) as cnt FROM clusters WHERE cluster_type = 'intra_folder'")
-        )
-        total_intra = result.fetchone()._mapping["cnt"]
 
     folders = []
     from src.models.browser import parse_concept_name
@@ -187,18 +175,13 @@ def get_dataset_overview() -> dict:
             "category": parsed["category"],
             "display_name": parsed["display_name"],
             "source_type": info["source_type"],
-            "total_prompts": info["total_prompts"],
             "summary": summaries.get(name, ""),
         })
 
     return {
         "cross_folder_themes": cross_themes,
         "folders": folders,
-        "stats": {
-            "total_prompts": total_docs,
-            "total_cross_themes": len(cross_themes),
-            "total_intra_themes": total_intra,
-        },
+        "stats": {"total_cross_themes": len(cross_themes)},
     }
 
 
@@ -206,15 +189,12 @@ def get_folder_themes(folder_name: str, source_type: str = "training") -> dict:
     """Get intra-folder cluster themes for a specific folder and source type."""
     with get_db() as conn:
         result = conn.execute(
-            text("SELECT label, prompt_count FROM clusters "
+            text("SELECT label FROM clusters "
                  "WHERE cluster_type = 'intra_folder' AND folder_path = :fp "
                  "AND source_type = :st "
-                 "ORDER BY prompt_count DESC"),
+                 "ORDER BY label"),
             {"fp": folder_name, "st": source_type},
         )
-        themes = [
-            {"label": r._mapping["label"], "prompt_count": r._mapping["prompt_count"]}
-            for r in result.fetchall()
-        ]
+        themes = [{"label": r._mapping["label"]} for r in result.fetchall()]
 
     return {"folder": folder_name, "source_type": source_type, "themes": themes}

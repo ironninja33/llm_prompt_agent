@@ -192,11 +192,16 @@ const API = {
         return res.json();
     },
 
-    async submitGeneration(chatId, messageId, settings) {
+    async submitGeneration(chatId, messageId, settings, parentJobId) {
         const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, message_id: messageId, settings }),
+            body: JSON.stringify({
+                chat_id: chatId,
+                message_id: messageId,
+                settings,
+                parent_job_id: parentJobId || null,
+            }),
         });
         return res.json();
     },
@@ -206,9 +211,11 @@ const API = {
         return res.json();
     },
 
-    async deleteGeneratedImage(jobId, imageId) {
+    async deleteGeneratedImage(jobId, imageId, reason) {
         const res = await fetch(`/api/generate/image/${jobId}/${imageId}`, {
             method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason || 'space' }),
         });
         return res.json();
     },
@@ -248,11 +255,11 @@ const API = {
         return res.json();
     },
 
-    async browserGenerate(settings) {
+    async browserGenerate(settings, parentJobId) {
         const res = await fetch('/api/browser/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ settings }),
+            body: JSON.stringify({ settings, parent_job_id: parentJobId || null }),
         });
         return res.json();
     },

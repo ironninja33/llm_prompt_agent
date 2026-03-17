@@ -41,7 +41,8 @@ def _deserialize_settings(row) -> dict:
 # ---------------------------------------------------------------------------
 
 def create_job(chat_id: str | None, message_id: int | None, settings: dict,
-               source: str = "chat") -> dict:
+               source: str = "chat", session_id: str | None = None,
+               parent_job_id: str | None = None, lineage_depth: int = 0) -> dict:
     """Create a new generation job with its settings.
 
     Args:
@@ -51,6 +52,9 @@ def create_job(chat_id: str | None, message_id: int | None, settings: dict,
                   loras (list), output_folder, seed, num_images, workflow_name,
                   extra_settings (dict), sampler, cfg_scale, scheduler, steps.
         source: One of 'chat', 'scan', 'browser'.
+        session_id: Generation session ID for session tracking.
+        parent_job_id: Parent job ID for regeneration lineage.
+        lineage_depth: How many regenerations deep this job is.
 
     Returns:
         The created job dict including id, chat_id, message_id, status, and settings.
@@ -61,9 +65,14 @@ def create_job(chat_id: str | None, message_id: int | None, settings: dict,
 
     with get_db() as conn:
         conn.execute(
-            text("""INSERT INTO generation_jobs (id, chat_id, message_id, status, source)
-               VALUES (:id, :chat_id, :message_id, 'pending', :source)"""),
-            {"id": job_id, "chat_id": chat_id, "message_id": message_id, "source": source},
+            text("""INSERT INTO generation_jobs
+                    (id, chat_id, message_id, status, source,
+                     session_id, parent_job_id, lineage_depth)
+               VALUES (:id, :chat_id, :message_id, 'pending', :source,
+                       :session_id, :parent_job_id, :lineage_depth)"""),
+            {"id": job_id, "chat_id": chat_id, "message_id": message_id,
+             "source": source, "session_id": session_id,
+             "parent_job_id": parent_job_id, "lineage_depth": lineage_depth},
         )
         conn.execute(
             text("""INSERT INTO generation_settings
@@ -98,6 +107,9 @@ def create_job(chat_id: str | None, message_id: int | None, settings: dict,
         "status": "pending",
         "source": source,
         "prompt_id": None,
+        "session_id": session_id,
+        "parent_job_id": parent_job_id,
+        "lineage_depth": lineage_depth,
         "created_at": None,
         "completed_at": None,
         "settings": {
@@ -122,7 +134,9 @@ def get_job(job_id: str) -> dict | None:
     """Get a single generation job by ID, including its settings."""
     with get_db() as conn:
         result = conn.execute(
-            text("""SELECT id, chat_id, message_id, prompt_id, status, source, created_at, completed_at
+            text("""SELECT id, chat_id, message_id, prompt_id, status, source,
+                      session_id, parent_job_id, lineage_depth,
+                      created_at, completed_at
                FROM generation_jobs WHERE id = :id"""),
             {"id": job_id},
         )
@@ -452,7 +466,8 @@ def get_recent_job_prompts(count: int = 1,
         where = " AND ".join(conditions)
         result = conn.execute(
             text(f"""SELECT gj.id as job_id, gs.positive_prompt, gs.negative_prompt,
-                      gs.base_model, gs.loras, gs.output_folder, gs.seed
+                      gs.base_model, gs.loras, gs.output_folder, gs.seed,
+                      gj.lineage_depth
                FROM generation_settings gs
                JOIN generation_jobs gj ON gs.job_id = gj.id
                WHERE {where}

@@ -24,6 +24,9 @@ let _currentGenMessageId = null;
 // Seed from a previous generation (shown as a clickable hint)
 let _previousGenSeed = null;
 
+// Parent job ID for regeneration lineage tracking
+let _parentJobId = null;
+
 // Cache for fetched lists (avoid re-fetching every open)
 let _cachedModels = null;
 let _cachedLoras = null;
@@ -55,7 +58,10 @@ async function openGenerationOverlay(options) {
         messageId = null,
         settings = null,
         defaultSettings = null,
+        parentJobId = null,
     } = options;
+
+    _parentJobId = parentJobId;
 
     // Store chat/message context; fall back to global currentChatId
     _currentGenChatId = chatId || (typeof currentChatId !== 'undefined' ? currentChatId : null);
@@ -169,6 +175,7 @@ function setRefineGenerationSettings(settings) {
 function closeGenerationOverlay() {
     const overlay = $('#generation-overlay');
     if (overlay) overlay.classList.add('hidden');
+    _parentJobId = null;
 }
 
 // ── Random seed ─────────────────────────────────────────────────────────
@@ -232,9 +239,9 @@ async function submitGeneration() {
         let result;
         if (!chatId) {
             // Browser mode: no chat context
-            result = await API.browserGenerate(settings);
+            result = await API.browserGenerate(settings, _parentJobId);
         } else {
-            result = await API.submitGeneration(chatId, messageId, settings);
+            result = await API.submitGeneration(chatId, messageId, settings, _parentJobId);
         }
 
         // Close overlay

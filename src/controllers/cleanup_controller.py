@@ -52,9 +52,9 @@ def get_wave_counts(folder: str | None = None) -> dict:
     return counts
 
 
-def delete_images(image_ids: list[int]) -> dict:
+def delete_images(image_ids: list[int], reason: str = "space") -> dict:
     """Delete images from disk, DB, and ChromaDB."""
-    return cleanup_service.delete_images(image_ids)
+    return cleanup_service.delete_images(image_ids, reason=reason)
 
 
 def delete_visible(folder: str | None, wave: int) -> dict:

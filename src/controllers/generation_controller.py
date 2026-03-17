@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 def submit_generation(chat_id: str | None, message_id: int | None, settings: dict,
-                      source: str = "chat"):
+                      source: str = "chat", session_id: str | None = None,
+                      parent_job_id: str | None = None):
     """Submit an image generation job.
 
     1. Create job record in database
@@ -30,6 +31,7 @@ def submit_generation(chat_id: str | None, message_id: int | None, settings: dic
     - num_images (optional, default 1)
     """
     from src.controllers import workflow_controller
+    from src.models import metrics
 
     # Get defaults from settings for missing values
     if not settings.get("negative_prompt"):
@@ -65,8 +67,23 @@ def submit_generation(chat_id: str | None, message_id: int | None, settings: dic
     if chat_id is None:
         source = "browser"
 
+    # Session tracking
+    resolved_session = metrics.resolve_session(session_id)
+
+    # Lineage computation
+    lineage_depth = 0
+    if parent_job_id:
+        parent = gen_model.get_job(parent_job_id)
+        if parent:
+            lineage_depth = (parent.get("lineage_depth") or 0) + 1
+
     # Create job in database
-    job = gen_model.create_job(chat_id, message_id, settings, source=source)
+    job = gen_model.create_job(
+        chat_id, message_id, settings, source=source,
+        session_id=resolved_session,
+        parent_job_id=parent_job_id,
+        lineage_depth=lineage_depth,
+    )
     job_id = job["id"]
 
     try:

@@ -151,7 +151,10 @@ def _list_concepts(args: dict) -> dict:
 
     return {
         "count": len(concepts),
-        "concepts": concepts,
+        "concepts": [
+            {"concept": c["concept"], "source_type": c["source_type"]}
+            for c in concepts
+        ],
     }
 
 
@@ -267,7 +270,6 @@ def _query_dataset_map(args: dict) -> dict:
             "category": folder.get("category", ""),
             "display_name": folder.get("display_name", ""),
             "source_type": folder.get("source_type", ""),
-            "total_prompts": folder.get("total_prompts", 0),
             "summary": folder.get("summary", ""),
             "top_themes": [t["label"] for t in themes.get("themes", [])[:3]],
         })

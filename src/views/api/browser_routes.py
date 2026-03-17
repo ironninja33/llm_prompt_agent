@@ -73,11 +73,24 @@ def browser_generate():
         return jsonify({"error": "settings required"}), 400
 
     settings = data["settings"]
+    session_id = request.cookies.get("generation_session_id")
+    parent_job_id = data.get("parent_job_id")
+
     job = generation_controller.submit_generation(
-        chat_id=None, message_id=None, settings=settings, source="browser"
+        chat_id=None, message_id=None, settings=settings, source="browser",
+        session_id=session_id, parent_job_id=parent_job_id,
     )
 
-    return jsonify(job)
+    response = jsonify(job)
+    if job.get("session_id"):
+        response.set_cookie(
+            "generation_session_id",
+            job["session_id"],
+            max_age=86400,
+            httponly=False,
+            samesite="Lax",
+        )
+    return response
 
 
 @api_bp.route("/browser/reorg/suggest", methods=["GET"])

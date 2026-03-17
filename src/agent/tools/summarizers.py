@@ -58,7 +58,6 @@ def _summarize_list_concepts(args: dict, result: dict) -> dict:
 
 def _summarize_dataset_overview(args: dict, result: dict) -> dict:
     return {
-        "total_prompts": result.get("total_prompts", 0),
         "folder_count": len(result.get("folders", [])),
         "cross_theme_count": len(result.get("cross_folder_themes", [])),
     }

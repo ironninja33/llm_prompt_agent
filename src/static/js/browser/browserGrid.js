@@ -80,6 +80,7 @@ function createBrowserImageThumbnail(imageData) {
                 openGenerationOverlay({
                     prompt: (j.settings || {}).positive_prompt || '',
                     settings: j.settings || {},
+                    parentJobId: j.id,
                 });
             }
         },
@@ -89,21 +90,22 @@ function createBrowserImageThumbnail(imageData) {
         onRefineWithAttachment: null,  // Attachment toggle lives in the refine dialog
         onAttach: null,  // Hidden in browser context
         onDelete: async (j, i, el) => {
-            BrowserState.deletePending = true;
-            try {
-                const result = await API.deleteGeneratedImage(j.id, i.id);
-                if (result.error) {
-                    console.error('Failed to delete image:', result.error);
-                    return;
-                }
-                // Remove the .browser-img-item wrapper so the grid reflows
-                const wrapper = el.closest('.browser-img-item');
-                (wrapper || el).remove();
-            } catch (err) {
-                console.error('Failed to delete image:', err);
-            } finally {
-                BrowserState.deletePending = false;
-            }
+            openDeleteDialog((reason) => {
+                BrowserState.deletePending = true;
+                API.deleteGeneratedImage(j.id, i.id, reason).then((result) => {
+                    if (result.error) {
+                        console.error('Failed to delete image:', result.error);
+                        return;
+                    }
+                    // Remove the .browser-img-item wrapper so the grid reflows
+                    const wrapper = el.closest('.browser-img-item');
+                    (wrapper || el).remove();
+                }).catch(err => {
+                    console.error('Failed to delete image:', err);
+                }).finally(() => {
+                    BrowserState.deletePending = false;
+                });
+            });
         },
     });
 

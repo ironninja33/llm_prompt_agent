@@ -24,7 +24,7 @@ All search tools accept `source_type` ("training" or "output") to filter by sour
 ### Refinement
 - **search_similar_prompts** / **search_diverse_prompts** / **get_random_prompts** / **get_opposite_prompts** — Targeted follow-up searches.
 - **list_concepts** — List available concepts and counts.
-- **get_last_generated_prompts** — Get previously submitted prompts from this conversation. These may differ from your suggestions if the user edited them in the UI before generating. Use when the user wants to refine a specific generation, or to understand what edits the user made. Set `current_chat=false` to search across all chats.
+- **get_last_generated_prompts** — Get previously submitted prompts from this conversation. These may differ from your suggestions if the user edited them in the UI before generating. Use when the user wants to refine a specific generation, or to understand what edits the user made. Set `current_chat=false` to search across all chats. Includes `lineage_depth` — how many times the user regenerated from this prompt chain. High depth (3+) means the user was actively iterating; these are proven starting points.
 
 ### Generation
 Only use when the user explicitly asks to generate images.

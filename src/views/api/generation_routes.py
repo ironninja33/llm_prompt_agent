@@ -73,10 +73,30 @@ def submit_generation():
     if not settings.get("positive_prompt"):
         return jsonify({"error": "positive_prompt is required"}), 400
 
+    # Read session from cookie
+    session_id = request.cookies.get("generation_session_id")
+    parent_job_id = data.get("parent_job_id")
+
     try:
-        job = generation_controller.submit_generation(chat_id, message_id, settings)
+        job = generation_controller.submit_generation(
+            chat_id, message_id, settings,
+            session_id=session_id,
+            parent_job_id=parent_job_id,
+        )
+
+        response = jsonify(job)
         status_code = 201 if job.get("status") != "failed" else 500
-        return jsonify(job), status_code
+
+        # Set/update session cookie from resolved session
+        if job.get("session_id"):
+            response.set_cookie(
+                "generation_session_id",
+                job["session_id"],
+                max_age=86400,
+                httponly=False,
+                samesite="Lax",
+            )
+        return response, status_code
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -228,6 +248,35 @@ def delete_generated_image(job_id, image_id):
     if not image or image.get("job_id") != job_id:
         return jsonify({"error": "Image not found"}), 404
 
+    # Parse deletion reason
+    reason = "space"
+    if request.is_json and request.json:
+        reason = request.json.get("reason", "space")
+    elif request.args.get("reason"):
+        reason = request.args["reason"]
+
+    # Record deletion in deletion_log and graveyard
+    try:
+        from src.models import metrics
+        job = gen_model.get_job(job_id)
+        settings = gen_model.get_job_settings(job_id)
+        metrics.record_deletion(
+            job_id=job_id,
+            image_id=image_id,
+            positive_prompt=settings.get("positive_prompt") if settings else None,
+            output_folder=settings.get("output_folder") if settings else None,
+            session_id=job.get("session_id") if job else None,
+            lineage_depth=job.get("lineage_depth", 0) if job else 0,
+            reason=reason,
+        )
+        if reason in ("quality", "wrong_direction"):
+            # Try gen_ doc first, fall back to file_path doc
+            doc_id = f"gen_{job_id}"
+            if not metrics.move_to_graveyard(doc_id, reason) and image.get("file_path"):
+                metrics.move_to_graveyard(image["file_path"], reason)
+    except Exception:
+        logger.warning("Failed to log deletion for image %s", image_id, exc_info=True)
+
     # Find all records with the same filename (scan + generation duplicates).
     # One of them should have the correct file_path for disk deletion.
     duplicates = gen_model.get_images_by_filename(image["filename"])
@@ -299,3 +348,11 @@ def get_generated_thumbnail(job_id, image_id):
         mimetype="image/jpeg",
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+@api_bp.route("/metrics/stats", methods=["GET"])
+def get_metrics_stats():
+    """Get aggregate generation metrics."""
+    from src.models import metrics
+    stats = metrics.get_overall_stats()
+    return jsonify(stats)

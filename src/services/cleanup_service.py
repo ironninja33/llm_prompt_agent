@@ -705,7 +705,7 @@ def get_folder_summary() -> list[dict]:
 # Deletion
 # ---------------------------------------------------------------------------
 
-def delete_images(image_ids: list[int]) -> dict:
+def delete_images(image_ids: list[int], reason: str = "space") -> dict:
     """Delete images from disk, DB, and ChromaDB.
 
     Returns {deleted_count, freed_bytes, errors: [...]}.
@@ -730,6 +730,34 @@ def delete_images(image_ids: list[int]) -> dict:
         images = [dict(row._mapping) for row in result.fetchall()]
 
     for img in images:
+        # Record in deletion_log before deleting
+        try:
+            from src.models import metrics
+            with get_db() as conn:
+                job_row = conn.execute(
+                    text("""SELECT gj.session_id, gj.lineage_depth,
+                                   gs.positive_prompt, gs.output_folder
+                            FROM generation_jobs gj
+                            LEFT JOIN generation_settings gs ON gs.job_id = gj.id
+                            WHERE gj.id = :jid"""),
+                    {"jid": img["job_id"]},
+                ).fetchone()
+            if job_row:
+                r = job_row._mapping
+                metrics.record_deletion(
+                    job_id=img["job_id"], image_id=img["id"],
+                    positive_prompt=r.get("positive_prompt"),
+                    output_folder=r.get("output_folder"),
+                    session_id=r.get("session_id"),
+                    lineage_depth=r.get("lineage_depth", 0),
+                    reason=reason,
+                )
+                if reason in ("quality", "wrong_direction"):
+                    doc_id = f"gen_{img['job_id']}"
+                    if not metrics.move_to_graveyard(doc_id, reason) and img.get("file_path"):
+                        metrics.move_to_graveyard(img["file_path"], reason)
+        except Exception:
+            logger.warning("Failed to log deletion for image %s", img["id"], exc_info=True)
         file_path = img.get("file_path")
         try:
             # Delete from disk

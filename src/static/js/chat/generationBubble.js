@@ -33,7 +33,8 @@ function _chatThumbnailOptions(job) {
                 prompt: job.settings?.positive_prompt || '',
                 chatId: job.chat_id,
                 messageId: job.message_id,
-                settings: job.settings
+                settings: job.settings,
+                parentJobId: job.id,
             });
         },
         onRefine: (job, img) => {
@@ -42,20 +43,19 @@ function _chatThumbnailOptions(job) {
         onRefineWithAttachment: null,
         onAttach: null,
         onDelete: async (job, img, item) => {
-            try {
-                await API.deleteGeneratedImage(job.id, img.id);
-                const grid = item.closest('.gen-thumbnail-grid');
-                item.remove();
-                if (grid) {
-                    _updateBubbleStatusFromGrid(grid);
-                    if (grid.querySelectorAll('.gen-thumbnail-item').length === 0) {
-                        const bubble = grid.closest('.message.generation');
-                        if (bubble) bubble.remove();
+            openDeleteDialog((reason) => {
+                API.deleteGeneratedImage(job.id, img.id, reason).then(() => {
+                    const grid = item.closest('.gen-thumbnail-grid');
+                    item.remove();
+                    if (grid) {
+                        _updateBubbleStatusFromGrid(grid);
+                        if (grid.querySelectorAll('.gen-thumbnail-item').length === 0) {
+                            const bubble = grid.closest('.message.generation');
+                            if (bubble) bubble.remove();
+                        }
                     }
-                }
-            } catch (err) {
-                console.error('Failed to delete image:', err);
-            }
+                }).catch(err => console.error('Failed to delete image:', err));
+            });
         },
     };
 }
@@ -68,7 +68,8 @@ function _chatFailedOptions(job) {
                 prompt: job.settings?.positive_prompt || '',
                 chatId: job.chat_id,
                 messageId: job.message_id,
-                settings: job.settings
+                settings: job.settings,
+                parentJobId: job.id,
             });
         },
         onDelete: async (job, item) => {

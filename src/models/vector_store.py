@@ -18,11 +18,12 @@ logger = logging.getLogger(__name__)
 _client: chromadb.PersistentClient | None = None
 _training_collection = None
 _generated_collection = None
+_deleted_collection = None
 
 
 def initialize():
     """Initialize the ChromaDB client and collections."""
-    global _client, _training_collection, _generated_collection
+    global _client, _training_collection, _generated_collection, _deleted_collection
 
     os.makedirs(CHROMA_DB_PATH, exist_ok=True)
     _client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
@@ -35,6 +36,11 @@ def initialize():
     _generated_collection = _client.get_or_create_collection(
         name="generated_prompts",
         metadata={"description": "Prompts extracted from generated output images"}
+    )
+
+    _deleted_collection = _client.get_or_create_collection(
+        name="deleted_prompts",
+        metadata={"description": "Graveyard: embeddings from quality/wrong_direction deletions"}
     )
 
     logger.info(

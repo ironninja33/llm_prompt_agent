@@ -278,4 +278,30 @@ MIGRATIONS = [
         """ALTER TABLE tool_calls ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0""",
         """ALTER TABLE tool_calls ADD COLUMN iteration INTEGER NOT NULL DEFAULT 1""",
     ]),
+    (17, "Generation metrics: sessions, lineage, deletion log", [
+        """CREATE TABLE generation_sessions (
+            id TEXT PRIMARY KEY,
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            generation_count INTEGER DEFAULT 0
+        )""",
+        """ALTER TABLE generation_jobs ADD COLUMN session_id TEXT""",
+        """ALTER TABLE generation_jobs ADD COLUMN parent_job_id TEXT""",
+        """ALTER TABLE generation_jobs ADD COLUMN lineage_depth INTEGER DEFAULT 0""",
+        """CREATE INDEX idx_gen_jobs_session ON generation_jobs(session_id)""",
+        """CREATE INDEX idx_gen_jobs_parent ON generation_jobs(parent_job_id)""",
+        """CREATE TABLE deletion_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            image_id INTEGER NOT NULL,
+            positive_prompt TEXT,
+            output_folder TEXT,
+            session_id TEXT,
+            lineage_depth INTEGER DEFAULT 0,
+            reason TEXT NOT NULL CHECK (reason IN ('quality', 'wrong_direction', 'duplicate', 'space')),
+            deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE INDEX idx_deletion_log_reason ON deletion_log(reason)""",
+        """CREATE INDEX idx_deletion_log_folder ON deletion_log(output_folder)""",
+    ]),
 ]
