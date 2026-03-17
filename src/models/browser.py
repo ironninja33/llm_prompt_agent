@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from src.config import IGNORE_DIR_PREFIX
 from src.models.database import get_db, row_to_dict
 from src.models import settings
 from src.services.image_parser import parse_file
@@ -85,7 +86,7 @@ def get_directory_contents(abs_dir_path: str, offset: int = 0, limit: int = 50,
 
         for entry in entries:
             full_path = os.path.join(abs_dir_path, entry)
-            if os.path.isdir(full_path):
+            if os.path.isdir(full_path) and not entry.startswith(IGNORE_DIR_PREFIX):
                 image_count = _count_images_in_dir(full_path)
                 parsed = parse_concept_name(entry)
                 directories.append({

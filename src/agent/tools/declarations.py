@@ -23,7 +23,12 @@ TOOL_DECLARATIONS = [
                     ),
                     "concept": types.Schema(
                         type="STRING",
-                        description="Filter by concept/subdirectory name",
+                        description=(
+                            "Filter by concept folder name (e.g. 'action__cowgirl'). "
+                            "Must be an exact folder name from the dataset overview or "
+                            "query_dataset_map results. Omit if unsure — the query alone "
+                            "usually suffices."
+                        ),
                         nullable=True,
                     ),
                 },
@@ -137,14 +142,13 @@ TOOL_DECLARATIONS = [
             ),
         ),
         types.FunctionDeclaration(
-            name="query_themed_prompts",
+            name="query_diverse_prompts",
             description=(
-                "Search for prompts using a comprehensive themed query. "
-                "Returns directly similar prompts, prompts from matching "
-                "intra-folder themes, prompts from matching cross-folder themes, "
-                "and optionally random/opposite prompts. This is your primary "
-                "search tool — use it for initial exploration. The k-values for "
-                "each category come from the app settings."
+                "Primary search tool. Uses cluster-based diverse retrieval to find "
+                "prompts across multiple concepts weighted by relevance. Returns "
+                "results from several concept folders, balanced by slot allocation. "
+                "Use rich semantic queries (expand concept-level requests into "
+                "descriptive phrases)."
             ),
             parameters=types.Schema(
                 type="OBJECT",
@@ -153,14 +157,9 @@ TOOL_DECLARATIONS = [
                         type="STRING",
                         description="Search query text — expand concept-level requests into rich semantic queries",
                     ),
-                    "include_random": types.Schema(
-                        type="BOOLEAN",
-                        description="Include random prompts for variety (default: false)",
-                        nullable=True,
-                    ),
-                    "include_opposite": types.Schema(
-                        type="BOOLEAN",
-                        description="Include opposite/contrasting prompts (default: false)",
+                    "k": types.Schema(
+                        type="INTEGER",
+                        description="Number of results to return (default 10)",
                         nullable=True,
                     ),
                     "source_type": types.Schema(

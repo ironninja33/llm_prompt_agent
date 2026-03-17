@@ -306,6 +306,7 @@ def add_generated_image(
     subfolder: str = "",
     width: int | None = None,
     height: int | None = None,
+    file_path: str | None = None,
 ) -> dict:
     """Add a generated image record to a job. Returns the created image dict.
 
@@ -314,10 +315,11 @@ def add_generated_image(
     """
     with get_db() as conn:
         result = conn.execute(
-            text("""INSERT OR IGNORE INTO generated_images (job_id, filename, subfolder, width, height)
-               VALUES (:job_id, :filename, :subfolder, :width, :height)"""),
+            text("""INSERT OR IGNORE INTO generated_images
+               (job_id, filename, subfolder, width, height, file_path)
+               VALUES (:job_id, :filename, :subfolder, :width, :height, :file_path)"""),
             {"job_id": job_id, "filename": filename, "subfolder": subfolder,
-             "width": width, "height": height},
+             "width": width, "height": height, "file_path": file_path},
         )
         return {
             "id": result.lastrowid,
@@ -326,6 +328,7 @@ def add_generated_image(
             "subfolder": subfolder,
             "width": width,
             "height": height,
+            "file_path": file_path,
             "created_at": None,
         }
 

@@ -3,6 +3,7 @@
 import os
 import logging
 
+from src.config import IGNORE_DIR_PREFIX
 from src.models import browser as browser_model
 from src.models import generation as gen_model
 
@@ -47,7 +48,7 @@ def get_directory_contents(virtual_path: str, offset: int = 0, limit: int = 50,
         if os.path.isdir(abs_path):
             for entry in os.listdir(abs_path):
                 sub = os.path.join(abs_path, entry)
-                if os.path.isdir(sub):
+                if os.path.isdir(sub) and not entry.startswith(IGNORE_DIR_PREFIX):
                     new_count += browser_model.fast_register_images(sub)
         if new_count > 0:
             logger.info("Fast-registered %d new images in %s", new_count, abs_path)

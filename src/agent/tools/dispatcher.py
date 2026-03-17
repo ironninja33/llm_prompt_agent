@@ -10,9 +10,9 @@ from src.agent.tools.search_tools import (
     _list_concepts,
     _get_dataset_overview,
     _get_folder_themes,
-    _query_themed_prompts,
     _query_dataset_map,
 )
+from src.agent.tools.query_diverse import _query_diverse_prompts
 from src.agent.tools.generation_tools import (
     _generate_image,
     _get_available_loras,
@@ -53,8 +53,8 @@ def execute_tool(name: str, args: dict, context: dict | None = None) -> dict:
             return _get_dataset_overview(args)
         elif name == "get_folder_themes":
             return _get_folder_themes(args)
-        elif name == "query_themed_prompts":
-            return _query_themed_prompts(args)
+        elif name == "query_diverse_prompts":
+            return _query_diverse_prompts(args)
         elif name == "query_dataset_map":
             return _query_dataset_map(args)
         elif name == "generate_image":

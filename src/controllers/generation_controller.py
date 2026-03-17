@@ -129,10 +129,15 @@ def handle_generation_complete(progress):
                 return
 
             for img in progress.output_images:
+                file_path = comfyui_service.resolve_image_path(
+                    img.get("filename", ""),
+                    img.get("subfolder", ""),
+                )
                 gen_model.add_generated_image(
                     job_id=progress.job_id,
                     filename=img.get("filename", ""),
                     subfolder=img.get("subfolder", ""),
+                    file_path=file_path,
                 )
 
             # Trigger embedding and clustering for the generated prompt

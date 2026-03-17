@@ -14,7 +14,7 @@ from src.services.image_parser import parse_file, ParsedImageData
 from src.services import embedding_service
 from src.models import vector_store, settings
 from src.models.database import get_db
-from src.config import EMBEDDING_BATCH_SIZE
+from src.config import EMBEDDING_BATCH_SIZE, IGNORE_DIR_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +382,7 @@ def _scan_directory(dir_path: str, dir_type: str) -> list[tuple[str, str]]:
     files = []
 
     for root, _dirs, filenames in os.walk(dir_path):
+        _dirs[:] = [d for d in _dirs if not d.startswith(IGNORE_DIR_PREFIX)]
         for fname in filenames:
             ext = os.path.splitext(fname)[1].lower()
             filepath = os.path.normpath(os.path.join(root, fname))

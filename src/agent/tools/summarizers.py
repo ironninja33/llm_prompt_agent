@@ -74,15 +74,12 @@ def _summarize_folder_themes(args: dict, result: dict) -> dict:
     }
 
 
-def _summarize_query_themed(args: dict, result: dict) -> dict:
-    summary = {"query": args.get("query", "")}
-    for section in ("similar", "intra_folder_themes", "cross_folder_themes", "random", "opposite"):
-        data = result.get(section)
-        if data and isinstance(data, dict):
-            summary[section] = data.get("count", len(data.get("prompts", [])))
-        elif data and isinstance(data, list):
-            summary[section] = len(data)
-    return summary
+def _summarize_query_diverse(args: dict, result: dict) -> dict:
+    return {
+        "query": args.get("query", ""),
+        "count": result.get("count", 0),
+        "top_concepts": _unique_values(result.get("prompts", []), "concept"),
+    }
 
 
 def _summarize_generate_image(args: dict, result: dict) -> dict:
@@ -116,7 +113,11 @@ def _summarize_update_state(args: dict, result: dict) -> dict:
 
 
 def _summarize_query_dataset_map(args: dict, result: dict) -> dict:
-    return {"query": args.get("query", ""), "count": result.get("count", 0)}
+    return {
+        "query": args.get("query", ""),
+        "count": result.get("count", 0),
+        "folders": [f.get("name", "") for f in result.get("folders", [])],
+    }
 
 
 TOOL_SUMMARIES = {
@@ -127,7 +128,7 @@ TOOL_SUMMARIES = {
     "list_concepts": _summarize_list_concepts,
     "get_dataset_overview": _summarize_dataset_overview,
     "get_folder_themes": _summarize_folder_themes,
-    "query_themed_prompts": _summarize_query_themed,
+    "query_diverse_prompts": _summarize_query_diverse,
     "generate_image": _summarize_generate_image,
     "get_available_loras": _summarize_get_loras,
     "get_output_directories": _summarize_get_output_dirs,
