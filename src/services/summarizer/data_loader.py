@@ -29,6 +29,7 @@ class IntraClusterInfo:
     cluster_id: int
     label: str
     sample_prompts: list[str] = field(default_factory=list)
+    difference_prompts: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -42,7 +43,7 @@ class FolderInput:
 
 
 def load_cross_folder_inputs(
-    sample_prompts: int = 5,
+    sample_prompts: int = 10,
     distance_threshold: float = 1.5,
     top_k_folders: int = 5,
 ) -> list[CrossFolderInput]:
@@ -125,7 +126,9 @@ def load_cross_folder_inputs(
 
 
 def load_folder_inputs(
-    sample_prompts: int = 5,
+    sample_prompts: int = 10,
+    intra_sample_prompts: int = 5,
+    difference_prompts: int = 3,
     include_intra_clusters: bool = True,
     folder_path: str | None = None,
     source_type: str | None = None,
@@ -133,7 +136,8 @@ def load_folder_inputs(
     """Load folder data with summaries and sample prompts.
 
     Args:
-        sample_prompts: Number of sample prompts per cluster/folder.
+        sample_prompts: Number of sample prompts for folder-level summaries.
+        intra_sample_prompts: Number of sample prompts per intra-folder cluster.
         include_intra_clusters: Whether to include intra-cluster details.
         folder_path: If set, only load this specific folder.
         source_type: If set, only load this source type.
@@ -220,11 +224,17 @@ def load_folder_inputs(
         intra_cluster_infos = []
         if include_intra_clusters and intra:
             for cluster in intra:
-                cluster_prompts = _get_sample_prompts_for_cluster(cluster["id"], sample_prompts)
+                cluster_prompts = _get_sample_prompts_for_cluster(cluster["id"], intra_sample_prompts)
+
+                # Gather difference prompts from other clusters
+                other_clusters = [c for c in intra if c["id"] != cluster["id"]]
+                diff_prompts = _get_difference_prompts(other_clusters, difference_prompts)
+
                 intra_cluster_infos.append(IntraClusterInfo(
                     cluster_id=cluster["id"],
                     label=cluster["label"],
                     sample_prompts=cluster_prompts,
+                    difference_prompts=diff_prompts,
                 ))
 
         inputs.append(FolderInput(
@@ -236,6 +246,26 @@ def load_folder_inputs(
         ))
 
     return inputs
+
+
+def _get_difference_prompts(other_clusters: list[dict], k: int) -> list[str]:
+    """Draw sample prompts from other intra-folder clusters for differentiation.
+
+    Draws the prompt closest to each cluster's centroid (1 per cluster).
+    If k > len(other_clusters), k is capped so each cluster contributes at
+    most one prompt and there are no duplicate draws.
+    """
+    if not other_clusters:
+        return []
+
+    k = min(k, len(other_clusters))
+    sorted_clusters = sorted(other_clusters, key=lambda c: c["prompt_count"], reverse=True)
+    selected = sorted_clusters[:k]
+    prompts = []
+    for cluster in selected:
+        result = _get_sample_prompts_for_cluster(cluster["id"], 1)
+        prompts.extend(result)
+    return prompts
 
 
 def _get_sample_prompts_for_cluster(cluster_id: int, k: int) -> list[str]:

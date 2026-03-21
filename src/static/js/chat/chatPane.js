@@ -565,7 +565,14 @@ async function sendMessage() {
                 StreamRegistry.setError(sendChatId);
                 if (currentChatId === sendChatId) {
                     removeStatusMessages();
-                    finalizeStreamingAsError(data.message || 'An error occurred');
+                    const errorMsg = data.message || 'An error occurred';
+                    const streamEl = $('#streaming-message');
+                    const hasContent = streamEl && (streamEl.dataset.rawText || '').trim().length > 0;
+                    if (hasContent) {
+                        finalizeStreamingAsCutoff(errorMsg);
+                    } else {
+                        finalizeStreamingAsError(errorMsg);
+                    }
                 }
                 StreamRegistry.cleanup(sendChatId);
                 CrossTabSync.broadcast('stream_error', { chatId: sendChatId });
@@ -737,7 +744,14 @@ async function submitEditedMessage(messageId) {
                 StreamRegistry.setError(sendChatId);
                 if (currentChatId === sendChatId) {
                     removeStatusMessages();
-                    finalizeStreamingAsError(data.message || 'An error occurred');
+                    const errorMsg = data.message || 'An error occurred';
+                    const streamEl = $('#streaming-message');
+                    const hasContent = streamEl && (streamEl.dataset.rawText || '').trim().length > 0;
+                    if (hasContent) {
+                        finalizeStreamingAsCutoff(errorMsg);
+                    } else {
+                        finalizeStreamingAsError(errorMsg);
+                    }
                 }
                 StreamRegistry.cleanup(sendChatId);
                 CrossTabSync.broadcast('stream_error', { chatId: sendChatId });

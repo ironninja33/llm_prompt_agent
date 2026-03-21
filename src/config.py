@@ -10,7 +10,7 @@ CHROMA_DB_PATH = os.path.join(BASE_DIR, "chroma_db")
 
 # Default model settings
 DEFAULT_MODEL_AGENT = "gemini-3-pro-preview"
-DEFAULT_MODEL_EMBEDDING = "gemini-embedding-001"
+DEFAULT_MODEL_EMBEDDING = "gemini-embedding-2-preview"
 DEFAULT_MODEL_SUMMARY = "gemini-2.5-flash-lite"
 
 # Gemini rate limit (requests per minute)
@@ -22,7 +22,7 @@ FLASK_PORT = 5000
 FLASK_DEBUG = True
 
 # Embedding batch size
-EMBEDDING_BATCH_SIZE = 10
+EMBEDDING_BATCH_SIZE = 100
 
 # Directory ignore prefix
 IGNORE_DIR_PREFIX = "ignore__"

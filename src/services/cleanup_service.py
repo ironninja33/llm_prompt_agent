@@ -752,10 +752,10 @@ def delete_images(image_ids: list[int], reason: str = "space") -> dict:
                     lineage_depth=r.get("lineage_depth", 0),
                     reason=reason,
                 )
-                if reason in ("quality", "wrong_direction"):
-                    doc_id = f"gen_{img['job_id']}"
-                    if not metrics.move_to_graveyard(doc_id, reason) and img.get("file_path"):
-                        metrics.move_to_graveyard(img["file_path"], reason)
+                if reason in ("quality", "wrong_direction") and img.get("file_path"):
+                    metrics.move_to_graveyard(
+                        os.path.normpath(img["file_path"]), reason,
+                    )
         except Exception:
             logger.warning("Failed to log deletion for image %s", img["id"], exc_info=True)
         file_path = img.get("file_path")
@@ -768,8 +768,6 @@ def delete_images(image_ids: list[int], reason: str = "space") -> dict:
             # Delete from ChromaDB
             if file_path:
                 vector_store.delete_document(file_path, "output")
-            # Also try gen_ prefix doc ID
-            vector_store.delete_document(f"gen_{img['job_id']}", "output")
 
             # Delete from DB
             with get_db() as conn:

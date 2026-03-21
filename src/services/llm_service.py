@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
+import time
 from typing import Generator
 
 from google import genai
 from google.genai import types
 
+from src.config import DEFAULT_MODEL_EMBEDDING
 from src.services import rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -101,31 +104,76 @@ def generate(
     return response
 
 
-def embed(text: str, model: str = "gemini-embedding-001") -> list[float]:
+def _call_with_retry(fn, max_retries: int = 3, status_callback=None):
+    """Call *fn* with retry on transient Gemini errors.
+
+    Handles:
+    - 429 (rate limited): parses retry delay from error message, fallback 60s
+    - 5xx (server errors): exponential backoff starting at 5s
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except genai.errors.ClientError as exc:
+            if exc.code != 429 or attempt == max_retries:
+                raise
+            # Try to parse "retry after Xs" or "retry in Xs" from the message
+            match = re.search(r"retry\s+(?:after|in)\s+(\d+)", str(exc), re.IGNORECASE)
+            delay = int(match.group(1)) if match else 60
+            msg = f"API rate limited, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})"
+            logger.warning(msg)
+            if status_callback:
+                try:
+                    status_callback(msg)
+                except Exception:
+                    pass
+            time.sleep(delay)
+        except genai.errors.ServerError as exc:
+            if attempt == max_retries:
+                raise
+            delay = 5 * (3 ** attempt)  # 5s, 15s, 45s
+            msg = f"API server error ({exc.code}), retrying in {delay}s... (attempt {attempt + 1}/{max_retries})"
+            logger.warning(msg)
+            if status_callback:
+                try:
+                    status_callback(msg)
+                except Exception:
+                    pass
+            time.sleep(delay)
+
+
+def embed(
+    text: str,
+    model: str = DEFAULT_MODEL_EMBEDDING,
+    status_callback=None,
+) -> list[float]:
     """Generate an embedding vector for a single text."""
     if not _client:
         raise RuntimeError("Gemini client not initialized.")
 
-    rate_limiter.acquire()
+    rate_limiter.acquire(count=1, status_callback=status_callback)
 
-    result = _client.models.embed_content(
-        model=model,
-        contents=text,
+    result = _call_with_retry(
+        lambda: _client.models.embed_content(model=model, contents=text),
+        status_callback=status_callback,
     )
     return result.embeddings[0].values
 
 
-def embed_batch(texts: list[str], model: str = "gemini-embedding-001") -> list[list[float]]:
+def embed_batch(
+    texts: list[str],
+    model: str = DEFAULT_MODEL_EMBEDDING,
+    status_callback=None,
+) -> list[list[float]]:
     """Generate embedding vectors for a batch of texts."""
     if not _client:
         raise RuntimeError("Gemini client not initialized.")
 
-    rate_limiter.acquire()
+    rate_limiter.acquire(count=len(texts), status_callback=status_callback)
 
-    # Gemini supports batch embedding
-    result = _client.models.embed_content(
-        model=model,
-        contents=texts,
+    result = _call_with_retry(
+        lambda: _client.models.embed_content(model=model, contents=texts),
+        status_callback=status_callback,
     )
     return [e.values for e in result.embeddings]
 

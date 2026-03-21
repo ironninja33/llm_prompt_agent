@@ -199,46 +199,6 @@ function appendBrowserItems(images) {
 }
 
 /**
- * Add a progress placeholder for a generation in progress.
- */
-function addBrowserProgressPlaceholder(jobId, settings) {
-    const grid = $('#browser-grid');
-    if (!grid) return;
-
-    const numImages = (settings && settings.num_images) || 1;
-    for (let i = 0; i < numImages; i++) {
-        const item = document.createElement('div');
-        item.className = 'browser-img-item';
-        item.dataset.jobId = jobId;
-
-        const pending = document.createElement('div');
-        pending.className = 'gen-thumbnail-item gen-thumbnail-pending';
-        pending.dataset.jobId = jobId;
-        pending.innerHTML = typeof createCircularProgress === 'function'
-            ? createCircularProgress(0, 0)
-            : '<span>⏳</span>';
-        item.appendChild(pending);
-
-        const info = document.createElement('div');
-        info.className = 'browser-img-info';
-        info.textContent = 'Generating…';
-        item.appendChild(info);
-
-        // Insert at the start of images (after directory cards)
-        const firstImgItem = grid.querySelector('.browser-img-item');
-        if (firstImgItem) {
-            grid.insertBefore(item, firstImgItem);
-        } else {
-            grid.appendChild(item);
-        }
-    }
-
-    // Hide empty state
-    const emptyEl = $('#browser-empty');
-    if (emptyEl) emptyEl.classList.add('hidden');
-}
-
-/**
  * Store source image settings in sessionStorage for the refine flow.
  * Picked up by app.js _handleRefineParams() on the chat page.
  */

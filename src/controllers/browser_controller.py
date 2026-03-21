@@ -37,7 +37,7 @@ def get_directory_contents(virtual_path: str, offset: int = 0, limit: int = 50,
     3. Parse metadata for only the page's pending images — ~1-2s max for 50 images
     4. Re-fetch page if any were pending (now with full metadata)
     """
-    abs_path = _resolve_virtual_path(virtual_path)
+    abs_path = resolve_virtual_path(virtual_path)
     if abs_path is None:
         return {"error": "Invalid path", "directories": [], "images": [],
                 "total_image_count": 0, "has_more": False}
@@ -193,7 +193,7 @@ def poll_new_files(virtual_path: str, since: float) -> dict:
     """
     from src.agent import runner
 
-    abs_path = _resolve_virtual_path(virtual_path) if virtual_path else None
+    abs_path = resolve_virtual_path(virtual_path) if virtual_path else None
     agent_busy = runner.has_active_runs()
 
     if abs_path is None:
@@ -247,7 +247,7 @@ def suggest_subfolders(virtual_path: str) -> dict:
     from src.models.database import get_db, row_to_dict
     from sqlalchemy import text
 
-    abs_path = _resolve_virtual_path(virtual_path)
+    abs_path = resolve_virtual_path(virtual_path)
     if abs_path is None:
         return {"error": "Invalid path", "subfolders": []}
 
@@ -354,7 +354,7 @@ def execute_reorg(virtual_path: str, subfolders: list[dict]) -> dict:
     from src.models import vector_store
     from sqlalchemy import text
 
-    abs_path = _resolve_virtual_path(virtual_path)
+    abs_path = resolve_virtual_path(virtual_path)
     if abs_path is None:
         return {"error": "Invalid path", "moved": 0, "errors": []}
 
@@ -432,7 +432,7 @@ def _normalize_label(label: str) -> str:
     return name or "group"
 
 
-def _resolve_virtual_path(virtual_path: str) -> str | None:
+def resolve_virtual_path(virtual_path: str) -> str | None:
     """Map a virtual path like 'output_dir/subdir' to an absolute filesystem path.
 
     The first segment matches a data_directories entry by basename.

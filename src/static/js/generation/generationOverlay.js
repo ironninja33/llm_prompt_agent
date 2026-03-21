@@ -59,12 +59,13 @@ async function openGenerationOverlay(options) {
         settings = null,
         defaultSettings = null,
         parentJobId = null,
+        noChatContext = false,
     } = options;
 
     _parentJobId = parentJobId;
 
     // Store chat/message context; fall back to global currentChatId
-    _currentGenChatId = chatId || (typeof currentChatId !== 'undefined' ? currentChatId : null);
+    _currentGenChatId = noChatContext ? null : (chatId || (typeof currentChatId !== 'undefined' ? currentChatId : null));
     _currentGenMessageId = messageId || null;
 
     // Show modal
@@ -149,6 +150,29 @@ async function openGenerationOverlay(options) {
     // Focus the prompt textarea
     const textarea = $('#gen-prompt');
     if (textarea) textarea.focus();
+}
+
+// ── Open from header button ──────────────────────────────────────────────
+
+async function openHeaderGenerate() {
+    let latestSettings = null;
+    try {
+        latestSettings = await API.getLatestGenerationSettings();
+    } catch (_) {}
+
+    openGenerationOverlay({
+        prompt: '',
+        chatId: null,
+        messageId: null,
+        settings: null,
+        defaultSettings: latestSettings ? {
+            base_model: latestSettings.base_model || '',
+            loras: latestSettings.loras || [],
+            output_folder: latestSettings.output_folder || '',
+        } : null,
+        parentJobId: null,
+        noChatContext: true,
+    });
 }
 
 // ── Refine settings from browser ─────────────────────────────────────────

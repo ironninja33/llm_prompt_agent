@@ -35,12 +35,15 @@ class RateLimiter:
             pass
         return DEFAULT_RATE_LIMIT
 
-    def acquire(self):
-        """Block until a request slot is available, then record the request."""
+    def acquire(self, count: int = 1, status_callback=None):
+        """Block until *count* request slots are available, then record them.
+
+        Each item in a batch embedding counts as one request toward the RPM
+        quota, so callers should pass count=len(batch).
+        """
         with self._lock:
             limit = self._get_limit()
             if limit <= 0:
-                # No rate limiting
                 return
 
             now = time.monotonic()
@@ -49,15 +52,22 @@ class RateLimiter:
             while self._timestamps and self._timestamps[0] <= now - self._window:
                 self._timestamps.popleft()
 
-            if len(self._timestamps) >= limit:
-                # Window is full — sleep until the oldest entry expires
+            # Wait until enough capacity exists for all `count` items
+            while len(self._timestamps) + count > limit:
+                # Need oldest entries to expire to free capacity
                 sleep_until = self._timestamps[0] + self._window
                 wait = sleep_until - now
                 if wait > 0:
+                    msg = f"Rate limiter: waiting {wait:.0f}s for capacity..."
                     logger.debug(
-                        "Rate limit reached (%d/%d RPM). Sleeping %.2fs",
-                        len(self._timestamps), limit, wait,
+                        "Rate limit reached (%d+%d/%d RPM). Sleeping %.2fs",
+                        len(self._timestamps), count, limit, wait,
                     )
+                    if status_callback:
+                        try:
+                            status_callback(msg)
+                        except Exception:
+                            pass
                     # Release the lock while sleeping so other threads
                     # don't deadlock — they'll just queue up behind us.
                     self._lock.release()
@@ -66,18 +76,21 @@ class RateLimiter:
                     finally:
                         self._lock.acquire()
 
-                    # Re-purge after sleeping
-                    now = time.monotonic()
-                    while self._timestamps and self._timestamps[0] <= now - self._window:
-                        self._timestamps.popleft()
+                # Re-purge after sleeping
+                now = time.monotonic()
+                while self._timestamps and self._timestamps[0] <= now - self._window:
+                    self._timestamps.popleft()
 
-            self._timestamps.append(time.monotonic())
+            # Record `count` timestamps
+            ts = time.monotonic()
+            for _ in range(count):
+                self._timestamps.append(ts)
 
 
 # Module-level singleton shared by all Gemini callers
 _limiter = RateLimiter()
 
 
-def acquire():
-    """Acquire a rate-limit slot (blocking if necessary)."""
-    _limiter.acquire()
+def acquire(count: int = 1, status_callback=None):
+    """Acquire *count* rate-limit slots (blocking if necessary)."""
+    _limiter.acquire(count=count, status_callback=status_callback)

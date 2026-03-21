@@ -50,6 +50,13 @@ def load_folder_template() -> str:
     )
 
 
+def load_intra_folder_template() -> str:
+    """Load intra-folder prompt template."""
+    return _load_template_from_settings_or_file(
+        "summarizer_intra_folder_template", "summarizer_intra_folder.txt"
+    )
+
+
 def load_default_templates() -> dict[str, str]:
     """Load all bundled default templates (for the 'Reset to Defaults' button)."""
     defaults = {}
@@ -57,6 +64,7 @@ def load_default_templates() -> dict[str, str]:
         ("summarizer_system_prompt", "summarizer_system_prompt.md"),
         ("summarizer_cross_folder_template", "summarizer_cross_folder.txt"),
         ("summarizer_folder_template", "summarizer_folder.txt"),
+        ("summarizer_intra_folder_template", "summarizer_intra_folder.txt"),
     ]:
         path = PROMPTS_DIR / filename
         if path.is_file():
@@ -121,15 +129,18 @@ def build_folder_prompt(item: FolderInput) -> str:
 
 
 def build_intra_cluster_prompt(cluster_info, folder_input: FolderInput) -> str:
-    """Build a prompt for an intra-cluster summary using the folder template.
+    """Build a prompt for an intra-cluster summary using the intra-folder template."""
+    template = load_intra_folder_template()
 
-    Uses the cluster's sample prompts instead of the folder's.
-    """
-    tmp_input = FolderInput(
-        folder_path=folder_input.folder_path,
-        current_summary=folder_input.current_summary,
-        concept=folder_input.concept,
-        data_root=folder_input.data_root,
-        sample_prompts=cluster_info.sample_prompts,
-    )
-    return build_folder_prompt(tmp_input)
+    name = Path(folder_input.folder_path).name if "/" in folder_input.folder_path or "\\" in folder_input.folder_path else folder_input.folder_path
+    folder_label = name.split("__", 1)[1] if "__" in name else name
+
+    sample_lines = "\n".join(f"'{p}'" for p in cluster_info.sample_prompts)
+    diff_lines = "\n".join(f"'{p}'" for p in cluster_info.difference_prompts)
+
+    return template.format_map({
+        "folder_label": folder_label,
+        "concept": folder_input.concept,
+        "sample_prompts": sample_lines,
+        "difference_prompts": diff_lines,
+    })

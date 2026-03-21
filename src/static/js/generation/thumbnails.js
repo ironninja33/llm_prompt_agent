@@ -67,20 +67,8 @@ function createThumbnailItem(job, img, options = {}) {
         }
     };
 
-    // Handle missing/broken images
-    thumb.onerror = () => {
-        replaceThumbnailWithPlaceholder(item, thumb);
-    };
-    // Also detect SVG placeholder returned by backend (content-type mismatch)
-    thumb.onload = () => {
-        if (thumb.naturalWidth === 256 && thumb.naturalHeight === 256 && thumb.src.includes('/thumbnail/')) {
-            fetch(thumb.src, { method: 'HEAD' }).then(res => {
-                if (res.headers.get('content-type')?.includes('svg')) {
-                    replaceThumbnailWithPlaceholder(item, thumb);
-                }
-            }).catch(() => {});
-        }
-    };
+    // Show placeholder immediately if thumbnail fails to load
+    thumb.onerror = () => replaceThumbnailWithPlaceholder(item, thumb);
 
     item.appendChild(thumb);
 

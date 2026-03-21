@@ -181,6 +181,12 @@ def _run_ingestion(output_only: bool = False):
 
         # Phase 2: Parse and embed
         progress.phase = "embedding"
+
+        def _embedding_status_callback(msg: str):
+            """Relay rate-limiter / retry messages to the UI overlay."""
+            progress.message = msg
+            _emit_status(progress)
+
         batch_ids = []
         batch_texts = []
         batch_metadatas = []
@@ -232,12 +238,14 @@ def _run_ingestion(output_only: bool = False):
 
             # Process in batches — rate limiting is handled by llm_service
             if len(batch_ids) >= EMBEDDING_BATCH_SIZE:
-                _process_batch(batch_ids, batch_texts, batch_metadatas, batch_source_types)
+                _process_batch(batch_ids, batch_texts, batch_metadatas, batch_source_types,
+                               status_callback=_embedding_status_callback)
                 batch_ids, batch_texts, batch_metadatas, batch_source_types = [], [], [], []
 
         # Process remaining batch
         if batch_ids:
-            _process_batch(batch_ids, batch_texts, batch_metadatas, batch_source_types)
+            _process_batch(batch_ids, batch_texts, batch_metadatas, batch_source_types,
+                           status_callback=_embedding_status_callback)
 
         # Phase 3: Clustering
         from src.services import clustering_service
@@ -400,10 +408,11 @@ def _process_batch(
     texts: list[str],
     metadatas: list[dict],
     source_types: list[str],
+    status_callback=None,
 ):
     """Generate embeddings and store a batch of documents."""
     try:
-        embeddings = embedding_service.embed_batch(texts)
+        embeddings = embedding_service.embed_batch(texts, status_callback=status_callback)
 
         # Group by source type for ChromaDB
         groups: dict[str, tuple[list, list, list, list]] = {}

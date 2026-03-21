@@ -323,12 +323,14 @@ async function loadSummarizerSettings() {
         $('#setting-summarizer-system-prompt').value = settings.summarizer_system_prompt || '';
         $('#setting-summarizer-cross-folder').value = settings.summarizer_cross_folder_template || '';
         $('#setting-summarizer-folder').value = settings.summarizer_folder_template || '';
+        $('#setting-summarizer-intra-folder').value = settings.summarizer_intra_folder_template || '';
 
         // Self-heal: if prompt templates are empty, fetch bundled defaults
         const promptFields = [
             ['summarizer_system_prompt', '#setting-summarizer-system-prompt'],
             ['summarizer_cross_folder_template', '#setting-summarizer-cross-folder'],
             ['summarizer_folder_template', '#setting-summarizer-folder'],
+            ['summarizer_intra_folder_template', '#setting-summarizer-intra-folder'],
         ];
         const needsDefaults = promptFields.some(([key]) => !settings[key]);
         if (needsDefaults) {
@@ -355,6 +357,7 @@ async function saveSummarizerSettings() {
         summarizer_system_prompt: $('#setting-summarizer-system-prompt').value,
         summarizer_cross_folder_template: $('#setting-summarizer-cross-folder').value,
         summarizer_folder_template: $('#setting-summarizer-folder').value,
+        summarizer_intra_folder_template: $('#setting-summarizer-intra-folder').value,
     };
 
     const response = await fetch('/api/settings', {
@@ -380,6 +383,9 @@ async function resetSummarizerDefaults() {
         }
         if (defaults.summarizer_folder_template !== undefined) {
             $('#setting-summarizer-folder').value = defaults.summarizer_folder_template;
+        }
+        if (defaults.summarizer_intra_folder_template !== undefined) {
+            $('#setting-summarizer-intra-folder').value = defaults.summarizer_intra_folder_template;
         }
     } catch (err) {
         alert('Failed to load defaults: ' + err.message);

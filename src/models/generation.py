@@ -324,34 +324,57 @@ def add_generated_image(
 ) -> dict:
     """Add a generated image record to a job. Returns the created image dict.
 
-    Uses INSERT OR IGNORE so duplicate (job_id, filename) pairs are silently
-    skipped (unique index idx_gen_images_job_filename).
+    Typically called with file_path=NULL immediately on generation completion,
+    then updated via update_image_file_path() once the path is resolved.
+    Uses INSERT OR IGNORE for the (job_id, filename) unique index.
     """
     with get_db() as conn:
         result = conn.execute(
             text("""INSERT OR IGNORE INTO generated_images
-               (job_id, filename, subfolder, width, height, file_path)
+                   (job_id, filename, subfolder, width, height, file_path)
                VALUES (:job_id, :filename, :subfolder, :width, :height, :file_path)"""),
             {"job_id": job_id, "filename": filename, "subfolder": subfolder,
              "width": width, "height": height, "file_path": file_path},
         )
-        return {
-            "id": result.lastrowid,
-            "job_id": job_id,
-            "filename": filename,
-            "subfolder": subfolder,
-            "width": width,
-            "height": height,
-            "file_path": file_path,
-            "created_at": None,
-        }
+        image_id = result.lastrowid
+
+    return {
+        "id": image_id,
+        "job_id": job_id,
+        "filename": filename,
+        "subfolder": subfolder,
+        "width": width,
+        "height": height,
+        "file_path": file_path,
+        "created_at": None,
+    }
+
+
+def update_image_file_path(job_id: str, filename: str, file_path: str) -> bool:
+    """Set file_path on an existing generated_images record.
+
+    Called after resolve_image_path succeeds.  Idempotent — safe to call
+    even if fast_register_images already set the path.
+
+    Returns True if a record was updated.
+    """
+    with get_db() as conn:
+        result = conn.execute(
+            text("""UPDATE generated_images
+                   SET file_path = :file_path
+                   WHERE job_id = :job_id AND filename = :filename
+                   AND (file_path IS NULL OR file_path = :file_path)"""),
+            {"file_path": file_path, "job_id": job_id, "filename": filename},
+        )
+        return result.rowcount > 0
 
 
 def get_job_images(job_id: str) -> list[dict]:
     """Get all images for a job."""
     with get_db() as conn:
         result = conn.execute(
-            text("""SELECT id, job_id, filename, subfolder, width, height, created_at
+            text("""SELECT id, job_id, filename, subfolder, file_path, file_size,
+                      width, height, created_at
                FROM generated_images WHERE job_id = :job_id ORDER BY id ASC"""),
             {"job_id": job_id},
         )

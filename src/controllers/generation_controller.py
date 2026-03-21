@@ -1,8 +1,10 @@
 """Generation controller — business logic for ComfyUI image generation."""
 
 import logging
+import os
 import random
 import threading
+import time
 from src.models import generation as gen_model
 from src.models.settings import get_setting
 from src.services import comfyui_service
@@ -126,51 +128,98 @@ def get_chat_generations(chat_id: str) -> list[dict]:
     return gen_model.get_generation_data_for_chat(chat_id)
 
 
-def handle_generation_complete(progress):
-    """Callback for when a generation job completes.
+def _handle_generation_status(progress):
+    """Handle non-completion status updates (failures).
 
-    Called from the polling system to update the database with output images.
-    This is registered as a listener on comfyui_service.
+    Registered as a general status listener.
     """
-    if progress.phase in ("completed", "failed"):
-        gen_model.update_job_status(
-            progress.job_id,
-            progress.phase,
+    if progress.phase == "failed":
+        gen_model.update_job_status(progress.job_id, "failed")
+
+
+def handle_generation_complete(progress):
+    """Handle generation completion — store images and trigger embedding.
+
+    Registered as a completion callback so DB writes finish before
+    SSE events reach the browser.
+
+    Phase 1 (synchronous, fast): Create image records with file_path=NULL.
+    This ensures fast_register_images finds them by filename and updates
+    file_path on the generation's own record (no scan record created).
+
+    Phase 2 (background thread): Resolve file paths and trigger embedding.
+    """
+    gen_model.update_job_status(progress.job_id, "completed")
+
+    if not progress.output_images:
+        return
+
+    # Idempotency: skip if images already recorded for this job
+    existing = gen_model.get_job_images(progress.job_id)
+    if existing:
+        logger.debug("Images already recorded for job %s, skipping", progress.job_id)
+        return
+
+    # Phase 1: Insert records immediately with file_path=NULL
+    image_filenames = []
+    for img in progress.output_images:
+        filename = img.get("filename", "")
+        subfolder = img.get("subfolder", "")
+        gen_model.add_generated_image(
+            job_id=progress.job_id,
+            filename=filename,
+            subfolder=subfolder,
+            file_path=None,
         )
+        image_filenames.append((filename, subfolder))
 
-        if progress.phase == "completed" and progress.output_images:
-            # Idempotency: skip if images already recorded for this job
-            existing = gen_model.get_job_images(progress.job_id)
-            if existing:
-                logger.debug("Images already recorded for job %s, skipping", progress.job_id)
-                return
+    # Phase 2: Resolve file paths and embed (background thread)
+    _resolve_paths_and_embed(progress.job_id, image_filenames)
 
-            for img in progress.output_images:
-                file_path = comfyui_service.resolve_image_path(
-                    img.get("filename", ""),
-                    img.get("subfolder", ""),
+
+def _resolve_paths_and_embed(job_id: str, image_filenames: list[tuple[str, str]]):
+    """Resolve file paths for generated images and trigger embedding.
+
+    Runs in a background thread so the completion callback returns fast
+    (no sleeps blocking the poller).
+    """
+    def _do_resolve():
+        for filename, subfolder in image_filenames:
+            file_path = comfyui_service.resolve_image_path(filename, subfolder)
+
+            # Retry briefly — ComfyUI may report completion before file is flushed
+            if file_path is None:
+                for _ in range(3):
+                    time.sleep(0.5)
+                    file_path = comfyui_service.resolve_image_path(filename, subfolder)
+                    if file_path:
+                        break
+
+            if file_path:
+                gen_model.update_image_file_path(job_id, filename, file_path)
+            else:
+                logger.warning(
+                    "Could not resolve file_path for %s/%s in job %s",
+                    subfolder, filename, job_id,
                 )
-                gen_model.add_generated_image(
-                    job_id=progress.job_id,
-                    filename=img.get("filename", ""),
-                    subfolder=img.get("subfolder", ""),
-                    file_path=file_path,
-                )
 
-            # Trigger embedding and clustering for the generated prompt
-            _embed_generated_prompt(progress.job_id)
+        # Now that file_paths are resolved, trigger embedding
+        _embed_generated_prompt(job_id)
+
+    thread = threading.Thread(target=_do_resolve, daemon=True)
+    thread.start()
 
 
 def _embed_generated_prompt(job_id: str):
-    """Embed the generated prompt and assign to nearest clusters.
+    """Embed the generated prompt using file-path doc IDs.
 
-    Runs in a background thread to avoid blocking the completion callback,
-    since embedding involves an API call to the LLM service.
+    Uses the same normalized file path that ingestion uses as the ChromaDB
+    doc ID, so ingestion will see these as "already indexed" and skip them.
+    Runs in a background thread to avoid blocking the completion callback.
     """
 
     def _do_embed():
         try:
-            # Get job settings for prompt and metadata
             settings = gen_model.get_job_settings(job_id)
             if not settings:
                 logger.warning(f"No settings found for job {job_id}, skipping embedding")
@@ -184,56 +233,76 @@ def _embed_generated_prompt(job_id: str):
             from src.services import embedding_service
             from src.models import vector_store
             from src.services import clustering_service
+            from src.models.settings import get_data_directories
 
-            # Create a document ID based on job_id
-            doc_id = f"gen_{job_id}"
-
-            # Check if already embedded
-            if vector_store.document_exists(doc_id, "output"):
-                logger.debug(f"Document {doc_id} already embedded, skipping")
+            # Get file paths from the generated_images records
+            images = gen_model.get_job_images(job_id)
+            file_paths = [
+                os.path.normpath(img["file_path"])
+                for img in images
+                if img.get("file_path")
+            ]
+            if not file_paths:
+                logger.warning(f"No file paths for job {job_id}, skipping embedding")
                 return
 
-            # Get embedding for the prompt text
+            # Skip any already embedded
+            file_paths = [
+                fp for fp in file_paths
+                if not vector_store.document_exists(fp, "output")
+            ]
+            if not file_paths:
+                logger.debug(f"All images for job {job_id} already embedded, skipping")
+                return
+
+            # Embed once — same prompt for all images in this job
             embedding = embedding_service.embed(prompt)
             if not embedding:
                 logger.warning(f"Empty embedding returned for job {job_id}")
                 return
 
-            # Build metadata matching the ingestion_service pattern
-            output_folder = settings.get("output_folder", "") or ""
-            concept = output_folder.split("/")[0] if output_folder else "generated"
-            metadata = {
-                "concept": concept,
-                "base_dir": "generated",
-                "source_file": f"generated_{job_id}",
-                "dir_type": "output",
-                "base_model": settings.get("base_model", "") or "",
-                "loras": settings.get("loras", []) or [],
-            }
+            # Build metadata matching ingestion_service format
+            output_dirs = [
+                d for d in get_data_directories(active_only=True)
+                if d.get("dir_type") == "output"
+            ]
 
-            # Add to generated_prompts ChromaDB collection
-            vector_store.add_document(
-                doc_id=doc_id,
-                text=prompt,
-                embedding=embedding,
-                source_type="output",
-                metadata=metadata,
-            )
+            doc_ids = []
+            concepts = []
+            for fp in file_paths:
+                base_dir, concept, source_file = _resolve_ingestion_metadata(
+                    fp, output_dirs, settings,
+                )
+                metadata = {
+                    "concept": concept,
+                    "base_dir": base_dir,
+                    "source_file": source_file,
+                    "dir_type": "output",
+                    "base_model": settings.get("base_model", "") or "",
+                    "loras": settings.get("loras", []) or [],
+                }
+                vector_store.add_document(
+                    doc_id=fp,
+                    text=prompt,
+                    embedding=embedding,
+                    source_type="output",
+                    metadata=metadata,
+                )
+                doc_ids.append(fp)
+                concepts.append(concept)
 
-            logger.info(f"Embedded generated prompt for job {job_id}")
+            logger.info(f"Embedded {len(doc_ids)} image(s) for job {job_id}")
 
-            # Assign to nearest existing clusters (cross-folder and intra-folder)
+            # Assign to nearest existing clusters
             clustering_service.assign_new_docs_to_clusters(
-                doc_ids=[doc_id],
-                embeddings=[embedding],
-                source_types=["output"],
-                concepts=[concept],
+                doc_ids=doc_ids,
+                embeddings=[embedding] * len(doc_ids),
+                source_types=["output"] * len(doc_ids),
+                concepts=concepts,
             )
 
-            logger.info(f"Assigned generated prompt {doc_id} to nearest clusters")
-
-            # Auto-slot into subfolder if enabled
-            _auto_slot_if_enabled(job_id, embedding, concept)
+            # Auto-slot uses first image's concept
+            _auto_slot_if_enabled(job_id, embedding, concepts[0])
 
         except Exception as e:
             logger.error(
@@ -243,6 +312,27 @@ def _embed_generated_prompt(job_id: str):
 
     thread = threading.Thread(target=_do_embed, daemon=True)
     thread.start()
+
+
+def _resolve_ingestion_metadata(
+    file_path: str,
+    output_dirs: list[dict],
+    settings: dict,
+) -> tuple[str, str, str]:
+    """Derive base_dir/concept/source_file the same way ingestion does."""
+    for d in output_dirs:
+        dir_path = d["path"]
+        if file_path.startswith(os.path.normpath(dir_path) + os.sep):
+            rel_path = os.path.relpath(file_path, dir_path)
+            parts = rel_path.split(os.sep)
+            concept = parts[0] if len(parts) > 1 else os.path.basename(dir_path)
+            base_dir = os.path.basename(dir_path)
+            source_file = os.path.basename(file_path)
+            return base_dir, concept, source_file
+    # Fallback if file not under any known output dir
+    output_folder = settings.get("output_folder", "") or ""
+    concept = output_folder.split("/")[0] if output_folder else "generated"
+    return "generated", concept, os.path.basename(file_path)
 
 
 def _auto_slot_if_enabled(job_id: str, embedding: list[float], concept: str):
@@ -383,7 +473,8 @@ def initialize():
 
     Called during app startup.
     """
-    comfyui_service.add_status_listener(handle_generation_complete)
+    comfyui_service.add_completion_callback(handle_generation_complete)
+    comfyui_service.add_status_listener(_handle_generation_status)
 
     # Resume polling for any active jobs from a previous session
     active_jobs = gen_model.get_active_jobs()

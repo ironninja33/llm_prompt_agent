@@ -69,13 +69,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Listen for generation submissions from the overlay
-    window.addEventListener('generation-submitted', (e) => {
-        const detail = e.detail;
-        if (detail && detail.job_id) {
-            addBrowserProgressPlaceholder(detail.job_id, detail.settings);
-        }
-    });
 });
 
 /**

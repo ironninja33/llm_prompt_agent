@@ -45,6 +45,12 @@ class GenerationProgress:
 _status_listeners: list[Callable[[GenerationProgress], Any]] = []
 _listeners_lock = threading.Lock()
 
+# Completion callbacks run *before* status listeners in _emit_completed,
+# guaranteeing DB writes (e.g. image record storage) finish before
+# SSE events reach the browser.
+_completion_callbacks: list[Callable[[GenerationProgress], Any]] = []
+_completion_callbacks_lock = threading.Lock()
+
 # In-memory cache of generation job progress for polling
 _job_progress_cache: dict[str, dict] = {}
 _job_progress_cache_lock = threading.Lock()
@@ -64,6 +70,15 @@ def remove_status_listener(callback: Callable[[GenerationProgress], Any]) -> Non
     with _listeners_lock:
         if callback in _status_listeners:
             _status_listeners.remove(callback)
+
+
+def add_completion_callback(callback: Callable[[GenerationProgress], Any]) -> None:
+    """Register a callback that runs when a job completes, *before* status listeners.
+
+    Use this for DB writes that must be visible before SSE events reach the browser.
+    """
+    with _completion_callbacks_lock:
+        _completion_callbacks.append(callback)
 
 
 def _notify_listeners(progress: GenerationProgress) -> None:
@@ -132,12 +147,33 @@ def _emit(job_id: str, prompt_id: str, total_images: int, phase: str,
 
 
 def _emit_completed(job_id: str, prompt_id: str, total_images: int) -> list[dict]:
-    """Shared completion logic: fetch history, extract images, emit."""
+    """Shared completion logic: fetch history, extract images, emit.
+
+    Completion callbacks run first (DB writes) so the data is committed
+    before status listeners (SSE) notify the browser.
+    """
     history = get_history(prompt_id)
     output_images = _extract_output_images(history) if history else []
-    _emit(job_id, prompt_id, total_images, phase="completed", progress=1.0,
-          current_image=total_images, message="Generation complete",
-          complete=True, output_images=output_images)
+
+    # Build the progress object once for both callback phases
+    progress = GenerationProgress(
+        job_id=job_id, prompt_id=prompt_id, phase="completed",
+        progress=1.0, current_image=total_images, total_images=total_images,
+        message="Generation complete", complete=True, output_images=output_images,
+    )
+
+    # Phase 1: completion callbacks (DB writes before SSE)
+    with _completion_callbacks_lock:
+        callbacks = _completion_callbacks[:]
+    for cb in callbacks:
+        try:
+            cb(progress)
+        except Exception as exc:
+            logger.error("Error in completion callback: %s", exc)
+
+    # Phase 2: status listeners (SSE, cache)
+    _notify_listeners(progress)
+
     return output_images
 
 

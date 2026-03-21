@@ -192,6 +192,12 @@ const API = {
         return res.json();
     },
 
+    async getLatestGenerationSettings() {
+        const res = await fetch('/api/generate/latest-settings');
+        if (!res.ok) return null;
+        return res.json();
+    },
+
     async submitGeneration(chatId, messageId, settings, parentJobId) {
         const res = await fetch('/api/generate', {
             method: 'POST',

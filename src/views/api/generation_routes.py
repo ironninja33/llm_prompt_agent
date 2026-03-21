@@ -57,6 +57,15 @@ def _get_thumbnail_bytes(image: dict) -> bytes | None:
     )
 
 
+@api_bp.route("/generate/latest-settings", methods=["GET"])
+def get_latest_settings():
+    """Return settings from the most recent completed generation job."""
+    settings = gen_model.get_latest_job_settings()
+    if not settings:
+        return jsonify({}), 200
+    return jsonify(settings)
+
+
 @api_bp.route("/generate", methods=["POST"])
 def submit_generation():
     """Submit a generation job."""
@@ -189,7 +198,20 @@ def get_generated_image(job_id, image_id):
     image_bytes = _read_image_bytes(image)
 
     if not image_bytes:
-        _cleanup_missing_image(job_id, image_id)
+        # Only clean up records older than 60s — fresh images may still be flushing
+        created_at = image.get("created_at")
+        if created_at:
+            from datetime import datetime, timezone
+            try:
+                if isinstance(created_at, str):
+                    created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                else:
+                    created = created_at
+                age = (datetime.now(timezone.utc) - created.replace(tzinfo=timezone.utc)).total_seconds()
+                if age > 60:
+                    _cleanup_missing_image(job_id, image_id, file_path=image.get("file_path"))
+            except Exception:
+                pass
         return Response(
             MISSING_IMAGE_SVG,
             mimetype="image/svg+xml",
@@ -269,11 +291,10 @@ def delete_generated_image(job_id, image_id):
             lineage_depth=job.get("lineage_depth", 0) if job else 0,
             reason=reason,
         )
-        if reason in ("quality", "wrong_direction"):
-            # Try gen_ doc first, fall back to file_path doc
-            doc_id = f"gen_{job_id}"
-            if not metrics.move_to_graveyard(doc_id, reason) and image.get("file_path"):
-                metrics.move_to_graveyard(image["file_path"], reason)
+        if reason in ("quality", "wrong_direction") and image.get("file_path"):
+            metrics.move_to_graveyard(
+                os.path.normpath(image["file_path"]), reason,
+            )
     except Exception:
         logger.warning("Failed to log deletion for image %s", image_id, exc_info=True)
 
@@ -306,8 +327,8 @@ def delete_generated_image(job_id, image_id):
         if not deleted_from_disk:
             return jsonify({"error": "Failed to delete image file from disk"}), 500
 
-    # Clean up DB records (image row, vector store if no images remain)
-    _cleanup_missing_image(job_id, image_id)
+    # Clean up DB records (image row, vector store embedding)
+    _cleanup_missing_image(job_id, image_id, file_path=image.get("file_path"))
 
     # Remove duplicate records — the file is gone so these are orphaned
     if duplicate_job_ids:
