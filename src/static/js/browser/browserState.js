@@ -16,4 +16,5 @@ const BrowserState = {
     isSearchActive: false,
     deletePending: false,
     thumbnailSize: 'medium',
+    lastCompletionSeq: null,
 };

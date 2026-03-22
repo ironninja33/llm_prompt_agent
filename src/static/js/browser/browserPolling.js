@@ -15,6 +15,20 @@ function startBrowserPolling() {
         if (BrowserState.isSearchActive || BrowserState.isLoading || BrowserState.deletePending) {
             return;
         }
+
+        // Generation completion (path-scoped via server)
+        const serverSeq = data.completion_seq || 0;
+        if (BrowserState.lastCompletionSeq === null) {
+            // First poll after page load or navigation — sync baseline
+            BrowserState.lastCompletionSeq = serverSeq;
+        } else if (serverSeq !== BrowserState.lastCompletionSeq) {
+            BrowserState.lastCompletionSeq = serverSeq;
+            BrowserState.offset = 0;
+            loadBrowserContents();
+            return;
+        }
+
+        // Non-generation file changes (mtime-based)
         if (data.has_new_files) {
             BrowserState.offset = 0;
             BrowserState.pollTimestamp = Date.now() / 1000;

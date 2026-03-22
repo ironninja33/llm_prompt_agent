@@ -103,10 +103,6 @@ def _summarize_last_gen_settings(args: dict, result: dict) -> dict:
     return {"found": bool(s), "model": s.get("base_model", "")}
 
 
-def _summarize_last_gen_prompts(args: dict, result: dict) -> dict:
-    return {"count": result.get("count", 0)}
-
-
 def _summarize_update_state(args: dict, result: dict) -> dict:
     return {"status": result.get("status", "ok")}
 
@@ -132,7 +128,6 @@ TOOL_SUMMARIES = {
     "get_available_loras": _summarize_get_loras,
     "get_output_directories": _summarize_get_output_dirs,
     "get_last_generation_settings": _summarize_last_gen_settings,
-    "get_last_generated_prompts": _summarize_last_gen_prompts,
     "update_state": _summarize_update_state,
     "query_dataset_map": _summarize_query_dataset_map,
 }

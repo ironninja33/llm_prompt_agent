@@ -104,6 +104,14 @@ def run_agent_turn(
 
         messages = state_prefix + overview_prefix + history
 
+        # Inject generation outcomes if the previous turn had generations.
+        # Inserted before the final user message so the agent sees feedback
+        # right before the user's current request.
+        outcomes_prefix = _maybe_build_outcomes_prefix(chat_id)
+        if outcomes_prefix and len(messages) > 0:
+            messages = messages[:-1] + outcomes_prefix + messages[-1:]
+            logger.info("Injected generation outcomes into messages")
+
         # If attachments were provided, enhance the last user message with
         # inline image parts so the LLM can see the images.
         if attachments:
@@ -399,7 +407,11 @@ def run_agent_turn(
         # closes the connection or Flask garbage-collects the generator.
         _maybe_summarize_chat(chat_id)
 
-        yield {"type": "done", "message_id": msg["id"]}
+        done_event = {"type": "done", "message_id": msg["id"]}
+        if full_response and finish_reason_str and finish_reason_str not in ("STOP", "FinishReason.STOP", "None"):
+            done_event["blocked"] = True
+            done_event["block_reason"] = finish_reason_str
+        yield done_event
 
     except Exception as e:
         logger.error(f"Agent loop error: {e}", exc_info=True)
@@ -583,3 +595,81 @@ def _summarize_tool_message(msg: dict) -> dict:
         "_tool_name": tool_name,
         "_summarized": True,
     }
+
+
+def _maybe_build_outcomes_prefix(chat_id: str) -> list[dict]:
+    """Build generation outcomes injection if the last assistant turn had generations.
+
+    Returns a user/model message pair for injection, or empty list.
+    Only fires when the immediately preceding assistant message had
+    generation jobs — naturally disappears on subsequent turns.
+    """
+    try:
+        from src.agent.tools.generation_tools import _get_generation_outcomes
+
+        # Find the last assistant message
+        db_messages = chat_model.get_messages(chat_id)
+        last_assistant_id = None
+        for msg in reversed(db_messages):
+            if msg["role"] == "assistant":
+                last_assistant_id = msg["id"]
+                break
+
+        if not last_assistant_id:
+            return []
+
+        # Call existing outcomes logic targeting that specific message
+        result = _get_generation_outcomes(
+            {"message_id": last_assistant_id},
+            {"chat_id": chat_id},
+        )
+
+        if "error" in result or not result.get("outcomes"):
+            return []
+
+        # Format as concise text
+        lines = ["Generation outcomes from your last suggestions:"]
+        for o in result["outcomes"]:
+            parts = []
+            parts.append(f"{o['total_images']} images")
+            parts.append(f"{o['kept']} kept")
+            if o["deleted"] > 0:
+                reasons = ", ".join(
+                    f"{v} {k}" for k, v in o.get("deletion_reasons", {}).items()
+                )
+                parts.append(
+                    f"{o['deleted']} deleted ({reasons})" if reasons
+                    else f"{o['deleted']} deleted"
+                )
+            line = f"- Prompt {o['position']}: {', '.join(parts)}"
+            lines.append(line)
+
+            for v in o.get("variations", []):
+                var_parts = [f"{v['total_images']} images, {v['kept']} kept"]
+                if v["deleted"] > 0:
+                    reasons = ", ".join(
+                        f"{ct} {r}" for r, ct in v.get("deletion_reasons", {}).items()
+                    )
+                    var_parts.append(
+                        f"{v['deleted']} deleted ({reasons})" if reasons
+                        else f"{v['deleted']} deleted"
+                    )
+                lines.append(f"  └ User modified prompt: {v['diff']}")
+                lines.append(f"    {', '.join(var_parts)}")
+
+        if o.get("total_images", 0) == 0 and not o.get("variations"):
+            pass  # "0 images" already shown in the line
+
+        text = "\n".join(lines)
+
+        return [
+            {"role": "user", "content": text},
+            {"role": "model", "content": (
+                "Understood. I'll use these outcomes and any "
+                "user-modified prompts as my starting point."
+            )},
+        ]
+
+    except Exception as e:
+        logger.warning("Failed to build outcomes prefix: %s", e)
+        return []

@@ -91,11 +91,29 @@ def _get_generation_status() -> dict:
 
 
 def _get_browser_status() -> dict:
-    """Check for new files since timestamp."""
+    """Check for new files since timestamp and generation completions."""
     from src.controllers import browser_controller
+    from src.services import comfyui_service
+
     path = request.args.get("browser_path", "")
     since = float(request.args.get("browser_since", "0"))
-    return browser_controller.poll_new_files(path, since)
+    result = browser_controller.poll_new_files(path, since)
+
+    # Add generation completion seq scoped to the browsed directory
+    abs_path = browser_controller.resolve_virtual_path(path) if path else None
+    if abs_path:
+        result["completion_seq"] = comfyui_service.get_completion_seq_for_path(abs_path)
+    else:
+        # Root level: check all output directories
+        from src.models.browser import get_root_directories
+        best = 0
+        for root in get_root_directories():
+            seq = comfyui_service.get_completion_seq_for_path(root["path"])
+            if seq > best:
+                best = seq
+        result["completion_seq"] = best
+
+    return result
 
 
 def _get_cleanup_parse_status() -> dict:

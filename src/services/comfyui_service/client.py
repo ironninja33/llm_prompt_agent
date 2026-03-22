@@ -457,6 +457,30 @@ def get_job_progress(prompt_id: str) -> JobProgress:
 # Image retrieval (direct filesystem access)
 # ---------------------------------------------------------------------------
 
+def construct_output_path(filename: str, subfolder: str = "") -> str | None:
+    """Construct the expected output path from known data.
+
+    Deterministic — no filesystem check.  Uses the first active output
+    directory + subfolder + filename.  Returns a normalized absolute path,
+    or None if no output directories are configured.
+    """
+    try:
+        from src.models.settings import get_data_directories
+        dirs = get_data_directories(active_only=True)
+    except Exception:
+        return None
+
+    output_dirs = [d for d in dirs if d.get("dir_type") == "output"]
+    if not output_dirs:
+        return None
+    dir_path = output_dirs[0].get("path", "")
+    if not dir_path:
+        return None
+    if subfolder:
+        return os.path.normpath(os.path.join(dir_path, subfolder, filename))
+    return os.path.normpath(os.path.join(dir_path, filename))
+
+
 def resolve_image_path(filename: str, subfolder: str = "") -> str | None:
     """Resolve an image filename to an absolute path on disk.
 

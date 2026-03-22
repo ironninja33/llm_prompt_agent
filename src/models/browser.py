@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -216,13 +217,21 @@ def fast_register_images(dir_path: str) -> int:
                     existing_by_name[r["filename"]] = dict(r)
 
     count = 0
+    now = time.time()
     with get_db() as conn:
         for fname, filepath in new_files:
             try:
                 stat = os.stat(filepath)
                 file_size = stat.st_size
-                file_mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                file_mtime_epoch = stat.st_mtime
+                file_mtime = datetime.fromtimestamp(file_mtime_epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             except OSError:
+                continue
+
+            # Skip very recent files — likely from an in-progress generation.
+            # The completion callback will create the proper record with the
+            # correct job_id and settings.
+            if now - file_mtime_epoch < 2.0 and fname not in existing_by_name:
                 continue
 
             if fname in existing_by_name:

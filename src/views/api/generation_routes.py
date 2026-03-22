@@ -48,13 +48,24 @@ def _get_thumbnail_bytes(image: dict) -> bytes | None:
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=85)
             return buf.getvalue()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "THUMB_DEBUG: PIL failed for %s (size=%d): %s",
+                file_path, len(raw) if 'raw' in dir() else -1, e,
+            )
+    elif file_path:
+        logger.warning("THUMB_DEBUG: file_path set but not on disk: %s", file_path)
     # Fallback to ComfyUI output directory search
-    return comfyui_service.get_image_thumbnail(
+    fallback = comfyui_service.get_image_thumbnail(
         image["filename"],
         image.get("subfolder", ""),
     )
+    if not fallback:
+        logger.warning(
+            "THUMB_DEBUG: ComfyUI fallback also failed for %s/%s",
+            image.get("subfolder", ""), image["filename"],
+        )
+    return fallback
 
 
 @api_bp.route("/generate/latest-settings", methods=["GET"])
@@ -352,12 +363,27 @@ def delete_generated_image(job_id, image_id):
 def get_generated_thumbnail(job_id, image_id):
     """Proxy a thumbnail of a generated image."""
     image = gen_model.get_image(image_id)
-    if not image or image.get("job_id") != job_id:
+    if not image:
+        logger.warning("THUMB_DEBUG: image_id=%s not found in DB", image_id)
+        return jsonify({"error": "Image not found"}), 404
+    if image.get("job_id") != job_id:
+        logger.warning(
+            "THUMB_DEBUG: job_id mismatch for image_id=%s: url=%s db=%s",
+            image_id, job_id, image.get("job_id"),
+        )
         return jsonify({"error": "Image not found"}), 404
 
+    file_path = image.get("file_path")
+    file_exists = file_path and os.path.isfile(file_path)
     thumb_bytes = _get_thumbnail_bytes(image)
 
     if not thumb_bytes:
+        logger.warning(
+            "THUMB_DEBUG: SVG placeholder for image_id=%s job_id=%s "
+            "file_path=%s file_exists=%s filename=%s subfolder=%s",
+            image_id, job_id, file_path, file_exists,
+            image.get("filename"), image.get("subfolder", ""),
+        )
         return Response(
             MISSING_IMAGE_SVG,
             mimetype="image/svg+xml",

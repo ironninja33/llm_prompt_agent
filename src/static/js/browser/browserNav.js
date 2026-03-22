@@ -86,6 +86,7 @@ async function navigateToPath(name, absPath, virtualPath) {
     BrowserState.isSearchActive = false;
     BrowserState.searchQuery = '';
     BrowserState.pollTimestamp = Date.now() / 1000;
+    BrowserState.lastCompletionSeq = null;
 
     // Persist path in URL hash (F5) and sessionStorage (cross-page nav)
     window.location.hash = virtualPath ? encodeURIComponent(virtualPath) : '';

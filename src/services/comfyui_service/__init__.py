@@ -20,6 +20,7 @@ from src.services.comfyui_service.client import (
     get_image,
     get_image_thumbnail,
     delete_image_file,
+    construct_output_path,
     resolve_image_path,
     _resolve_image_path,
     _extract_output_images,
@@ -36,6 +37,7 @@ from src.services.comfyui_service.poller import (
     add_completion_callback,
     get_cached_job_progress,
     get_active_job_ids,
+    get_completion_seq_for_path,
     poll_job,
 )
 
@@ -53,6 +55,7 @@ __all__ = [
     "get_image",
     "get_image_thumbnail",
     "delete_image_file",
+    "construct_output_path",
     "resolve_image_path",
     "_resolve_image_path",
     "_extract_output_images",
@@ -66,5 +69,6 @@ __all__ = [
     "add_completion_callback",
     "get_cached_job_progress",
     "get_active_job_ids",
+    "get_completion_seq_for_path",
     "poll_job",
 ]

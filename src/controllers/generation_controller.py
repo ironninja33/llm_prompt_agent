@@ -141,13 +141,9 @@ def handle_generation_complete(progress):
     """Handle generation completion — store images and trigger embedding.
 
     Registered as a completion callback so DB writes finish before
-    SSE events reach the browser.
-
-    Phase 1 (synchronous, fast): Create image records with file_path=NULL.
-    This ensures fast_register_images finds them by filename and updates
-    file_path on the generation's own record (no scan record created).
-
-    Phase 2 (background thread): Resolve file paths and trigger embedding.
+    SSE events reach the browser.  Constructs file_path deterministically
+    from known data (output_dir + subfolder + filename) — no searching,
+    no retries, no NULL paths.
     """
     gen_model.update_job_status(progress.job_id, "completed")
 
@@ -160,54 +156,25 @@ def handle_generation_complete(progress):
         logger.debug("Images already recorded for job %s, skipping", progress.job_id)
         return
 
-    # Phase 1: Insert records immediately with file_path=NULL
-    image_filenames = []
     for img in progress.output_images:
         filename = img.get("filename", "")
         subfolder = img.get("subfolder", "")
+        file_path = comfyui_service.construct_output_path(filename, subfolder)
+        if not file_path:
+            logger.warning(
+                "Could not construct file_path for %s/%s in job %s "
+                "(no output directories configured?)",
+                subfolder, filename, progress.job_id,
+            )
         gen_model.add_generated_image(
             job_id=progress.job_id,
             filename=filename,
             subfolder=subfolder,
-            file_path=None,
+            file_path=file_path,
         )
-        image_filenames.append((filename, subfolder))
 
-    # Phase 2: Resolve file paths and embed (background thread)
-    _resolve_paths_and_embed(progress.job_id, image_filenames)
-
-
-def _resolve_paths_and_embed(job_id: str, image_filenames: list[tuple[str, str]]):
-    """Resolve file paths for generated images and trigger embedding.
-
-    Runs in a background thread so the completion callback returns fast
-    (no sleeps blocking the poller).
-    """
-    def _do_resolve():
-        for filename, subfolder in image_filenames:
-            file_path = comfyui_service.resolve_image_path(filename, subfolder)
-
-            # Retry briefly — ComfyUI may report completion before file is flushed
-            if file_path is None:
-                for _ in range(3):
-                    time.sleep(0.5)
-                    file_path = comfyui_service.resolve_image_path(filename, subfolder)
-                    if file_path:
-                        break
-
-            if file_path:
-                gen_model.update_image_file_path(job_id, filename, file_path)
-            else:
-                logger.warning(
-                    "Could not resolve file_path for %s/%s in job %s",
-                    subfolder, filename, job_id,
-                )
-
-        # Now that file_paths are resolved, trigger embedding
-        _embed_generated_prompt(job_id)
-
-    thread = threading.Thread(target=_do_resolve, daemon=True)
-    thread.start()
+    # Trigger embedding in background thread (reads file_path from DB)
+    _embed_generated_prompt(progress.job_id)
 
 
 def _embed_generated_prompt(job_id: str):

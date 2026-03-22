@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from src.services.comfyui_service.client import (
+    construct_output_path,
     get_job_progress,
     get_history,
     _extract_output_images,
@@ -54,6 +56,12 @@ _completion_callbacks_lock = threading.Lock()
 # In-memory cache of generation job progress for polling
 _job_progress_cache: dict[str, dict] = {}
 _job_progress_cache_lock = threading.Lock()
+
+# Per-directory completion sequence numbers for browser refresh signalling.
+# Maps normalized absolute dir path -> latest seq.  Grows by one entry per
+# unique output directory (bounded, typically dozens).
+_dir_completion_seqs: dict[str, int] = {}
+_seq_counter: int = 0
 
 
 def add_status_listener(callback: Callable[[GenerationProgress], Any]) -> None:
@@ -133,6 +141,37 @@ def get_active_job_ids() -> list[str]:
     return active
 
 
+def _record_completion_dirs(output_images: list[dict]) -> None:
+    """Record which directories received output from a completed generation."""
+    global _seq_counter
+    dirs: set[str] = set()
+    for img in output_images:
+        file_path = construct_output_path(
+            img.get("filename", ""), img.get("subfolder", ""),
+        )
+        if file_path:
+            dirs.add(os.path.normpath(os.path.dirname(file_path)))
+    if dirs:
+        _seq_counter += 1
+        for d in dirs:
+            _dir_completion_seqs[d] = _seq_counter
+
+
+def get_completion_seq_for_path(abs_dir: str) -> int:
+    """Return the highest completion seq for any dir at or under abs_dir.
+
+    Returns 0 if no completions have ever landed in this subtree.
+    """
+    norm = os.path.normpath(abs_dir)
+    norm_prefix = norm + os.sep
+    best = 0
+    for d, seq in _dir_completion_seqs.items():
+        if d == norm or d.startswith(norm_prefix):
+            if seq > best:
+                best = seq
+    return best
+
+
 # ---------------------------------------------------------------------------
 # Notification helpers (Step 2A -- deduplicate _notify_listeners calls)
 # ---------------------------------------------------------------------------
@@ -170,6 +209,9 @@ def _emit_completed(job_id: str, prompt_id: str, total_images: int) -> list[dict
             cb(progress)
         except Exception as exc:
             logger.error("Error in completion callback: %s", exc)
+
+    # Record which directories received output (for browser poll)
+    _record_completion_dirs(output_images)
 
     # Phase 2: status listeners (SSE, cache)
     _notify_listeners(progress)

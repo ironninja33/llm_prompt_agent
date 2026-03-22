@@ -18,7 +18,6 @@ from src.agent.tools.generation_tools import (
     _get_available_loras,
     _get_output_directories,
     _get_last_generation_settings,
-    _get_last_generated_prompts,
 )
 from src.agent.tools.state_tools import _validate_and_passthrough_state_update
 
@@ -65,8 +64,6 @@ def execute_tool(name: str, args: dict, context: dict | None = None) -> dict:
             return _get_output_directories(args)
         elif name == "get_last_generation_settings":
             return _get_last_generation_settings(args, context or {})
-        elif name == "get_last_generated_prompts":
-            return _get_last_generated_prompts(args, context or {})
         elif name == "update_state":
             return _validate_and_passthrough_state_update(args)
         else:

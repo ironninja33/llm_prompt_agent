@@ -130,12 +130,13 @@ def search_embedding(query: str, offset: int = 0, limit: int = 50) -> dict:
             embedding, source_type="output", k=limit
         )
 
-        if not results or not results.get("ids"):
+        if not results:
             return {"images": [], "total_count": 0, "has_more": False}
 
         # Map doc_ids back to generated_images
+        # search_similar returns list[dict] with "id" key per entry.
         # Doc IDs from ingestion are file paths; from generation are "gen_{job_id}"
-        doc_ids = results["ids"][0] if results["ids"] else []
+        doc_ids = [r["id"] for r in results]
         job_ids = []
         file_paths = []
         for doc_id in doc_ids:

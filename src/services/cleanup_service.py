@@ -791,6 +791,19 @@ def delete_images(image_ids: list[int], reason: str = "space") -> dict:
                     {"jid": img["job_id"]},
                 ).fetchone()._mapping["cnt"]
                 if remaining == 0:
+                    # Patch lineage: reassign children to grandparent
+                    parent_row = conn.execute(
+                        text("SELECT parent_job_id FROM generation_jobs WHERE id = :jid"),
+                        {"jid": img["job_id"]},
+                    ).fetchone()
+                    if parent_row:
+                        conn.execute(
+                            text("""UPDATE generation_jobs
+                                   SET parent_job_id = :grandparent
+                                   WHERE parent_job_id = :jid"""),
+                            {"grandparent": parent_row._mapping["parent_job_id"],
+                             "jid": img["job_id"]},
+                        )
                     conn.execute(
                         text("DELETE FROM generation_settings WHERE job_id = :jid"),
                         {"jid": img["job_id"]},

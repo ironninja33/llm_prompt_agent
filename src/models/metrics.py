@@ -119,6 +119,32 @@ def move_to_graveyard(doc_id: str, reason: str) -> bool:
         return False
 
 
+def get_deletions_for_jobs(job_ids: list[str]) -> dict[str, list[dict]]:
+    """Get deletion records grouped by job_id.
+
+    Returns a dict mapping each job_id to its list of deletion records
+    (each with keys: job_id, image_id, reason).
+    """
+    if not job_ids:
+        return {}
+
+    placeholders = ",".join([f":p{i}" for i in range(len(job_ids))])
+    params = {f"p{i}": v for i, v in enumerate(job_ids)}
+
+    with get_db() as conn:
+        result = conn.execute(
+            text(f"""SELECT job_id, image_id, reason
+                FROM deletion_log
+                WHERE job_id IN ({placeholders})"""),
+            params,
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in result.fetchall():
+            r = dict(row._mapping)
+            grouped.setdefault(r["job_id"], []).append(r)
+        return grouped
+
+
 def get_overall_stats() -> dict:
     """Aggregate stats for the stats overlay."""
     with get_db() as conn:

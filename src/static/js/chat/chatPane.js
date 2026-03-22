@@ -584,6 +584,10 @@ async function sendMessage() {
                     finalizeStreamingMessage(data.message_id, pendingToolCalls);
                     finalizeStreamingGenerationBubbles(data.message_id);
                     setStreaming(false);
+                    if (data.blocked) {
+                        addEditButtonToLastUserMessage();
+                        addDeleteButtonToLastUserMessage();
+                    }
                 }
                 StreamRegistry.cleanup(sendChatId);
                 CrossTabSync.broadcast('stream_done', { chatId: sendChatId, messageId: data.message_id });
@@ -763,6 +767,10 @@ async function submitEditedMessage(messageId) {
                     finalizeStreamingMessage(data.message_id, pendingToolCalls);
                     finalizeStreamingGenerationBubbles(data.message_id);
                     setStreaming(false);
+                    if (data.blocked) {
+                        addEditButtonToLastUserMessage();
+                        addDeleteButtonToLastUserMessage();
+                    }
                 }
                 StreamRegistry.cleanup(sendChatId);
                 CrossTabSync.broadcast('stream_done', { chatId: sendChatId, messageId: data.message_id });

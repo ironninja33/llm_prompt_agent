@@ -317,30 +317,6 @@ TOOL_DECLARATIONS = [
                 },
             ),
         ),
-        types.FunctionDeclaration(
-            name="get_last_generated_prompts",
-            description=(
-                "Get the actual prompts submitted in recent generation jobs from this conversation. "
-                "These may differ from your generated_prompts if the user edited them "
-                "before submitting. Use for refinement when the user wants to tweak "
-                "a previously generated prompt, or to see what edits the user made."
-            ),
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "count": types.Schema(
-                        type="INTEGER",
-                        description="Number of recent jobs to retrieve prompts from (default 1)",
-                        nullable=True,
-                    ),
-                    "current_chat": types.Schema(
-                        type="BOOLEAN",
-                        description="Scope to current chat (default: true). Set false to search across all chats.",
-                        nullable=True,
-                    ),
-                },
-            ),
-        ),
         # ── State management ─────────────────────────────────────────
         types.FunctionDeclaration(
             name="update_state",

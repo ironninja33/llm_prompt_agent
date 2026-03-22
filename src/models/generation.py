@@ -300,9 +300,27 @@ def get_jobs_for_chat(chat_id: str) -> list[dict]:
 def delete_job(job_id: str) -> bool:
     """Delete a generation job (cascades to images and settings).
 
+    Before deleting, patches the lineage linked list: any child jobs
+    that reference this job as parent_job_id are reassigned to this
+    job's parent (grandparent), preserving the regeneration chain.
+
     Returns True if found and deleted.
     """
     with get_db() as conn:
+        # Patch lineage: reassign children to this job's grandparent
+        job = conn.execute(
+            text("SELECT parent_job_id FROM generation_jobs WHERE id = :id"),
+            {"id": job_id},
+        ).fetchone()
+        if job:
+            grandparent = job._mapping["parent_job_id"]
+            conn.execute(
+                text("""UPDATE generation_jobs
+                       SET parent_job_id = :grandparent
+                       WHERE parent_job_id = :id"""),
+                {"grandparent": grandparent, "id": job_id},
+            )
+
         result = conn.execute(
             text("DELETE FROM generation_jobs WHERE id = :id"),
             {"id": job_id},
@@ -324,9 +342,8 @@ def add_generated_image(
 ) -> dict:
     """Add a generated image record to a job. Returns the created image dict.
 
-    Typically called with file_path=NULL immediately on generation completion,
-    then updated via update_image_file_path() once the path is resolved.
-    Uses INSERT OR IGNORE for the (job_id, filename) unique index.
+    file_path should always be set — the image exists on disk by the time
+    this is called.  Uses INSERT OR IGNORE for the unique constraints.
     """
     with get_db() as conn:
         result = conn.execute(
@@ -348,25 +365,6 @@ def add_generated_image(
         "file_path": file_path,
         "created_at": None,
     }
-
-
-def update_image_file_path(job_id: str, filename: str, file_path: str) -> bool:
-    """Set file_path on an existing generated_images record.
-
-    Called after resolve_image_path succeeds.  Idempotent — safe to call
-    even if fast_register_images already set the path.
-
-    Returns True if a record was updated.
-    """
-    with get_db() as conn:
-        result = conn.execute(
-            text("""UPDATE generated_images
-                   SET file_path = :file_path
-                   WHERE job_id = :job_id AND filename = :filename
-                   AND (file_path IS NULL OR file_path = :file_path)"""),
-            {"file_path": file_path, "job_id": job_id, "filename": filename},
-        )
-        return result.rowcount > 0
 
 
 def get_job_images(job_id: str) -> list[dict]:
@@ -468,36 +466,26 @@ def get_latest_job_settings(output_folder: str | None = None,
         return _deserialize_settings(row)
 
 
-def get_recent_job_prompts(count: int = 1,
-                           chat_id: str | None = None) -> list[dict]:
-    """Get prompts and summary settings from the most recent completed jobs.
+def get_jobs_by_message_id(message_id: int) -> list[dict]:
+    """Get all generation jobs for a given message_id, with settings.
 
-    Args:
-        count: Number of recent jobs to retrieve.
-        chat_id: If provided, only considers jobs from this chat.
-
-    Returns list of dicts with keys: job_id, positive_prompt, negative_prompt,
-    base_model, loras, output_folder, seed.
+    Returns all jobs (roots and regenerations) ordered by created_at.
+    Callers can partition by checking parent_job_id IS NULL for roots.
     """
     with get_db() as conn:
-        conditions = ["gj.status = 'completed'"]
-        params = {"limit": count}
-        if chat_id:
-            conditions.append("gj.chat_id = :chat_id")
-            params["chat_id"] = chat_id
-
-        where = " AND ".join(conditions)
         result = conn.execute(
-            text(f"""SELECT gj.id as job_id, gs.positive_prompt, gs.negative_prompt,
-                      gs.base_model, gs.loras, gs.output_folder, gs.seed,
-                      gj.lineage_depth
-               FROM generation_settings gs
-               JOIN generation_jobs gj ON gs.job_id = gj.id
-               WHERE {where}
-               ORDER BY gj.completed_at DESC LIMIT :limit"""),
-            params,
+            text("""SELECT gj.id as job_id, gj.chat_id, gj.message_id, gj.status,
+                      gj.source, gj.parent_job_id, gj.lineage_depth,
+                      gj.created_at, gj.completed_at,
+                      gs.positive_prompt, gs.base_model, gs.loras,
+                      gs.output_folder, gs.seed
+               FROM generation_jobs gj
+               LEFT JOIN generation_settings gs ON gs.job_id = gj.id
+               WHERE gj.message_id = :message_id
+               ORDER BY gj.created_at ASC"""),
+            {"message_id": message_id},
         )
-        results = []
+        jobs = []
         for row in result.fetchall():
             r = row_to_dict(row)
             if r.get("loras"):
@@ -507,8 +495,62 @@ def get_recent_job_prompts(count: int = 1,
                     r["loras"] = []
             else:
                 r["loras"] = []
-            results.append(r)
-        return results
+            jobs.append(r)
+        return jobs
+
+
+def get_child_jobs(parent_job_ids: list[str]) -> dict[str, list[dict]]:
+    """Get child jobs (regenerations) for a list of parent job IDs.
+
+    Returns a dict mapping each parent_job_id to its list of child jobs
+    (with settings). Single query, grouped in Python.
+    """
+    if not parent_job_ids:
+        return {}
+
+    placeholders = ",".join([f":p{i}" for i in range(len(parent_job_ids))])
+    params = {f"p{i}": v for i, v in enumerate(parent_job_ids)}
+
+    with get_db() as conn:
+        result = conn.execute(
+            text(f"""SELECT gj.id as job_id, gj.parent_job_id, gj.status,
+                      gj.lineage_depth, gj.created_at,
+                      gs.positive_prompt, gs.base_model, gs.loras,
+                      gs.output_folder, gs.seed
+               FROM generation_jobs gj
+               LEFT JOIN generation_settings gs ON gs.job_id = gj.id
+               WHERE gj.parent_job_id IN ({placeholders})
+               ORDER BY gj.created_at ASC"""),
+            params,
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in result.fetchall():
+            r = row_to_dict(row)
+            if r.get("loras"):
+                try:
+                    r["loras"] = json.loads(r["loras"])
+                except (json.JSONDecodeError, TypeError):
+                    r["loras"] = []
+            else:
+                r["loras"] = []
+            grouped.setdefault(r["parent_job_id"], []).append(r)
+        return grouped
+
+
+def get_latest_agent_message_id(chat_id: str) -> int | None:
+    """Find the most recent assistant message that has generation jobs."""
+    with get_db() as conn:
+        result = conn.execute(
+            text("""SELECT DISTINCT gj.message_id
+               FROM generation_jobs gj
+               WHERE gj.chat_id = :chat_id
+                 AND gj.message_id IS NOT NULL
+               ORDER BY gj.message_id DESC
+               LIMIT 1"""),
+            {"chat_id": chat_id},
+        )
+        row = result.fetchone()
+        return row._mapping["message_id"] if row else None
 
 
 def get_job_settings(job_id: str) -> dict | None:

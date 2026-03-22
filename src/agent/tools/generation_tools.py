@@ -130,24 +130,145 @@ def _get_last_generation_settings(args: dict, context: dict) -> dict:
     }
 
 
-def _get_last_generated_prompts(args: dict, context: dict) -> dict:
-    """Get prompts from the most recent generation jobs."""
+def _get_generation_outcomes(args: dict, context: dict) -> dict:
+    """Check what happened with previously suggested prompts."""
+    from difflib import SequenceMatcher
     from src.models import generation as gen_model
+    from src.models import metrics
 
-    count = args.get("count", 1) or 1
-    current_chat = args.get("current_chat")
-    if current_chat is None:
-        current_chat = True
-    chat_id = context.get("chat_id") if current_chat else None
-    jobs = gen_model.get_recent_job_prompts(count=count, chat_id=chat_id)
+    chat_id = context.get("chat_id")
+    message_id = args.get("message_id")
 
-    if not jobs:
-        msg = "No completed generation jobs found"
-        if chat_id:
-            msg += " in the current chat"
-        return {"error": msg}
+    # Default to most recent assistant message with generations
+    if not message_id:
+        if not chat_id:
+            return {"error": "No chat context available"}
+        message_id = gen_model.get_latest_agent_message_id(chat_id)
+    if not message_id:
+        return {"error": "No generation jobs found in this chat"}
 
-    return {
-        "count": len(jobs),
-        "jobs": jobs,
-    }
+    # Get all jobs for this message, partition into roots and children
+    all_jobs = gen_model.get_jobs_by_message_id(message_id)
+    if not all_jobs:
+        return {"error": "No generation jobs found for that message"}
+
+    root_jobs = [j for j in all_jobs if not j.get("parent_job_id")]
+    non_roots = [j for j in all_jobs if j.get("parent_job_id")]
+
+    # Build children map: parent_job_id → list of child jobs
+    root_ids = {j["job_id"] for j in root_jobs}
+    children_map: dict[str, list] = {rid: [] for rid in root_ids}
+    for child in non_roots:
+        parent = child["parent_job_id"]
+        if parent in children_map:
+            children_map[parent].append(child)
+        elif len(root_ids) == 1:
+            # Single root — assign orphaned children to it
+            children_map[next(iter(root_ids))].append(child)
+
+    # Collect all job IDs for deletion lookup
+    all_job_ids = [j["job_id"] for j in all_jobs]
+
+    # Get deletion records
+    deletions_map = metrics.get_deletions_for_jobs(all_job_ids)
+
+    # Build outcomes
+    outcomes = []
+    for i, root in enumerate(root_jobs):
+        root_deletions = deletions_map.get(root["job_id"], [])
+        root_images = gen_model.get_job_images(root["job_id"])
+        root_kept = len(root_images)
+        root_deleted = len(root_deletions)
+        root_reasons = _count_reasons(root_deletions)
+
+        # Process children (regenerations)
+        children = children_map.get(root["job_id"], [])
+        total_kept = root_kept
+        total_deleted = root_deleted
+        total_reasons = dict(root_reasons)
+
+        variations = []
+        for child in children:
+            child_deletions = deletions_map.get(child["job_id"], [])
+            child_images = gen_model.get_job_images(child["job_id"])
+            child_kept = len(child_images)
+            child_deleted = len(child_deletions)
+            child_reasons = _count_reasons(child_deletions)
+
+            total_kept += child_kept
+            total_deleted += child_deleted
+            for reason, count in child_reasons.items():
+                total_reasons[reason] = total_reasons.get(reason, 0) + count
+
+            # Check if prompt was modified
+            child_prompt = child.get("positive_prompt", "")
+            root_prompt = root.get("positive_prompt", "")
+            if child_prompt and child_prompt != root_prompt:
+                diff = _compact_diff(root_prompt, child_prompt)
+                variations.append({
+                    "diff": diff,
+                    "total_images": child_kept + child_deleted,
+                    "kept": child_kept,
+                    "deleted": child_deleted,
+                    "deletion_reasons": child_reasons,
+                })
+
+        # Deduplicate variations: group by diff text, keep only the
+        # most recent unique diff (the user's final version is what matters).
+        if variations:
+            seen_diffs: dict[str, dict] = {}
+            for v in variations:
+                seen_diffs[v["diff"]] = v  # last one wins
+            unique = list(seen_diffs.values())
+            # Keep only the last unique variation (the user's final edit)
+            variations = unique[-1:]
+
+        outcome = {
+            "position": i + 1,
+            "total_images": total_kept + total_deleted,
+            "kept": total_kept,
+            "deleted": total_deleted,
+        }
+        if total_reasons:
+            outcome["deletion_reasons"] = total_reasons
+        if variations:
+            outcome["variations"] = variations
+
+        outcomes.append(outcome)
+
+    return {"message_id": message_id, "outcomes": outcomes}
+
+
+def _count_reasons(deletions: list[dict]) -> dict:
+    """Count deletion reasons."""
+    counts: dict[str, int] = {}
+    for d in deletions:
+        reason = d["reason"]
+        counts[reason] = counts.get(reason, 0) + 1
+    return counts
+
+
+def _compact_diff(original: str, modified: str) -> str:
+    """Produce a compact inline diff showing what changed between two prompts."""
+    from difflib import SequenceMatcher
+
+    orig_words = original.split()
+    mod_words = modified.split()
+    matcher = SequenceMatcher(None, orig_words, mod_words)
+
+    parts = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            equal_words = orig_words[i1:i2]
+            if len(equal_words) > 6:
+                parts.append(" ".join(equal_words[:3]) + " ... " + " ".join(equal_words[-3:]))
+            else:
+                parts.append(" ".join(equal_words))
+        elif tag == "replace":
+            parts.append("~~" + " ".join(orig_words[i1:i2]) + "~~ → ++" + " ".join(mod_words[j1:j2]) + "++")
+        elif tag == "delete":
+            parts.append("~~" + " ".join(orig_words[i1:i2]) + "~~")
+        elif tag == "insert":
+            parts.append("++" + " ".join(mod_words[j1:j2]) + "++")
+
+    return " ".join(parts)
