@@ -78,7 +78,7 @@ def start_bulk_parse():
             batch_size = 50
             for i in range(0, len(pending_ids), batch_size):
                 batch = pending_ids[i:i + batch_size]
-                parsed = parse_pending_for_page(batch)
+                parsed, _parsed_imgs = parse_pending_for_page(batch)
                 _parse_progress["parsed"] += parsed
                 logger.debug("Bulk parse progress: %d / %d",
                              _parse_progress["parsed"], _parse_progress["total"])

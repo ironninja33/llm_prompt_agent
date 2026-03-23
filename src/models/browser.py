@@ -121,9 +121,15 @@ def get_directory_contents(abs_dir_path: str, offset: int = 0, limit: int = 50,
 def fast_register_images(dir_path: str) -> int:
     """Fast-register images in a directory without parsing metadata.
 
-    Only uses os.listdir + os.stat — no PIL, no metadata parsing.
-    New files get metadata_status='pending'. Returns count of newly registered images.
+    Uses os.listdir + os.stat to discover new files, then calls
+    register_image() (shared with comfy done flow) for each.
+    On duplicate file_path (comfy done already inserted), bails
+    gracefully via IntegrityError handling inside register_image().
+
+    Returns count of newly registered images.
     """
+    from src.controllers.generation_controller import register_image
+
     if not os.path.isdir(dir_path):
         return 0
 
@@ -176,7 +182,7 @@ def fast_register_images(dir_path: str) -> int:
     if not image_files:
         return 0
 
-    # Batch existence check (chunked at 500)
+    # Batch existence check — bail early for files already in DB
     all_paths = [fp for _, fp in image_files]
     existing_paths = set()
     with get_db() as conn:
@@ -190,7 +196,7 @@ def fast_register_images(dir_path: str) -> int:
             )
             existing_paths.update(row._mapping["file_path"] for row in result.fetchall())
 
-    # Register new files
+    # Register new files via shared register_image() function
     new_files = [(fname, fp) for fname, fp in image_files if fp not in existing_paths]
     if not new_files:
         return 0
@@ -212,7 +218,6 @@ def fast_register_images(dir_path: str) -> int:
             )
             for row in result.fetchall():
                 r = row._mapping
-                # Keep the most recent record per filename (highest id)
                 if r["filename"] not in existing_by_name:
                     existing_by_name[r["filename"]] = dict(r)
 
@@ -224,13 +229,11 @@ def fast_register_images(dir_path: str) -> int:
                 stat = os.stat(filepath)
                 file_size = stat.st_size
                 file_mtime_epoch = stat.st_mtime
-                file_mtime = datetime.fromtimestamp(file_mtime_epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             except OSError:
                 continue
 
-            # Skip very recent files — likely from an in-progress generation.
-            # The completion callback will create the proper record with the
-            # correct job_id and settings.
+            # Skip very recent files — likely still being written by ComfyUI.
+            # The comfy done flow will handle registration + embedding.
             if now - file_mtime_epoch < 2.0 and fname not in existing_by_name:
                 continue
 
@@ -245,43 +248,33 @@ def fast_register_images(dir_path: str) -> int:
                 )
                 count += 1
             else:
-                # Truly new file — create job + image record
-                job_id = str(uuid.uuid4())
-                conn.execute(
-                    text("""INSERT OR IGNORE INTO generation_jobs
-                       (id, chat_id, message_id, prompt_id, status, source, created_at, completed_at)
-                       VALUES (:id, NULL, NULL, NULL, 'completed', 'scan', :created_at, :completed_at)"""),
-                    {"id": job_id, "created_at": file_mtime, "completed_at": file_mtime},
+                # New file — use shared register_image (job_id=None → scan job)
+                result = register_image(
+                    file_path=filepath,
+                    filename=fname,
+                    job_id=None,
+                    file_size=file_size,
                 )
-                result = conn.execute(
-                    text("""INSERT OR IGNORE INTO generated_images
-                       (job_id, filename, subfolder, file_size, file_path, metadata_status)
-                       VALUES (:job_id, :filename, '', :file_size, :file_path, 'pending')"""),
-                    {"job_id": job_id, "filename": fname, "file_size": file_size, "file_path": filepath},
-                )
-                if result.rowcount > 0:
+                if result == "inserted":
                     count += 1
-                else:
-                    # Image already existed (race condition), clean up orphan job
-                    conn.execute(
-                        text("DELETE FROM generation_jobs WHERE id = :id"),
-                        {"id": job_id},
-                    )
+                # "exists" → comfy done already handled it, skip
 
     return count
 
 
-def parse_pending_for_page(image_ids: list[int]) -> int:
+def parse_pending_for_page(image_ids: list[int]) -> tuple[int, list[dict]]:
     """Parse metadata for images that have metadata_status='pending'.
 
     For each pending image: parse the file, INSERT generation_settings,
     UPDATE metadata_status to 'complete'. If parse fails, insert minimal
     empty settings and still mark complete (no infinite retry).
 
-    Returns count of images that were parsed.
+    Returns (count, parsed_images) where parsed_images is a list of
+    {"file_path": str, "prompt": str} for images that were successfully
+    parsed (used by browser_controller to trigger embedding).
     """
     if not image_ids:
-        return 0
+        return 0, []
 
     placeholders = ",".join([f":p{i}" for i in range(len(image_ids))])
     params = {f"p{i}": v for i, v in enumerate(image_ids)}
@@ -296,9 +289,10 @@ def parse_pending_for_page(image_ids: list[int]) -> int:
         pending = result.fetchall()
 
     if not pending:
-        return 0
+        return 0, []
 
     count = 0
+    parsed_images = []
     for row in pending:
         r = row._mapping
         image_id = r["id"]
@@ -359,8 +353,10 @@ def parse_pending_for_page(image_ids: list[int]) -> int:
                 {"id": image_id},
             )
         count += 1
+        if parsed and parsed.prompt and filepath:
+            parsed_images.append({"file_path": filepath, "prompt": parsed.prompt})
 
-    return count
+    return count, parsed_images
 
 
 def get_directory_previews(dir_path: str, count: int = 4) -> list[dict]:

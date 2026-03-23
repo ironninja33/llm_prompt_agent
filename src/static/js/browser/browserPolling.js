@@ -24,6 +24,7 @@ function startBrowserPolling() {
         } else if (serverSeq !== BrowserState.lastCompletionSeq) {
             BrowserState.lastCompletionSeq = serverSeq;
             BrowserState.offset = 0;
+            BrowserState.pollTimestamp = Date.now() / 1000;
             loadBrowserContents();
             return;
         }

@@ -323,10 +323,12 @@ def delete_generated_image(job_id, image_id):
                 file_path = dup["file_path"]
                 break
 
+    file_deleted = False
     if file_path and os.path.isfile(file_path):
         try:
             os.remove(file_path)
             logger.info("Deleted image file: %s", file_path)
+            file_deleted = True
         except OSError as exc:
             logger.warning("Error deleting image file %s: %s", file_path, exc)
             return jsonify({"error": "Failed to delete image file from disk"}), 500
@@ -337,9 +339,19 @@ def delete_generated_image(job_id, image_id):
         )
         if not deleted_from_disk:
             return jsonify({"error": "Failed to delete image file from disk"}), 500
+        file_deleted = True
 
-    # Clean up DB records (image row, vector store embedding)
-    _cleanup_missing_image(job_id, image_id, file_path=image.get("file_path"))
+    # Clean up DB record and vector store embedding
+    if file_deleted:
+        # Normal deletion — file was found and removed, quiet cleanup
+        gen_model.delete_image(image_id)
+        if image.get("file_path"):
+            from src.models import vector_store
+            doc_id = os.path.normpath(image["file_path"])
+            vector_store.delete_document(doc_id, "output")
+    else:
+        # File missing from disk — warn and clean up
+        _cleanup_missing_image(job_id, image_id, file_path=image.get("file_path"))
 
     # Remove duplicate records — the file is gone so these are orphaned
     if duplicate_job_ids:

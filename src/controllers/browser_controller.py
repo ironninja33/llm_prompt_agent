@@ -60,15 +60,23 @@ def get_directory_contents(virtual_path: str, offset: int = 0, limit: int = 50,
 
     # Phase 3: Parse metadata for any pending images on this page
     pending_ids = [img["id"] for img in result["images"] if img.get("metadata_status") == "pending"]
+    parsed_images = []
     if pending_ids:
         try:
-            parsed_count = browser_model.parse_pending_for_page(pending_ids)
+            parsed_count, parsed_images = browser_model.parse_pending_for_page(pending_ids)
             if parsed_count > 0:
                 logger.info("Parsed metadata for %d images", parsed_count)
                 # Phase 4: Re-fetch page with full metadata
                 result = browser_model.get_directory_contents(abs_path, offset, limit, sort=sort)
         except Exception as e:
             logger.warning("Error parsing pending metadata: %s", e)
+
+    # Phase 3b: Trigger embedding for newly parsed images
+    if parsed_images:
+        from src.controllers.generation_controller import embed_image
+        for pi in parsed_images:
+            if pi.get("prompt") and pi.get("file_path"):
+                embed_image(pi["file_path"], pi["prompt"])
 
     # Derive output_folder from actual file location so it's always correct
     # even if the stored DB value is stale from a previous move/reorg.

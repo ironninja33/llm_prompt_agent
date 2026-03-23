@@ -367,6 +367,59 @@ def add_generated_image(
     }
 
 
+def add_generated_image_strict(
+    job_id: str,
+    filename: str,
+    subfolder: str = "",
+    file_path: str | None = None,
+    file_size: int | None = None,
+    metadata_status: str = "pending",
+) -> dict:
+    """Add a generated image record — raises IntegrityError on duplicate file_path.
+
+    Unlike add_generated_image (INSERT OR IGNORE), this uses a plain INSERT
+    so the caller can catch the duplicate and take explicit action.
+
+    metadata_status: 'pending' for scan records (need file-based parsing),
+                     'complete' for comfy done records (already have settings).
+    """
+    with get_db() as conn:
+        result = conn.execute(
+            text("""INSERT INTO generated_images
+                   (job_id, filename, subfolder, file_path, file_size, metadata_status)
+               VALUES (:job_id, :filename, :subfolder, :file_path, :file_size, :metadata_status)"""),
+            {"job_id": job_id, "filename": filename, "subfolder": subfolder,
+             "file_path": file_path, "file_size": file_size,
+             "metadata_status": metadata_status},
+        )
+        image_id = result.lastrowid
+
+    return {
+        "id": image_id,
+        "job_id": job_id,
+        "filename": filename,
+        "subfolder": subfolder,
+        "file_path": file_path,
+        "file_size": file_size,
+    }
+
+
+def update_image_job(file_path: str, new_job_id: str, subfolder: str = "") -> bool:
+    """Update a generated image's job_id and subfolder by file_path.
+
+    Used by the comfy done flow to adopt a scan record created by the mtime flow.
+    Returns True if a row was updated.
+    """
+    with get_db() as conn:
+        result = conn.execute(
+            text("""UPDATE generated_images
+                   SET job_id = :job_id, subfolder = :subfolder
+                   WHERE file_path = :file_path"""),
+            {"job_id": new_job_id, "subfolder": subfolder, "file_path": file_path},
+        )
+        return result.rowcount > 0
+
+
 def get_job_images(job_id: str) -> list[dict]:
     """Get all images for a job."""
     with get_db() as conn:
