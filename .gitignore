@@ -17,3 +17,4 @@ summarizer_concept_overlays
 CLAUDE.md
 src/experiments/tool_study/output/
 chroma_db.backup/
+folder_rename_mapping*.tsv
