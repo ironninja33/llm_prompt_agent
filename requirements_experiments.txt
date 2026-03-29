@@ -5,3 +5,7 @@ tqdm
 # KeyBERT experiment
 keybert>=0.8.0
 sentence-transformers>=2.2.0
+
+# Image quality experiment
+pyiqa>=0.1.10
+image-reward @ git+https://github.com/THUDM/ImageReward.git  # PyPI v1.5 broken with transformers>=4.45

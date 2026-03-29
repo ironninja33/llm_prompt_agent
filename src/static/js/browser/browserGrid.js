@@ -143,6 +143,12 @@ function createBrowserImageThumbnail(imageData) {
 
     wrapper.appendChild(meta);
 
+    // Parameter display container (populated by updateBrowserParamDisplay)
+    const params = document.createElement('div');
+    params.className = 'browser-img-params';
+    params.dataset.settings = JSON.stringify(imageData.settings || {});
+    wrapper.appendChild(params);
+
     return wrapper;
 }
 
@@ -182,6 +188,9 @@ function renderBrowserGrid(directories, images) {
             emptyEl.classList.add('hidden');
         }
     }
+
+    // Refresh parameter display for newly rendered images
+    if (typeof updateBrowserParamDisplay === 'function') updateBrowserParamDisplay();
 }
 
 /**
@@ -196,6 +205,9 @@ function appendBrowserItems(images) {
         fragment.appendChild(createBrowserImageThumbnail(imageData));
     });
     grid.appendChild(fragment);
+
+    // Refresh parameter display for newly rendered images
+    if (typeof updateBrowserParamDisplay === 'function') updateBrowserParamDisplay();
 }
 
 /**

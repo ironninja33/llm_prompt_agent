@@ -1,0 +1,17 @@
+Here are baseline sample image captions from a folder labeled "{folder_label}" with a tag "{concept}":
+
+{difference_prompts}
+
+Here is a second group of image captions from the same folder but with some differences:
+
+{sample_prompts}
+
+Summarize the shared theme(s) present in the second group that differentiate them from the first. Key areas to focus on include:
+- People or characters, including their age, race and body type
+- Settings or backgrounds
+- Poses and actions
+- Sex positions
+- Camera angles and lighting
+- Clothes
+
+Use ten or fewer words in a short sentence, focusing on high information density and uniqueness from the baseline. Avoid using the term "{concept}" in the summary.

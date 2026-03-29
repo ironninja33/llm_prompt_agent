@@ -51,6 +51,13 @@ def comfyui_output_folders():
     return jsonify(folders)
 
 
+@api_bp.route("/comfyui/sampler-options", methods=["GET"])
+def comfyui_sampler_options():
+    """Get available samplers/schedulers for the active workflow's sampler node."""
+    from src.controllers import workflow_controller
+    return jsonify(workflow_controller.get_sampler_options())
+
+
 @api_bp.route("/comfyui/workflow-definitions", methods=["GET"])
 def get_workflow_definitions():
     """List available workflow definitions and their field schemas."""

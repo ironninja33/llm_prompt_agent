@@ -6,7 +6,15 @@
                 <h2>Generate Image</h2>
                 <button class="btn-icon" onclick="closeGenerationOverlay()" title="Close">&times;</button>
             </div>
-            <div class="modal-body generation-body">
+
+            <!-- Tab bar -->
+            <div class="gen-tabs">
+                <button class="gen-tab active" data-gen-tab="single" onclick="switchGenTab(this)">Single</button>
+                <button class="gen-tab" data-gen-tab="grid" onclick="switchGenTab(this)">Grid</button>
+            </div>
+
+            <!-- ── Single tab (unchanged) ──────────────────────────── -->
+            <div id="gen-tab-single" class="gen-tab-pane modal-body generation-body">
                 <label>Prompt
                     <textarea id="gen-prompt" rows="5" placeholder="Positive prompt..."></textarea>
                 </label>
@@ -31,13 +39,6 @@
                 </div>
 
                 <div class="gen-row">
-                    <label class="gen-field gen-toggle-field">
-                        <input type="checkbox" id="gen-auto-organize">
-                        Auto-organize into cluster subfolder
-                    </label>
-                </div>
-
-                <div class="gen-row">
                     <label class="gen-field-half">Seed
                         <div class="input-group">
                             <input type="number" id="gen-seed" value="-1" min="-1">
@@ -50,6 +51,85 @@
                     </label>
                 </div>
             </div>
+
+            <!-- ── Grid tab ────────────────────────────────────────── -->
+            <div id="gen-tab-grid" class="gen-tab-pane modal-body generation-body hidden">
+                <label>Prompt
+                    <textarea id="gen-grid-prompt" rows="4" placeholder="Positive prompt..."></textarea>
+                </label>
+
+                <div class="gen-row">
+                    <label class="gen-field-wide"><span>Base Model(s) <span class="gen-required">*</span></span>
+                        <div id="gen-grid-models"></div>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-wide">LoRA(s)
+                        <div id="gen-grid-loras"></div>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-wide"><span>Sampler(s) <span class="gen-required">*</span></span>
+                        <div id="gen-grid-samplers"></div>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-wide"><span>Scheduler(s) <span class="gen-required">*</span></span>
+                        <div id="gen-grid-schedulers"></div>
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field">Output Folder
+                        <input type="text" id="gen-grid-output-folder" placeholder="subfolder name" list="gen-folder-list">
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-third">CFG Start
+                        <input type="number" id="gen-grid-cfg-start" step="0.5" min="0">
+                    </label>
+                    <label class="gen-field-third">CFG Stop
+                        <input type="number" id="gen-grid-cfg-stop" step="0.5" min="0">
+                    </label>
+                    <label class="gen-field-third">CFG Step
+                        <input type="number" id="gen-grid-cfg-step" step="0.5" min="0" value="0">
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-third">Steps Start
+                        <input type="number" id="gen-grid-steps-start" min="1" step="1">
+                    </label>
+                    <label class="gen-field-third">Steps Stop
+                        <input type="number" id="gen-grid-steps-stop" min="1" step="1">
+                    </label>
+                    <label class="gen-field-third">Steps Step
+                        <input type="number" id="gen-grid-steps-step" min="0" step="1" value="0">
+                    </label>
+                </div>
+
+                <div class="gen-row">
+                    <label class="gen-field-half">Seeds (unique images)
+                        <input type="number" id="gen-grid-num-seeds" value="1" min="1" max="50">
+                    </label>
+                    <div class="gen-field-half gen-grid-summary">
+                        <span id="gen-grid-combo-count">0 combinations</span>
+                        <span id="gen-grid-total-count">0 total images</span>
+                    </div>
+                </div>
+
+                <div class="gen-row" id="gen-grid-reuse-row" style="display:none">
+                    <label class="gen-field-wide gen-reuse-label">
+                        <input type="checkbox" id="gen-grid-reuse-seeds">
+                        <span id="gen-grid-reuse-text">Reuse seeds from previous run</span>
+                    </label>
+                </div>
+            </div>
+
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="closeGenerationOverlay()">Cancel</button>
                 <button class="btn-primary" id="gen-submit-btn" onclick="submitGeneration()">Generate</button>

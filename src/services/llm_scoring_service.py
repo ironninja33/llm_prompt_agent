@@ -319,14 +319,17 @@ def _process_batch_results(batch_db_id: int, batch_job, meta: dict) -> int:
                 scoring_model.upsert_quality_score(
                     image_id=image_id,
                     overall=_clamp(scores.get("overall", 0.5)),
-                    character=_clamp(scores.get("character", 0.5)),
-                    composition=_clamp(scores.get("composition", 0.5)),
-                    artifacts=_clamp(scores.get("artifacts", 0.5)),
-                    theme=_clamp(scores.get("theme", 0.5)),
-                    detail=_clamp(scores.get("detail", 0.5)),
-                    expression=_clamp(scores.get("expression", 0.5)),
-                    notes=scores.get("notes"),
+                    raw_score=_clamp(scores.get("overall", 0.5)),
                     model_used=meta.get("model", "gemini"),
+                    dimensions={
+                        "character": _clamp(scores.get("character", 0.5)),
+                        "composition": _clamp(scores.get("composition", 0.5)),
+                        "artifacts": _clamp(scores.get("artifacts", 0.5)),
+                        "theme": _clamp(scores.get("theme", 0.5)),
+                        "detail": _clamp(scores.get("detail", 0.5)),
+                        "expression": _clamp(scores.get("expression", 0.5)),
+                    },
+                    notes=scores.get("notes"),
                 )
                 scored += 1
             except (json.JSONDecodeError, ValueError, KeyError) as e:

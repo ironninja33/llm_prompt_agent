@@ -1,7 +1,6 @@
-"""Cleanup controller — orchestrate triage, deletion, keep-flagging, and batch scoring."""
+"""Cleanup controller — orchestrate triage, deletion, keep-flagging, and scoring."""
 
 import logging
-import threading
 
 from src.services import cleanup_service
 from src.models import scoring as scoring_model
@@ -21,7 +20,7 @@ def get_triage_page(folder: str | None, wave: int, offset: int,
     Images are returned in keep_score ascending order (most deletable first).
     Each image dict includes job_id, image_id, filename, file_path, file_size,
     output_folder, keep_score, wave, seed, positive_prompt (truncated), and
-    llm_overall (if scored).
+    quality_overall (if scored).
     """
     all_scores = cleanup_service.compute_keep_scores(
         folder_filter=folder, dupe_groups=dupe_groups)
@@ -91,7 +90,8 @@ def get_near_duplicates(folder: str | None = None) -> list[dict]:
     return cleanup_service.detect_near_duplicates(folder_filter=folder)
 
 
-def get_triage_data(folder: str | None, wave: int) -> dict:
+def get_triage_data(folder: str | None, wave: int,
+                    sort_order: str = "desc") -> dict:
     """Get triage images and near-duplicate groups in one call.
 
     Computes dupe groups once, then passes them to keep-score computation
@@ -110,6 +110,17 @@ def get_triage_data(folder: str | None, wave: int) -> dict:
         if w in wave_counts:
             wave_counts[w] += 1
 
+    # Sort wave images
+    reverse = (sort_order == "desc")
+    wave_images.sort(key=lambda s: s["keep_score"], reverse=reverse)
+
+    # Sort dupe group members by quality score (None goes last)
+    for group in dupe_groups:
+        group["members"].sort(
+            key=lambda m: m.get("quality_overall") if m.get("quality_overall") is not None else (-1 if reverse else 2),
+            reverse=reverse,
+        )
+
     return {
         "images": wave_images,
         "dupe_groups": dupe_groups,
@@ -117,96 +128,22 @@ def get_triage_data(folder: str | None, wave: int) -> dict:
     }
 
 
-def get_batch_status() -> dict | None:
-    """Get the most recent scoring batch status."""
-    batch = scoring_model.get_most_recent_batch()
-    if not batch:
-        return None
-    return {
-        "id": batch["id"],
-        "batch_id": batch["batch_id"],
-        "status": batch["status"],
-        "total_images": batch["total_images"],
-        "scored_count": batch["scored_count"],
-        "submitted_at": batch.get("submitted_at"),
-        "completed_at": batch.get("completed_at"),
-    }
+def start_scoring() -> dict:
+    """Start scoring all unscored images with ImageReward.
 
-
-def get_active_batch() -> dict | None:
-    """Get the active (non-terminal) scoring batch, if any."""
-    batch = scoring_model.get_active_batch()
-    if not batch:
-        return None
-    return {
-        "id": batch["id"],
-        "batch_id": batch["batch_id"],
-        "status": batch["status"],
-        "total_images": batch["total_images"],
-        "scored_count": batch["scored_count"],
-    }
-
-
-def submit_scoring(mode: str, wave: int,
-                   folder: str | None = None) -> dict:
-    """Submit a scoring batch.
-
-    mode: 'near-dupes' (score only near-duplicate groups) or 'all' (score all in wave).
-    wave: which wave to score.
+    Returns {ok: True} or {error: str}.
     """
-    from src.services import scoring_service
+    from src.services import image_reward_scoring_service
 
-    # Check for active batch (wave gating)
-    active = scoring_model.get_active_batch()
-    if active:
-        return {"error": "A scoring batch is already active. Wait for it to complete.",
-                "batch_id": active["id"]}
+    progress = image_reward_scoring_service.get_scoring_progress()
+    if progress["running"]:
+        return {"error": "Scoring is already in progress"}
 
-    # Determine which image IDs to score
-    all_scores = cleanup_service.compute_keep_scores(folder_filter=folder)
-    wave_images = [s for s in all_scores if s["wave"] == wave]
-
-    if mode == "near-dupes":
-        near_dupes = cleanup_service.detect_near_duplicates(folder_filter=folder)
-        dupe_ids = set()
-        for group in near_dupes:
-            dupe_ids.update(group["image_ids"])
-        image_ids = [s["image_id"] for s in wave_images if s["image_id"] in dupe_ids]
-    else:
-        image_ids = [s["image_id"] for s in wave_images]
-
-    if not image_ids:
-        return {"error": "No images to score in this wave/mode"}
-
-    # Submit in background thread
-    def _run():
-        scoring_service.submit_scoring_batch(image_ids)
-
-    thread = threading.Thread(target=_run, daemon=True, name="scoring-batch")
-    thread.start()
-
-    return {"ok": True, "image_count": len(image_ids)}
-
-
-def poll_scoring_batch() -> dict:
-    """Poll the most recent scoring batch for status updates."""
-    from src.services import scoring_service
-
-    batch = scoring_model.get_most_recent_batch()
-    if not batch:
-        return {"status": "none"}
-
-    if batch["status"] in ("completed", "failed"):
-        return {
-            "status": batch["status"],
-            "scored_count": batch["scored_count"],
-            "total_images": batch["total_images"],
-        }
-
-    return scoring_service.poll_batch_status(batch["id"])
+    image_reward_scoring_service.start_scoring_all_unscored()
+    return {"ok": True}
 
 
 def get_scoring_progress() -> dict:
-    """Get upload/submission progress for the current scoring batch."""
-    from src.services import scoring_service
-    return scoring_service.get_scoring_progress()
+    """Get ImageReward scoring progress."""
+    from src.services import image_reward_scoring_service
+    return image_reward_scoring_service.get_scoring_progress()

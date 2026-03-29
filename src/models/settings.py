@@ -177,7 +177,6 @@ def insert_default_settings(conn):
         "comfyui_default_cfg": "",
         "comfyui_default_scheduler": "",
         "comfyui_default_steps": "",
-        "auto_organize_output": "false",
         "summarizer_model": "Qwen/Qwen3-4B-FP8",
         "summarizer_max_tags": "5",
         "summarizer_max_words": "12",

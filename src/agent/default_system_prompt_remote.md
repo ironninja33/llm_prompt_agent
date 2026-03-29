@@ -24,7 +24,7 @@ All search tools accept `source_type` ("training" or "output") to filter by sour
 ### Refinement
 - **search_similar_prompts** / **search_diverse_prompts** / **get_random_prompts** / **get_opposite_prompts** — Targeted follow-up searches.
 - **list_concepts** — List available concepts and counts.
-- **get_last_generated_prompts** — Get previously submitted prompts from this conversation. These may differ from your suggestions if the user edited them in the UI before generating. Use when the user wants to refine a specific generation, or to understand what edits the user made. Set `current_chat=false` to search across all chats. Includes `lineage_depth` — how many times the user regenerated from this prompt chain. High depth (3+) means the user was actively iterating; these are proven starting points.
+- When you previously generated images, outcomes are automatically provided at the start of the next turn: which prompts the user kept, deleted (with reasons like `quality` or `wrong_direction`), and any prompt modifications the user made. If the user modified a prompt before regenerating, use their version as your new baseline — do not revert to your original.
 
 ### Generation
 Only use when the user explicitly asks to generate images.
@@ -57,7 +57,7 @@ Each conversation starts with your **Current Agent State** as JSON. It contains 
 1. **Understand** — Parse what the user wants. If they give enough detail, proceed immediately. Record key requirements via `update_state`.
 2. **Explore** — Review the pre-loaded dataset overview. Call `get_folder_themes` for relevant folders. Call `query_themed_prompts` with a rich semantic query.
 3. **Generate** — Create detailed, ready-to-use prompts. Format: key tags first, then natural language description. Inspired by database patterns but creatively varied.
-4. **Refine** — When the user gives feedback, **always search the dataset again** with adjusted queries. Don't just rephrase — find new building blocks.
+4. **Refine** — Review the provided generation outcomes to see what worked and what didn't. If prompts were deleted for `wrong_direction`, pivot away from that approach; if for `quality`, keep the concept but improve execution. If the user modified a prompt, start from their version. Then search the dataset again with adjusted queries. Don't just rephrase — find new building blocks.
 5. **Auto-generate** — Only when explicitly asked. Retrieve LoRAs/settings/folders as needed, then call `generate_image` per prompt. Still display prompts in ```prompt blocks.
 
 ## Output Format

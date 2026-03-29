@@ -304,4 +304,26 @@ MIGRATIONS = [
         """CREATE INDEX idx_deletion_log_reason ON deletion_log(reason)""",
         """CREATE INDEX idx_deletion_log_folder ON deletion_log(output_folder)""",
     ]),
+    (18, "Redesign image_quality_scores for multi-model scoring (ImageReward)", [
+        """CREATE TABLE image_quality_scores_new (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            image_id    INTEGER NOT NULL UNIQUE REFERENCES generated_images(id) ON DELETE CASCADE,
+            overall     REAL NOT NULL,
+            raw_score   REAL,
+            model_used  TEXT NOT NULL,
+            dimensions  TEXT,
+            notes       TEXT,
+            scored_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """INSERT INTO image_quality_scores_new
+            (id, image_id, overall, raw_score, model_used, dimensions, notes, scored_at)
+            SELECT id, image_id, overall, overall, model_used,
+                json_object('character', character, 'composition', composition,
+                            'artifacts', artifacts, 'theme', theme,
+                            'detail', detail, 'expression', expression),
+                notes, scored_at
+            FROM image_quality_scores""",
+        """DROP TABLE image_quality_scores""",
+        """ALTER TABLE image_quality_scores_new RENAME TO image_quality_scores""",
+    ]),
 ]

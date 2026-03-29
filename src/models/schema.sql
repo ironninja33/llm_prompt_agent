@@ -1,5 +1,5 @@
 -- Reference only. Canonical schema defined by migrations.py.
--- This file represents the final state after all 16 migrations are applied.
+-- This file represents the final state after all 18 migrations are applied.
 -- It is not executed by the application.
 
 CREATE TABLE schema_version (
@@ -165,14 +165,10 @@ CREATE TABLE image_quality_scores (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     image_id    INTEGER NOT NULL UNIQUE REFERENCES generated_images(id) ON DELETE CASCADE,
     overall     REAL NOT NULL,
-    character   REAL NOT NULL,
-    composition REAL NOT NULL,
-    artifacts   REAL NOT NULL,
-    theme       REAL NOT NULL,
-    detail      REAL NOT NULL,
-    expression  REAL NOT NULL,
-    notes       TEXT,
+    raw_score   REAL,
     model_used  TEXT NOT NULL,
+    dimensions  TEXT,
+    notes       TEXT,
     scored_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

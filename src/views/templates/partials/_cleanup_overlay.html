@@ -18,10 +18,16 @@
                 <span id="cleanup-parse-label" class="cleanup-parse-label">Parsing metadata...</span>
             </div>
 
-            <!-- Batch scoring status (shown when a Gemini batch is active) -->
-            <div id="cleanup-batch-bar" class="cleanup-batch-bar hidden">
-                <div class="cleanup-batch-indicator"></div>
-                <span id="cleanup-batch-label" class="cleanup-batch-label">Scoring batch processing...</span>
+            <!-- Blocking overlay shown during ImageReward scoring -->
+            <div id="cleanup-scoring-blocker" class="cleanup-parse-blocker hidden">
+                <div class="cleanup-parse-blocker-content">
+                    <div class="cleanup-parse-blocker-spinner"></div>
+                    <h3 id="cleanup-scoring-blocker-title">Scoring images...</h3>
+                    <div class="cleanup-parse-blocker-bar">
+                        <div id="cleanup-scoring-blocker-fill" class="cleanup-parse-fill"></div>
+                    </div>
+                    <p id="cleanup-scoring-blocker-label" class="cleanup-parse-label">Preparing...</p>
+                </div>
             </div>
 
             <!-- Blocking overlay shown during metadata parse -->
@@ -74,6 +80,10 @@
                         <button class="cleanup-wave-tab" data-wave="3" onclick="switchCleanupWave(3)">
                             Wave 3 <span id="cleanup-wave3-count" class="cleanup-wave-count">0</span>
                         </button>
+                        <div class="cleanup-wave-actions">
+                            <button class="btn-small" id="cleanup-score-all-btn" title="Score all unscored images with ImageReward">Score All</button>
+                            <button class="btn-small cleanup-sort-btn" id="cleanup-sort-btn" title="Toggle sort order">Score &#9660;</button>
+                        </div>
                     </div>
 
                     <!-- Scrollable content area -->

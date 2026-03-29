@@ -43,8 +43,8 @@ def unified_poll():
     if "cleanup_parse" in modules:
         result["cleanup_parse"] = _get_cleanup_parse_status()
 
-    if "cleanup_batch" in modules:
-        result["cleanup_batch"] = _get_cleanup_batch_status()
+    if "cleanup_scoring" in modules:
+        result["cleanup_scoring"] = _get_cleanup_scoring_status()
 
     # Always include active generation job IDs for fresh-tab discovery
     from src.services import comfyui_service
@@ -122,7 +122,7 @@ def _get_cleanup_parse_status() -> dict:
     return cleanup_controller.get_parse_status()
 
 
-def _get_cleanup_batch_status() -> dict:
-    """Get cleanup batch scoring status."""
+def _get_cleanup_scoring_status() -> dict:
+    """Get ImageReward scoring progress."""
     from src.controllers import cleanup_controller
-    return {"batch": cleanup_controller.get_batch_status()}
+    return cleanup_controller.get_scoring_progress()

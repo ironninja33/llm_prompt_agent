@@ -118,6 +118,132 @@ def submit_generation(chat_id: str | None, message_id: int | None, settings: dic
         return job
 
 
+def submit_grid_generation(chat_id: str | None, message_id: int | None,
+                           grid_settings: dict, source: str = "chat",
+                           session_id: str | None = None,
+                           parent_job_id: str | None = None) -> dict:
+    """Submit multiple generation jobs for a parameter grid.
+
+    Computes the Cartesian product of all parameter combinations,
+    generates N random seeds (or reuses provided ones), and calls
+    submit_generation() for each seed × combination.
+
+    Returns dict with 'jobs', 'total_combinations', 'total_images',
+    and 'seeds_used'.
+    """
+    combinations = _generate_parameter_combinations(grid_settings)
+
+    # Use provided seeds or generate new ones
+    provided_seeds = grid_settings.get("seeds")
+    if provided_seeds and isinstance(provided_seeds, list):
+        seeds = [int(s) for s in provided_seeds]
+    else:
+        num_seeds = grid_settings.get("num_seeds", 1)
+        seeds = [random.randint(0, 1125899906842624) for _ in range(num_seeds)]
+
+    jobs = []
+    for seed in seeds:
+        for combo in combinations:
+            settings = {
+                "positive_prompt": grid_settings.get("positive_prompt", ""),
+                "negative_prompt": grid_settings.get("negative_prompt", ""),
+                "output_folder": grid_settings.get("output_folder", ""),
+                "base_model": combo["base_model"],
+                "loras": combo["loras"],
+                "sampler": combo["sampler"],
+                "scheduler": combo["scheduler"],
+                "cfg_scale": combo["cfg_scale"],
+                "steps": combo["steps"],
+                "seed": seed,
+                "num_images": 1,
+            }
+            job = submit_generation(
+                chat_id, message_id, settings, source,
+                session_id, parent_job_id,
+            )
+            jobs.append(job)
+
+    return {
+        "jobs": jobs,
+        "total_combinations": len(combinations),
+        "total_images": len(seeds) * len(combinations),
+        "seeds_used": seeds,
+    }
+
+
+def _generate_parameter_combinations(grid_settings: dict) -> list[dict]:
+    """Generate Cartesian product of all parameter values.
+
+    Each multi-select (models, loras, samplers, schedulers) contributes
+    ONE value per combination.  LoRAs are individual — each combination
+    uses exactly one LoRA from the selection.
+    """
+    base_models = grid_settings.get("base_models", [])
+    samplers = grid_settings.get("samplers", [])
+    schedulers = grid_settings.get("schedulers", [])
+
+    lora_selections = grid_settings.get("loras", [])
+    lora_combos = [[lora] for lora in lora_selections] if lora_selections else [[]]
+
+    cfg_values = _expand_float_range(
+        grid_settings.get("cfg_range", {}).get("start"),
+        grid_settings.get("cfg_range", {}).get("stop"),
+        grid_settings.get("cfg_range", {}).get("step"),
+    )
+    steps_values = _expand_int_range(
+        grid_settings.get("steps_range", {}).get("start"),
+        grid_settings.get("steps_range", {}).get("stop"),
+        grid_settings.get("steps_range", {}).get("step"),
+    )
+
+    combinations = []
+    for model in base_models:
+        for loras in lora_combos:
+            for sampler in samplers:
+                for scheduler in schedulers:
+                    for cfg in cfg_values:
+                        for steps in steps_values:
+                            combinations.append({
+                                "base_model": model,
+                                "loras": loras,
+                                "sampler": sampler,
+                                "scheduler": scheduler,
+                                "cfg_scale": cfg,
+                                "steps": steps,
+                            })
+    return combinations
+
+
+def _expand_float_range(start, stop, step):
+    """Expand [start, stop] inclusive with increment. Step=0/None → [start]."""
+    if start is None:
+        return [None]
+    if stop is None or step is None or step == 0:
+        return [start]
+    values = []
+    current = float(start)
+    stop_f = float(stop)
+    step_f = float(step)
+    while current <= stop_f + 1e-9:
+        values.append(round(current, 4))
+        current += step_f
+    if values and abs(values[-1] - stop_f) > 1e-9 and stop_f > values[-1]:
+        values.append(stop_f)
+    return values or [start]
+
+
+def _expand_int_range(start, stop, step):
+    """Expand integer range [start, stop] with increment. Step=0/None → [start]."""
+    if start is None:
+        return [None]
+    if stop is None or step is None or step == 0:
+        return [int(start)]
+    values = list(range(int(start), int(stop) + 1, int(step)))
+    if values and values[-1] != int(stop):
+        values.append(int(stop))
+    return values or [int(start)]
+
+
 def get_generation_status(job_id: str) -> dict | None:
     """Get current status of a generation job."""
     return gen_model.get_job(job_id)
@@ -293,9 +419,6 @@ def _embed_generated_prompt(job_id: str):
                 concepts=concepts,
             )
 
-            # Auto-slot uses first image's concept
-            _auto_slot_if_enabled(job_id, embedding, concepts[0])
-
         except Exception as e:
             logger.error(
                 f"Failed to embed generated prompt for job {job_id}: {e}",
@@ -326,138 +449,6 @@ def _resolve_ingestion_metadata(
     concept = output_folder.split("/")[0] if output_folder else "generated"
     return "generated", concept, os.path.basename(file_path)
 
-
-def _auto_slot_if_enabled(job_id: str, embedding: list[float], concept: str):
-    """Silently move generated image to best-matching subfolder.
-
-    1. Check setting: auto_organize_output. If disabled, return.
-    2. Check if output_folder already has a subfolder (user specified). If so, return.
-    3. Find intra-folder cluster centroids for this concept.
-    4. Compute cosine similarity to each centroid.
-    5. If best > 0.7, move file to that cluster's subfolder.
-    """
-    import json
-    import os
-    import re
-
-    import numpy as np
-
-    from src.models.settings import get_setting
-    from src.models.database import get_db
-    from sqlalchemy import text
-
-    try:
-        auto_organize = get_setting("auto_organize_output")
-        if auto_organize != "true":
-            return
-
-        settings = gen_model.get_job_settings(job_id)
-        if not settings:
-            return
-
-        output_folder = settings.get("output_folder") or ""
-        # If user already specified a subfolder (contains /), skip
-        if "/" in output_folder:
-            return
-
-        # Get intra-folder cluster centroids for this concept (output clusters)
-        with get_db() as conn:
-            result = conn.execute(
-                text("""SELECT id, label, centroid
-                   FROM clusters
-                   WHERE cluster_type = 'intra_folder'
-                   AND folder_path = :concept
-                   AND source_type = 'output'
-                   AND centroid IS NOT NULL"""),
-                {"concept": concept},
-            )
-            clusters = []
-            for row in result.fetchall():
-                r = row._mapping
-                centroid = json.loads(r["centroid"]) if isinstance(r["centroid"], str) else r["centroid"]
-                if centroid:
-                    clusters.append({
-                        "id": r["id"],
-                        "label": r["label"],
-                        "centroid": np.array(centroid, dtype=np.float32),
-                    })
-
-        if not clusters:
-            return
-
-        # Compute cosine similarity
-        emb = np.array(embedding, dtype=np.float32)
-        emb_norm = emb / (np.linalg.norm(emb) or 1.0)
-
-        best_sim = -1.0
-        best_cluster = None
-        for c in clusters:
-            c_norm = c["centroid"] / (np.linalg.norm(c["centroid"]) or 1.0)
-            sim = float(np.dot(emb_norm, c_norm))
-            if sim > best_sim:
-                best_sim = sim
-                best_cluster = c
-
-        if best_sim < 0.7 or best_cluster is None:
-            return
-
-        # Normalize cluster label to subfolder name
-        label = best_cluster["label"] or f"group_{best_cluster['id']}"
-        subfolder = re.sub(r'[^\w\s-]', '', label.lower())
-        subfolder = re.sub(r'[\s-]+', '_', subfolder).strip('_')
-        if len(subfolder) > 40:
-            subfolder = subfolder[:40].rstrip('_')
-        subfolder = subfolder or "group"
-
-        # Get the generated image file path
-        images = gen_model.get_images_by_job_ids([job_id])
-        if not images:
-            return
-
-        from src.models.browser import get_root_directories
-        roots = get_root_directories()
-        if not roots:
-            return
-
-        for img in images:
-            file_path = img.get("file_path")
-            # file_path is often NULL for freshly-generated images; resolve
-            # from filename + subfolder against the output data directories.
-            if not file_path:
-                file_path = comfyui_service.resolve_image_path(
-                    img.get("filename", ""), img.get("subfolder", ""),
-                )
-            if not file_path or not os.path.isfile(file_path):
-                continue
-
-            # Compute new path
-            current_dir = os.path.dirname(file_path)
-            new_dir = os.path.join(current_dir, subfolder)
-            os.makedirs(new_dir, exist_ok=True)
-
-            filename = os.path.basename(file_path)
-            new_path = os.path.join(new_dir, filename)
-
-            # Move file
-            os.rename(file_path, new_path)
-
-            # Update DB
-            with get_db() as conn:
-                conn.execute(
-                    text("UPDATE generated_images SET file_path = :new_path WHERE id = :id"),
-                    {"new_path": new_path, "id": img["id"]},
-                )
-                new_output_folder = f"{output_folder}/{subfolder}" if output_folder else subfolder
-                conn.execute(
-                    text("UPDATE generation_settings SET output_folder = :folder WHERE job_id = :jid"),
-                    {"folder": new_output_folder, "jid": job_id},
-                )
-
-            logger.info("Auto-slotted image %s to subfolder %s (similarity=%.3f)",
-                         img["id"], subfolder, best_sim)
-
-    except Exception as e:
-        logger.warning("Auto-slot failed for job %s: %s", job_id, e, exc_info=True)
 
 
 # ---------------------------------------------------------------------------

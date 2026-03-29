@@ -11,7 +11,64 @@
 let _cleanupOpen = false;
 let _cleanupCurrentFolder = null;
 let _cleanupCurrentWave = 1;
+let _cleanupSortOrder = 'desc';  // 'asc' or 'desc'
 // Cleanup polling is handled by PollManager (no local timers needed)
+
+// ── Acted-upon group tracking (sessionStorage) ──────────────────
+const ACTED_GROUPS_KEY = 'cleanup_acted_groups';
+
+function _groupKey(imageIds) {
+    return imageIds.slice().sort((a, b) => a - b).join(',');
+}
+
+function _groupsFingerprint(dupeGroups) {
+    const keys = dupeGroups.map(g => _groupKey(g.image_ids));
+    keys.sort();
+    let hash = 0;
+    const str = keys.join('|');
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+    }
+    return hash.toString(36);
+}
+
+function _loadActedGroups() {
+    try {
+        const raw = sessionStorage.getItem(ACTED_GROUPS_KEY);
+        const state = raw ? JSON.parse(raw) : {};
+        return { fingerprint: state.fingerprint || '', groups: state.groups || [], visited: state.visited || [] };
+    } catch { return { fingerprint: '', groups: [], visited: [] }; }
+}
+
+function _saveActedGroups(state) {
+    sessionStorage.setItem(ACTED_GROUPS_KEY, JSON.stringify(state));
+}
+
+function _markGroupActed(groupKey) {
+    const state = _loadActedGroups();
+    if (!state.groups.includes(groupKey)) {
+        state.groups.push(groupKey);
+        _saveActedGroups(state);
+    }
+}
+
+function _markGroupVisited(groupKey) {
+    const state = _loadActedGroups();
+    if (!state.visited.includes(groupKey) && !state.groups.includes(groupKey)) {
+        state.visited.push(groupKey);
+        _saveActedGroups(state);
+    }
+}
+
+function _isGroupActed(groupKey) {
+    const state = _loadActedGroups();
+    return state.groups.includes(groupKey);
+}
+
+function _isGroupVisited(groupKey) {
+    const state = _loadActedGroups();
+    return state.visited.includes(groupKey);
+}
 
 // ── Open / Close ─────────────────────────────────────────────────
 
@@ -48,8 +105,14 @@ async function _loadCleanupContent() {
         loadCleanupGrid(),  // combined endpoint also returns wave counts
     ]);
 
-    // Check for active batch
-    _checkBatchStatus();
+    // Check if scoring is in progress
+    _checkScoringStatus();
+
+    // Wire up Score All + Sort buttons
+    const scoreBtn = $('#cleanup-score-all-btn');
+    if (scoreBtn) scoreBtn.onclick = _startScoring;
+    const sortBtn = $('#cleanup-sort-btn');
+    if (sortBtn) sortBtn.onclick = _toggleSortOrder;
 
     // Init multi-select on grid
     _initCleanupMultiSelect();
@@ -63,7 +126,7 @@ function closeCleanupOverlay() {
 
     // Unregister poll handlers
     PollManager.unregister('cleanup_parse');
-    PollManager.unregister('cleanup_batch');
+    PollManager.unregister('cleanup_scoring');
 }
 
 // ── Parse (blocking) ─────────────────────────────────────────────
@@ -139,49 +202,89 @@ function _startParsePolling() {
     });
 }
 
-// ── Batch status ─────────────────────────────────────────────────
+// ── Scoring (ImageReward) ─────────────────────────────────────────
 
-async function _checkBatchStatus() {
+async function _checkScoringStatus() {
     try {
-        const res = await fetch('/api/cleanup/active-batch');
+        const res = await fetch('/api/cleanup/scoring-progress');
         const data = await res.json();
-
-        if (data.batch) {
-            _showBatchStatus(data.batch);
-            _startBatchPolling();
-        } else {
-            _hideBatchBar();
+        if (data.running) {
+            _showScoringBlocker(data);
+            _startScoringPolling();
         }
     } catch (e) {
-        console.error('Failed to check batch status:', e);
+        console.error('Failed to check scoring status:', e);
     }
 }
 
-function _showBatchStatus(batch) {
-    const bar = $('#cleanup-batch-bar');
-    const label = $('#cleanup-batch-label');
-    if (!bar) return;
-
-    bar.classList.remove('hidden');
-    label.textContent = `Scoring batch: ${batch.status} (${batch.scored_count}/${batch.total_images})`;
+async function _startScoring() {
+    try {
+        const res = await fetch('/api/cleanup/score', { method: 'POST' });
+        const data = await res.json();
+        if (data.error) {
+            console.error('Scoring error:', data.error);
+            return;
+        }
+        _showScoringBlocker({ phase: 'loading_model', scored: 0, total: 0 });
+        _startScoringPolling();
+    } catch (e) {
+        console.error('Failed to start scoring:', e);
+    }
 }
 
-function _hideBatchBar() {
-    const bar = $('#cleanup-batch-bar');
-    if (bar) bar.classList.add('hidden');
+function _showScoringBlocker(progress) {
+    const blocker = $('#cleanup-scoring-blocker');
+    if (!blocker) return;
+    blocker.classList.remove('hidden');
+
+    const fill = $('#cleanup-scoring-blocker-fill');
+    const label = $('#cleanup-scoring-blocker-label');
+    const title = $('#cleanup-scoring-blocker-title');
+
+    const pct = progress.total > 0 ? (progress.scored / progress.total * 100) : 0;
+    if (fill) fill.style.width = `${pct}%`;
+
+    let titleText = 'Scoring images...';
+    if (progress.phase === 'loading_model') titleText = 'Loading ImageReward model...';
+    else if (progress.phase === 'unloading') titleText = 'Unloading model...';
+    else if (progress.phase === 'scoring') titleText = `Scoring: ${progress.current_folder || ''}`;
+
+    if (title) title.textContent = titleText;
+    if (label) label.textContent = progress.total > 0
+        ? `${progress.scored} / ${progress.total} images`
+        : 'Preparing...';
 }
 
-function _startBatchPolling() {
-    PollManager.register('cleanup_batch', (data) => {
-        if (!data.batch || data.batch.status === 'completed' || data.batch.status === 'failed') {
-            PollManager.unregister('cleanup_batch');
-            _hideBatchBar();
-            loadCleanupGrid();
-            loadCleanupWaveCounts();
+function _hideScoringBlocker() {
+    const blocker = $('#cleanup-scoring-blocker');
+    if (blocker) blocker.classList.add('hidden');
+}
+
+function _startScoringPolling() {
+    PollManager.register('cleanup_scoring', (data) => {
+        if (!_cleanupOpen) {
+            PollManager.unregister('cleanup_scoring');
+            return;
+        }
+        if (data.running) {
+            _showScoringBlocker(data);
         } else {
-            _showBatchStatus(data.batch);
+            PollManager.unregister('cleanup_scoring');
+            _hideScoringBlocker();
+            if (data.phase === 'completed') {
+                loadCleanupGrid();
+            }
         }
     });
+}
+
+// ── Sort ──────────────────────────────────────────────────────────
+
+function _toggleSortOrder() {
+    _cleanupSortOrder = _cleanupSortOrder === 'desc' ? 'asc' : 'desc';
+    const btn = $('#cleanup-sort-btn');
+    if (btn) btn.innerHTML = _cleanupSortOrder === 'desc' ? 'Score &#9660;' : 'Score &#9650;';
+    loadCleanupGrid();
 }
 
 // ── Wave switching ───────────────────────────────────────────────
@@ -338,6 +441,7 @@ async function _fetchTriageData() {
         const params = new URLSearchParams();
         if (_cleanupCurrentFolder) params.set('folder', _cleanupCurrentFolder);
         params.set('wave', _cleanupCurrentWave);
+        params.set('sort', _cleanupSortOrder);
 
         const res = await fetch(`/api/cleanup/triage-data?${params}`);
         return await res.json();
@@ -353,7 +457,7 @@ function _buildWaveGroup(images) {
 
     const header = document.createElement('div');
     header.className = 'cleanup-dupe-header';
-    header.innerHTML = `<span>Wave ${_cleanupCurrentWave} Images (${images.length})</span>`;
+    header.innerHTML = `<span>Wave ${_cleanupCurrentWave} Images (${images.length})</span><span class="cleanup-scroll-pct"></span>`;
 
     const body = document.createElement('div');
     body.className = 'cleanup-dupe-body visible';
@@ -365,7 +469,13 @@ function _buildWaveGroup(images) {
         keep_score: img.keep_score,
     }));
     body._bestPickId = null;  // no best pick for wave groups
+    body._originalImageIds = images.map(img => img.image_id);
     body._shownCount = 0;
+
+    // Check if this group was previously acted upon
+    if (_isGroupActed(_groupKey(body._originalImageIds))) {
+        card.classList.add('cleanup-group-acted');
+    }
 
     // Action bar
     const actionBar = document.createElement('div');
@@ -373,17 +483,20 @@ function _buildWaveGroup(images) {
     actionBar.innerHTML = `
         <span class="dupe-group-status"></span>
         <div class="dupe-group-btns">
+            <button class="btn-small btn-danger dupe-delete-all-btn">Delete All</button>
             <button class="btn-small dupe-delete-tagged-btn" disabled>Delete Tagged</button>
             <button class="btn-small dupe-mark-rest-btn">Mark Rest as Delete</button>
             <button class="btn-small dupe-clear-btn">Clear Tags</button>
         </div>
     `;
+    actionBar.querySelector('.dupe-delete-all-btn').onclick = () => _dupeDeleteAll(body);
     actionBar.querySelector('.dupe-delete-tagged-btn').onclick = () => _dupeDeleteTagged(body);
     actionBar.querySelector('.dupe-mark-rest-btn').onclick = () => _dupeMarkRestAsDelete(body);
     actionBar.querySelector('.dupe-clear-btn').onclick = () => _dupeClearTags(body);
 
-    // Header toggles collapse (starts expanded)
+    // Header toggles collapse (starts expanded); accordion closes others
     header.onclick = () => {
+        _closeOtherGroups(body);
         body.classList.toggle('visible');
         actionBar.classList.toggle('visible', body.classList.contains('visible'));
     };
@@ -399,6 +512,18 @@ function _buildWaveGroup(images) {
     _updateDupeGroupStatus(body);
 
     return card;
+}
+
+// ── Accordion: close other groups ─────────────────────────────────
+
+function _closeOtherGroups(exceptBody) {
+    const allBodies = document.querySelectorAll('.cleanup-dupe-body.visible');
+    allBodies.forEach(b => {
+        if (b === exceptBody) return;
+        b.classList.remove('visible');
+        const actionBar = b.parentElement.querySelector('.dupe-group-actions');
+        if (actionBar) actionBar.classList.remove('visible');
+    });
 }
 
 // ── Near-duplicates ──────────────────────────────────────────────
@@ -439,15 +564,18 @@ function _appendDupeMembers(body, count) {
             item.classList.add('dupe-keep');
         }
 
-        // Add keep_score badge for wave group members
-        if (m.keep_score != null) {
+        // Add score badge (keep_score for wave groups, quality_overall for dupe groups)
+        const scoreVal = m.keep_score ?? m.quality_overall;
+        if (scoreVal != null) {
             const badge = document.createElement('span');
             badge.className = 'cleanup-score-badge';
-            if (m.keep_score < 0.55) badge.classList.add('score-low');
-            else if (m.keep_score < 0.70) badge.classList.add('score-mid');
+            if (scoreVal < 0.55) badge.classList.add('score-low');
+            else if (scoreVal < 0.70) badge.classList.add('score-mid');
             else badge.classList.add('score-high');
-            badge.textContent = m.keep_score.toFixed(2);
-            badge.title = `Keep score: ${m.keep_score.toFixed(4)}`;
+            badge.textContent = scoreVal.toFixed(2);
+            badge.title = m.keep_score != null
+                ? `Keep score: ${m.keep_score.toFixed(4)}`
+                : `Quality: ${scoreVal.toFixed(4)}`;
             item.appendChild(badge);
         }
 
@@ -532,6 +660,44 @@ function _dupeClearTags(body) {
     _updateDupeGroupStatus(body);
 }
 
+/** Delete ALL images in a group */
+async function _dupeDeleteAll(body) {
+    const total = body._members.length;
+    if (total === 0) return;
+
+    if (!confirm(`Delete ALL ${total} image${total > 1 ? 's' : ''} in this group? This cannot be undone.`)) return;
+
+    const ids = body._members.map(m => m.image_id);
+
+    try {
+        const result = await _deleteInChunks(ids);
+
+        _updateCleanupFreed(result.freed_bytes);
+
+        // Mark group as acted upon
+        if (body._originalImageIds) {
+            _markGroupActed(_groupKey(body._originalImageIds));
+        }
+
+        // Remove the entire group card
+        const isWaveGroup = body.parentElement.classList.contains('cleanup-wave-group');
+        if (isWaveGroup) {
+            body.innerHTML = '';
+            body._members = [];
+            body._shownCount = 0;
+            const header = body.parentElement.querySelector('.cleanup-dupe-header span');
+            if (header) header.textContent = `Wave ${_cleanupCurrentWave} Images (0)`;
+        } else {
+            body.parentElement.remove();
+        }
+
+        await loadCleanupWaveCounts();
+        await loadCleanupSidebar();
+    } catch (e) {
+        console.error('Delete all failed:', e);
+    }
+}
+
 /** Delete all items tagged as 'delete' in a dupe group */
 async function _dupeDeleteTagged(body) {
     const items = body.querySelectorAll('.gen-thumbnail-item[data-dupe-tag="delete"]');
@@ -553,6 +719,12 @@ async function _dupeDeleteTagged(body) {
 
         _updateDupeGroupStatus(body);
         _updateCleanupFreed(result.freed_bytes);
+
+        // Mark group as acted upon
+        if (body._originalImageIds) {
+            _markGroupActed(_groupKey(body._originalImageIds));
+            body.parentElement.classList.add('cleanup-group-acted');
+        }
 
         // Update header count
         const header = body.parentElement.querySelector('.cleanup-dupe-header span');
@@ -579,6 +751,22 @@ async function _dupeDeleteTagged(body) {
 
 function _setupDupeScroll(body) {
     body.addEventListener('scroll', () => {
+        // Update scroll percentage indicator (relative to total members, not just loaded)
+        const pctEl = body.parentElement.querySelector('.cleanup-scroll-pct');
+        if (pctEl) {
+            const maxScroll = body.scrollHeight - body.clientHeight;
+            const total = body._members.length;
+            if (maxScroll > 0 && total > 1) {
+                const scrollFraction = body.scrollTop / maxScroll;
+                const viewedIndex = Math.round(scrollFraction * (body._shownCount - 1));
+                const pct = Math.round((viewedIndex / (total - 1)) * 100);
+                pctEl.textContent = pct > 0 ? `${pct}%` : '';
+            } else {
+                pctEl.textContent = '';
+            }
+        }
+
+        // Lazy-load next batch when near bottom
         if (body._dupeLoading) return;
         if (body._shownCount >= body._members.length) return;
         const remaining = body.scrollHeight - body.scrollTop - body.clientHeight;
@@ -609,6 +797,14 @@ function _renderNearDupes(groups) {
     }
 
     container.classList.remove('hidden');
+
+    // Validate acted-groups fingerprint; clear if groups changed
+    const fingerprint = _groupsFingerprint(groups);
+    const actedState = _loadActedGroups();
+    if (actedState.fingerprint !== fingerprint) {
+        _saveActedGroups({ fingerprint, groups: [], visited: [] });
+    }
+
     const totalDupeImages = groups.reduce((sum, g) => sum + g.image_ids.length, 0);
     container.innerHTML = `<h3 style="font-size:0.88rem;color:var(--text-secondary);margin:0 0 8px">Near-Duplicate Groups (${groups.length}) — ${totalDupeImages} images</h3>`;
 
@@ -620,6 +816,7 @@ function _renderNearDupes(groups) {
         header.className = 'cleanup-dupe-header';
         header.innerHTML = `
             <span>${group.image_ids.length} images</span>
+            <span class="cleanup-scroll-pct"></span>
             <div class="cleanup-dupe-folders">
                 ${group.folders.map(f => `<span class="cleanup-dupe-folder-badge">${escapeHtml(f)}</span>`).join('')}
             </div>
@@ -628,7 +825,16 @@ function _renderNearDupes(groups) {
         body.className = 'cleanup-dupe-body';
         body._members = group.members || group.image_ids.map(id => ({ image_id: id, job_id: id }));
         body._bestPickId = group.best_pick_id;
+        body._originalImageIds = group.image_ids.slice();
         body._shownCount = 0;
+
+        // Check if this group was previously acted upon or visited
+        const gKey = _groupKey(body._originalImageIds);
+        if (_isGroupActed(gKey)) {
+            card.classList.add('cleanup-group-acted');
+        } else if (_isGroupVisited(gKey)) {
+            card.classList.add('cleanup-group-visited');
+        }
 
         // Action bar with status + buttons
         const actionBar = document.createElement('div');
@@ -636,11 +842,13 @@ function _renderNearDupes(groups) {
         actionBar.innerHTML = `
             <span class="dupe-group-status"></span>
             <div class="dupe-group-btns">
+                <button class="btn-small btn-danger dupe-delete-all-btn">Delete All</button>
                 <button class="btn-small dupe-delete-tagged-btn" disabled>Delete Tagged</button>
                 <button class="btn-small dupe-mark-rest-btn">Mark Rest as Delete</button>
                 <button class="btn-small dupe-clear-btn">Clear Tags</button>
             </div>
         `;
+        actionBar.querySelector('.dupe-delete-all-btn').onclick = () => _dupeDeleteAll(body);
         actionBar.querySelector('.dupe-delete-tagged-btn').onclick = () => _dupeDeleteTagged(body);
         actionBar.querySelector('.dupe-mark-rest-btn').onclick = () => _dupeMarkRestAsDelete(body);
         actionBar.querySelector('.dupe-clear-btn').onclick = () => _dupeClearTags(body);
@@ -652,8 +860,14 @@ function _renderNearDupes(groups) {
                 _setupDupeScroll(body);
                 _updateDupeGroupStatus(body);
             }
+            _closeOtherGroups(body);
             body.classList.toggle('visible');
             actionBar.classList.toggle('visible', body.classList.contains('visible'));
+            // Mark as visited when expanded (if not already acted upon)
+            if (body.classList.contains('visible') && !card.classList.contains('cleanup-group-acted')) {
+                _markGroupVisited(_groupKey(body._originalImageIds));
+                card.classList.add('cleanup-group-visited');
+            }
         };
         card.appendChild(header);
         card.appendChild(body);

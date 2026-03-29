@@ -33,6 +33,8 @@ function createPillInput(options) {
         truncateAt = 30,
         onChange = null,
         value: initialValue = [],
+        minRequired = 0,
+        errorMessage = 'At least one selection required',
     } = options;
 
     let allItems = [...initialItems];
@@ -48,8 +50,13 @@ function createPillInput(options) {
     const dropdownContainer = document.createElement('div');
     dropdownContainer.className = 'pill-dropdown-host';
 
+    const errorEl = document.createElement('div');
+    errorEl.className = 'pill-error-msg hidden';
+    errorEl.textContent = errorMessage;
+
     wrapper.appendChild(pillsContainer);
     wrapper.appendChild(dropdownContainer);
+    wrapper.appendChild(errorEl);
     container.appendChild(wrapper);
 
     // ── Internal dropdown ───────────────────────────────────────
@@ -125,7 +132,21 @@ function createPillInput(options) {
         if (selected.includes(value)) return;
         selected.push(value);
         renderPills();
+        // Auto-clear validation error if we've met the minimum
+        if (minRequired > 0 && selected.length >= minRequired) {
+            _clearError();
+        }
         if (onChange) onChange([...selected]);
+    }
+
+    function _showError() {
+        wrapper.classList.add('pill-error');
+        errorEl.classList.remove('hidden');
+    }
+
+    function _clearError() {
+        wrapper.classList.remove('pill-error');
+        errorEl.classList.add('hidden');
     }
 
     function removePill(value) {
@@ -163,6 +184,19 @@ function createPillInput(options) {
             renderPills();
             dropdown.setItems(availableItems());
             dropdown.setValue('');
+        },
+
+        validate() {
+            if (minRequired > 0 && selected.length < minRequired) {
+                _showError();
+                return false;
+            }
+            _clearError();
+            return true;
+        },
+
+        clearError() {
+            _clearError();
         },
 
         destroy() {

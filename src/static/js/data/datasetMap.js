@@ -22,6 +22,7 @@ async function openDatasetMap() {
     document.querySelectorAll('.dataset-map-tab').forEach(t => t.classList.remove('active'));
     document.querySelector('.dataset-map-tab[data-map-tab="map-themes"]').classList.add('active');
     _globalClustersVisible = false;
+    _statsLoaded = false;
 
     try {
         const response = await fetch("/api/dataset-map");
@@ -53,6 +54,10 @@ function switchDatasetMapTab(btn) {
         setupFolderInfiniteScroll();
     } else {
         teardownFolderScroll();
+    }
+
+    if (tabId === 'map-stats') {
+        _loadStatsPane();
     }
 }
 
@@ -117,6 +122,11 @@ function renderDatasetMap(data, container) {
     } else {
         html += '<div class="empty-dataset">No folders available. Ingest some data first.</div>';
     }
+    html += '</div>';
+
+    // ── Stats pane (loaded on demand) ──
+    html += '<div id="map-stats" class="dataset-map-pane">';
+    html += '<div class="loading-text">Loading stats...</div>';
     html += '</div>';
 
     if (!data.cross_folder_themes?.length && !data.folders?.length) {
@@ -271,6 +281,67 @@ function _createFolderCard(folder) {
     }
 
     return card;
+}
+
+// ── Stats pane ──────────────────────────────────────────────────────────
+
+let _statsLoaded = false;
+
+async function _loadStatsPane() {
+    if (_statsLoaded) return;
+    const pane = document.getElementById('map-stats');
+    if (!pane) return;
+
+    try {
+        const res = await fetch('/api/metrics/stats');
+        const stats = await res.json();
+        _statsLoaded = true;
+        pane.innerHTML = _renderStatsPane(stats);
+    } catch (e) {
+        pane.innerHTML = '<div class="error-text">Failed to load stats</div>';
+    }
+}
+
+function _renderStatsPane(stats) {
+    let html = '<div class="stats-pane-content">';
+
+    // ── Generation overview ──
+    html += '<div class="stats-section">';
+    html += '<h3 class="stats-section-title">Generation Overview</h3>';
+    html += '<div class="stats-grid">';
+    html += `<div class="stats-card"><div class="stats-value">${stats.total_generations.toLocaleString()}</div><div class="stats-label">Total Generations</div></div>`;
+    html += `<div class="stats-card"><div class="stats-value">${stats.session_count.toLocaleString()}</div><div class="stats-label">Sessions</div></div>`;
+    html += `<div class="stats-card"><div class="stats-value">${stats.avg_session_generations}</div><div class="stats-label">Avg per Session</div></div>`;
+    html += '</div></div>';
+
+    // ── Deletions ──
+    const del = stats.deletions_by_reason || {};
+    const totalDeletions = Object.values(del).reduce((s, v) => s + v, 0);
+    html += '<div class="stats-section">';
+    html += '<h3 class="stats-section-title">Deletions</h3>';
+    html += '<div class="stats-grid">';
+    html += `<div class="stats-card"><div class="stats-value">${totalDeletions.toLocaleString()}</div><div class="stats-label">Total Deleted</div></div>`;
+    for (const [reason, count] of Object.entries(del).sort((a, b) => b[1] - a[1])) {
+        html += `<div class="stats-card"><div class="stats-value">${count.toLocaleString()}</div><div class="stats-label">${escapeHtml(reason)}</div></div>`;
+    }
+    html += '</div></div>';
+
+    // ── Top lineage ──
+    if (stats.top_lineage && stats.top_lineage.length > 0) {
+        html += '<div class="stats-section">';
+        html += '<h3 class="stats-section-title">Top Prompt Lineage (by regeneration depth)</h3>';
+        html += '<div class="stats-lineage-list">';
+        for (const item of stats.top_lineage) {
+            html += `<div class="stats-lineage-row">
+                <span class="stats-lineage-depth">${item.depth}x</span>
+                <span class="stats-lineage-prompt">${escapeHtml(item.prompt)}</span>
+            </div>`;
+        }
+        html += '</div></div>';
+    }
+
+    html += '</div>';
+    return html;
 }
 
 function teardownFolderScroll() {

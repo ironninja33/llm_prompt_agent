@@ -190,8 +190,13 @@ def get_output_subfolders() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Object info (node class definitions)
+# Object info (node class definitions) — cached with 60s TTL
 # ---------------------------------------------------------------------------
+
+_object_info_cache: tuple[float, dict] | None = None
+_object_info_cache_lock = threading.Lock()
+_OBJECT_INFO_CACHE_TTL = 60.0  # seconds
+
 
 def get_object_info() -> dict:
     """Fetch node class definitions from ComfyUI's ``GET /object_info`` endpoint.
@@ -200,14 +205,28 @@ def get_object_info() -> dict:
     Each entry contains ``input`` (with ``required`` and ``optional`` dicts),
     ``output``, ``output_name``, etc.
 
+    Results are cached for 60 seconds (thread-safe).
+
     Returns:
         Dict of node definitions, or empty dict on error.
     """
+    global _object_info_cache
+    now = time.monotonic()
+
+    with _object_info_cache_lock:
+        if _object_info_cache is not None:
+            cached_time, cached_data = _object_info_cache
+            if now - cached_time < _OBJECT_INFO_CACHE_TTL:
+                return cached_data
+
     base = _get_base_url()
     try:
         resp = requests.get(f"{base}/object_info", timeout=30)
         if resp.status_code == 200:
-            return resp.json()
+            data = resp.json()
+            with _object_info_cache_lock:
+                _object_info_cache = (now, data)
+            return data
         logger.warning("ComfyUI /object_info returned HTTP %d", resp.status_code)
         return {}
     except requests.ConnectionError:

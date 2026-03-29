@@ -280,8 +280,22 @@ def _ws_poll_loop(
     client_id = str(uuid.uuid4())
     ws_url = f"{ws_url}/ws?clientId={client_id}"
 
-    # Get initial queue position via HTTP before entering WS loop
+    # Get initial status via HTTP before entering WS loop
     initial_progress = get_job_progress(prompt_id)
+
+    # Fast path: job already completed before we started polling
+    if initial_progress.status == "completed":
+        output_images = _emit_completed(job_id, prompt_id, total_images)
+        logger.info("Job %s already completed at poll start (%d images)",
+                     job_id, len(output_images))
+        return
+    if initial_progress.status == "failed":
+        _emit(job_id, prompt_id, total_images, phase="failed",
+              message=initial_progress.message or "Generation failed",
+              complete=True)
+        logger.warning("Job %s already failed at poll start", job_id)
+        return
+
     last_queue_position = 0
     if initial_progress.status == "queued":
         # Extract position from message like "Job is queued (position 2/5)"
@@ -325,34 +339,38 @@ def _ws_poll_loop(
                     break  # execution timeout
             elif now - start > max_queue_time:
                 break  # queue timeout
+
+            # HTTP safety-net check — runs every _HTTP_CHECK_INTERVAL
+            # regardless of whether WebSocket messages are flowing.
+            # Catches completions that WS events miss (e.g. prompt_id
+            # filtering, events arriving before WS connects, etc.).
+            if now - last_http_check >= _HTTP_CHECK_INTERVAL:
+                last_http_check = now
+                try:
+                    job_prog = get_job_progress(prompt_id)
+                    if job_prog.status == "completed":
+                        output_images = _emit_completed(job_id, prompt_id, total_images)
+                        logger.info("Job %s completed (detected via HTTP fallback)", job_id)
+                        return
+                    elif job_prog.status == "failed":
+                        _emit(job_id, prompt_id, total_images, phase="failed",
+                              message=job_prog.message or "Generation failed",
+                              complete=True)
+                        logger.warning("Job %s failed (detected via HTTP fallback)", job_id)
+                        return
+                    elif job_prog.status == "running" and not execution_started:
+                        # Job started but we missed the WS event
+                        execution_started = True
+                        if exec_start_time is None:
+                            exec_start_time = time.monotonic()
+                        _emit(job_id, prompt_id, total_images, phase="running",
+                              progress=0.5, message="Generating\u2026")
+                except Exception:
+                    pass  # HTTP check failed, keep listening on WS
+
             try:
                 raw = ws.recv()
             except websocket.WebSocketTimeoutException:
-                # No message in 1s -- periodically check HTTP as safety net
-                now = time.monotonic()
-                if now - last_http_check >= _HTTP_CHECK_INTERVAL:
-                    last_http_check = now
-                    try:
-                        job_prog = get_job_progress(prompt_id)
-                        if job_prog.status == "completed":
-                            output_images = _emit_completed(job_id, prompt_id, total_images)
-                            logger.info("Job %s completed (detected via HTTP fallback)", job_id)
-                            return
-                        elif job_prog.status == "failed":
-                            _emit(job_id, prompt_id, total_images, phase="failed",
-                                  message=job_prog.message or "Generation failed",
-                                  complete=True)
-                            logger.warning("Job %s failed (detected via HTTP fallback)", job_id)
-                            return
-                        elif job_prog.status == "running" and not execution_started:
-                            # Job started but we missed the WS event
-                            execution_started = True
-                            if exec_start_time is None:
-                                exec_start_time = time.monotonic()
-                            _emit(job_id, prompt_id, total_images, phase="running",
-                                  progress=0.5, message="Generating\u2026")
-                    except Exception:
-                        pass  # HTTP check failed, keep listening on WS
                 continue
             except Exception:
                 logger.warning("WebSocket recv error for job %s, falling back to HTTP", job_id)

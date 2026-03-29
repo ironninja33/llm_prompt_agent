@@ -1,5 +1,6 @@
 """Scoring model — CRUD for image quality scores, batch tracking, and keep flags."""
 
+import json
 import logging
 
 from sqlalchemy import text
@@ -13,27 +14,26 @@ logger = logging.getLogger(__name__)
 # Quality scores
 # ---------------------------------------------------------------------------
 
-def upsert_quality_score(image_id: int, overall: float, character: float,
-                         composition: float, artifacts: float, theme: float,
-                         detail: float, expression: float, notes: str | None,
-                         model_used: str):
+def upsert_quality_score(image_id: int, overall: float,
+                         raw_score: float | None = None,
+                         model_used: str = "unknown",
+                         dimensions: dict | None = None,
+                         notes: str | None = None):
     """Insert or replace a quality score for an image."""
+    dims_json = json.dumps(dimensions) if dimensions else None
     with get_db() as conn:
         conn.execute(
             text("""INSERT INTO image_quality_scores
-               (image_id, overall, character, composition, artifacts, theme,
-                detail, expression, notes, model_used)
-               VALUES (:image_id, :overall, :character, :composition, :artifacts,
-                :theme, :detail, :expression, :notes, :model_used)
+               (image_id, overall, raw_score, model_used, dimensions, notes)
+               VALUES (:image_id, :overall, :raw_score, :model_used,
+                :dimensions, :notes)
                ON CONFLICT(image_id) DO UPDATE SET
-                overall = :overall, character = :character, composition = :composition,
-                artifacts = :artifacts, theme = :theme, detail = :detail,
-                expression = :expression, notes = :notes, model_used = :model_used,
-                scored_at = CURRENT_TIMESTAMP"""),
-            {"image_id": image_id, "overall": overall, "character": character,
-             "composition": composition, "artifacts": artifacts, "theme": theme,
-             "detail": detail, "expression": expression, "notes": notes,
-             "model_used": model_used},
+                overall = :overall, raw_score = :raw_score,
+                model_used = :model_used, dimensions = :dimensions,
+                notes = :notes, scored_at = CURRENT_TIMESTAMP"""),
+            {"image_id": image_id, "overall": overall, "raw_score": raw_score,
+             "model_used": model_used, "dimensions": dims_json,
+             "notes": notes},
         )
 
 

@@ -153,6 +153,11 @@ const API = {
         return res.json();
     },
 
+    async getSamplerOptions() {
+        const res = await fetch('/api/comfyui/sampler-options');
+        return res.json();
+    },
+
     async validateWorkflow(path) {
         const res = await fetch('/api/comfyui/validate-workflow', {
             method: 'POST',
@@ -266,6 +271,31 @@ const API = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ settings, parent_job_id: parentJobId || null }),
+        });
+        return res.json();
+    },
+
+    async submitGridGeneration(chatId, messageId, gridSettings, parentJobId) {
+        const res = await fetch('/api/generate/grid', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: chatId, message_id: messageId,
+                grid_settings: gridSettings,
+                parent_job_id: parentJobId || null,
+            }),
+        });
+        return res.json();
+    },
+
+    async browserGridGenerate(gridSettings, parentJobId) {
+        const res = await fetch('/api/browser/generate-grid', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                grid_settings: gridSettings,
+                parent_job_id: parentJobId || null,
+            }),
         });
         return res.json();
     },

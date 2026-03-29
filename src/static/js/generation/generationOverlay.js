@@ -17,6 +17,22 @@ let _lastGenerationSettingsPerChat = {};
 let _genModelDropdown = null;
 let _genLoraInput = null;
 
+// Grid tab widget instances
+let _gridModelPills = null;
+let _gridLoraPills = null;
+let _gridSamplerPills = null;
+let _gridSchedulerPills = null;
+let _gridWidgetsInitialized = false;
+
+// Cached sampler options from ComfyUI
+let _cachedSamplerOptions = null;
+
+// Active tab: 'single' or 'grid'
+let _activeGenTab = 'single';
+
+// Previous grid session data (for seed reuse)
+let _previousGridSeeds = null;
+
 // Internal state for the current overlay open
 let _currentGenChatId = null;
 let _currentGenMessageId = null;
@@ -32,8 +48,6 @@ let _cachedModels = null;
 let _cachedLoras = null;
 let _cachedFolders = null;
 
-// Cached auto-organize setting (loaded once from DB)
-let _autoOrganizeCached = null;
 
 // ── Open the overlay ────────────────────────────────────────────────────
 
@@ -72,6 +86,12 @@ async function openGenerationOverlay(options) {
     const overlay = $('#generation-overlay');
     if (!overlay) return;
     overlay.classList.remove('hidden');
+
+    // Reset to single tab
+    _activeGenTab = 'single';
+    $$('.gen-tab').forEach(b => b.classList.toggle('active', b.dataset.genTab === 'single'));
+    $('#gen-tab-single')?.classList.remove('hidden');
+    $('#gen-tab-grid')?.classList.add('hidden');
 
     // Initialise widgets on first open
     _initGenWidgets();
@@ -131,18 +151,6 @@ async function openGenerationOverlay(options) {
         _previousGenSeed = null;
         _fillOverlayDefaults(prompt);
     }
-
-    // Load auto-organize setting (once, then cached)
-    if (_autoOrganizeCached === null) {
-        try {
-            const allSettings = await API.getSettings();
-            _autoOrganizeCached = allSettings.auto_organize_output === "true";
-        } catch (_) {
-            _autoOrganizeCached = false;
-        }
-    }
-    const aoCheckbox = $('#gen-auto-organize');
-    if (aoCheckbox) aoCheckbox.checked = _autoOrganizeCached;
 
     // Show/hide the "use previous seed" hint button
     _updateSeedHint();
@@ -237,9 +245,346 @@ function _updateSeedHint() {
     }
 }
 
+// ── Tab switching ──────────────────────────────────────────────────────
+
+async function switchGenTab(btn) {
+    const tab = btn.dataset.genTab;
+    if (tab === _activeGenTab) return;
+    _activeGenTab = tab;
+
+    // Update tab buttons
+    $$('.gen-tab').forEach(b => b.classList.toggle('active', b.dataset.genTab === tab));
+
+    // Toggle panes
+    $('#gen-tab-single').classList.toggle('hidden', tab !== 'single');
+    $('#gen-tab-grid').classList.toggle('hidden', tab !== 'grid');
+
+    // On first switch to grid, initialize grid widgets and populate
+    if (tab === 'grid') {
+        _initGridWidgets();
+        await _loadGridData();
+        await _restoreGridSession();
+        // Sync values from single tab that grid doesn't have its own source for
+        _syncSingleToGrid();
+        _updateGridComboCount();
+    }
+}
+
+/** Copy single-tab values to empty grid-tab fields. */
+function _syncSingleToGrid() {
+    // Output folder
+    const singleFolder = ($('#gen-output-folder') || {}).value || '';
+    const gridFolder = $('#gen-grid-output-folder');
+    if (gridFolder && !gridFolder.value && singleFolder) {
+        gridFolder.value = singleFolder;
+    }
+
+    // Prompt: always overwrite grid prompt from single tab if single has content
+    // (the single tab prompt reflects what the user clicked — agent prompt block,
+    // regenerate image, etc. — and should take priority over stale session data)
+    const singlePrompt = ($('#gen-prompt') || {}).value || '';
+    const gridPrompt = $('#gen-grid-prompt');
+    if (gridPrompt && singlePrompt) {
+        gridPrompt.value = singlePrompt;
+    }
+
+    // Model: copy from single tab dropdown if grid pills are empty
+    if (_gridModelPills && _gridModelPills.getValue().length === 0) {
+        const singleModel = _genModelDropdown ? _genModelDropdown.getValue() : '';
+        if (singleModel) {
+            _gridModelPills.setValue([singleModel]);
+        }
+    }
+
+    // LoRAs: copy from single tab pills if grid pills are empty
+    if (_gridLoraPills && _gridLoraPills.getValue().length === 0) {
+        const singleLoras = _genLoraInput ? _genLoraInput.getValue() : [];
+        if (singleLoras.length > 0) {
+            _gridLoraPills.setValue(singleLoras);
+        }
+    }
+}
+
+// ── Grid widget initialization ─────────────────────────────────────────
+
+function _initGridWidgets() {
+    if (_gridWidgetsInitialized) return;
+
+    const modelContainer = $('#gen-grid-models');
+    if (modelContainer) {
+        _gridModelPills = createPillInput({
+            container: modelContainer,
+            placeholder: 'Search models…',
+            items: _cachedModels || [],
+            truncateAt: 35,
+            minRequired: 1,
+            errorMessage: 'At least one model required',
+            onChange: _updateGridComboCount,
+        });
+    }
+
+    const loraContainer = $('#gen-grid-loras');
+    if (loraContainer) {
+        _gridLoraPills = createPillInput({
+            container: loraContainer,
+            placeholder: 'Search LoRAs…',
+            items: _cachedLoras || [],
+            truncateAt: 35,
+            onChange: _updateGridComboCount,
+        });
+    }
+
+    const samplerContainer = $('#gen-grid-samplers');
+    if (samplerContainer) {
+        _gridSamplerPills = createPillInput({
+            container: samplerContainer,
+            placeholder: 'Search samplers…',
+            items: [],
+            truncateAt: 40,
+            minRequired: 1,
+            errorMessage: 'At least one sampler required',
+            onChange: _updateGridComboCount,
+        });
+    }
+
+    const schedulerContainer = $('#gen-grid-schedulers');
+    if (schedulerContainer) {
+        _gridSchedulerPills = createPillInput({
+            container: schedulerContainer,
+            placeholder: 'Search schedulers…',
+            items: [],
+            truncateAt: 30,
+            minRequired: 1,
+            errorMessage: 'At least one scheduler required',
+            onChange: _updateGridComboCount,
+        });
+    }
+
+    // Wire up range inputs to update combo count
+    ['gen-grid-cfg-start', 'gen-grid-cfg-stop', 'gen-grid-cfg-step',
+     'gen-grid-steps-start', 'gen-grid-steps-stop', 'gen-grid-steps-step',
+     'gen-grid-num-seeds'].forEach(id => {
+        const el = $('#' + id);
+        if (el) el.addEventListener('input', _updateGridComboCount);
+    });
+
+    // Wire up seed reuse checkbox
+    const reuseCheckbox = $('#gen-grid-reuse-seeds');
+    if (reuseCheckbox) {
+        reuseCheckbox.addEventListener('change', _handleSeedReuseToggle);
+    }
+
+    _gridWidgetsInitialized = true;
+}
+
+async function _loadGridData() {
+    // Populate sampler/scheduler options
+    if (!_cachedSamplerOptions) {
+        try {
+            _cachedSamplerOptions = await API.getSamplerOptions();
+        } catch (err) {
+            console.warn('Failed to load sampler options:', err);
+            _cachedSamplerOptions = { samplers: [], schedulers: [] };
+        }
+    }
+    if (_gridSamplerPills) _gridSamplerPills.setItems(_cachedSamplerOptions.samplers || []);
+    if (_gridSchedulerPills) _gridSchedulerPills.setItems(_cachedSamplerOptions.schedulers || []);
+
+    // Update model/lora lists if available
+    if (_gridModelPills && _cachedModels) _gridModelPills.setItems(_cachedModels);
+    if (_gridLoraPills && _cachedLoras) _gridLoraPills.setItems(_cachedLoras);
+}
+
+// ── Grid session restore/save ──────────────────────────────────────────
+
+async function _restoreGridSession() {
+    const stored = sessionStorage.getItem('gridGenSettings');
+    if (!stored) {
+        // No session — fill defaults from settings
+        await _fillGridDefaults();
+        _previousGridSeeds = null;
+        _updateSeedReuseUI();
+        return;
+    }
+
+    try {
+        const gs = JSON.parse(stored);
+
+        // Prompt
+        const prompt = $('#gen-grid-prompt');
+        if (prompt) prompt.value = gs.positive_prompt || '';
+
+        // Pill inputs
+        if (_gridModelPills && gs.base_models) _gridModelPills.setValue(gs.base_models);
+        if (_gridLoraPills && gs.loras) _gridLoraPills.setValue(gs.loras);
+        if (_gridSamplerPills && gs.samplers) _gridSamplerPills.setValue(gs.samplers);
+        if (_gridSchedulerPills && gs.schedulers) _gridSchedulerPills.setValue(gs.schedulers);
+
+        // Output folder
+        const folder = $('#gen-grid-output-folder');
+        if (folder) folder.value = gs.output_folder || '';
+
+        // Ranges
+        if (gs.cfg_range) {
+            const s = gs.cfg_range;
+            $('#gen-grid-cfg-start').value = s.start ?? '';
+            $('#gen-grid-cfg-stop').value = s.stop ?? '';
+            $('#gen-grid-cfg-step').value = s.step ?? 0;
+        }
+        if (gs.steps_range) {
+            const s = gs.steps_range;
+            $('#gen-grid-steps-start').value = s.start ?? '';
+            $('#gen-grid-steps-stop').value = s.stop ?? '';
+            $('#gen-grid-steps-step').value = s.step ?? 0;
+        }
+
+        // Seeds
+        const seedsInput = $('#gen-grid-num-seeds');
+        if (seedsInput) seedsInput.value = gs.num_seeds || 1;
+
+        // Previous seeds for reuse
+        _previousGridSeeds = gs.seeds_used || null;
+        _updateSeedReuseUI();
+
+    } catch (err) {
+        console.warn('Failed to restore grid session:', err);
+        await _fillGridDefaults();
+    }
+}
+
+async function _fillGridDefaults() {
+    try {
+        const appSettings = await API.getSettings();
+        const cfg = parseFloat(appSettings.comfyui_default_cfg) || '';
+        const steps = parseInt(appSettings.comfyui_default_steps, 10) || '';
+
+        $('#gen-grid-cfg-start').value = cfg;
+        $('#gen-grid-cfg-stop').value = cfg;
+        $('#gen-grid-cfg-step').value = 0;
+        $('#gen-grid-steps-start').value = steps;
+        $('#gen-grid-steps-stop').value = steps;
+        $('#gen-grid-steps-step').value = 0;
+
+        // Pre-select current default sampler/scheduler
+        if (appSettings.comfyui_default_sampler && _gridSamplerPills) {
+            _gridSamplerPills.setValue([appSettings.comfyui_default_sampler]);
+        }
+        if (appSettings.comfyui_default_scheduler && _gridSchedulerPills) {
+            _gridSchedulerPills.setValue([appSettings.comfyui_default_scheduler]);
+        }
+        // Pre-select default model
+        if (appSettings.comfyui_default_model && _gridModelPills) {
+            _gridModelPills.setValue([appSettings.comfyui_default_model]);
+        }
+    } catch (_) {}
+
+    // Copy prompt from single tab if it has content
+    const singlePrompt = ($('#gen-prompt') || {}).value || '';
+    const gridPrompt = $('#gen-grid-prompt');
+    if (gridPrompt && !gridPrompt.value && singlePrompt) {
+        gridPrompt.value = singlePrompt;
+    }
+}
+
+function _saveGridSession(gridSettings, seedsUsed) {
+    const data = { ...gridSettings, seeds_used: seedsUsed };
+    sessionStorage.setItem('gridGenSettings', JSON.stringify(data));
+}
+
+// ── Seed reuse logic ───────────────────────────────────────────────────
+
+function _updateSeedReuseUI() {
+    const row = $('#gen-grid-reuse-row');
+    const checkbox = $('#gen-grid-reuse-seeds');
+    const label = $('#gen-grid-reuse-text');
+    const seedsInput = $('#gen-grid-num-seeds');
+
+    if (!row || !checkbox || !label || !seedsInput) return;
+
+    if (!_previousGridSeeds || _previousGridSeeds.length === 0) {
+        row.style.display = 'none';
+        checkbox.checked = false;
+        seedsInput.disabled = false;
+        return;
+    }
+
+    const prevCount = _previousGridSeeds.length;
+    const currentCount = parseInt(seedsInput.value, 10) || 1;
+    row.style.display = '';
+
+    if (currentCount === prevCount) {
+        checkbox.disabled = false;
+        label.textContent = `Reuse ${prevCount} seed${prevCount > 1 ? 's' : ''} from previous run`;
+    } else {
+        checkbox.disabled = true;
+        checkbox.checked = false;
+        seedsInput.disabled = false;
+        label.textContent = `Previous run used ${prevCount} seed${prevCount > 1 ? 's' : ''} — set count to ${prevCount} to reuse`;
+    }
+}
+
+function _handleSeedReuseToggle() {
+    const checkbox = $('#gen-grid-reuse-seeds');
+    const seedsInput = $('#gen-grid-num-seeds');
+    if (!checkbox || !seedsInput) return;
+
+    if (checkbox.checked && _previousGridSeeds) {
+        seedsInput.value = _previousGridSeeds.length;
+        seedsInput.disabled = true;
+    } else {
+        seedsInput.disabled = false;
+    }
+    _updateGridComboCount();
+}
+
+// ── Grid combination counter ───────────────────────────────────────────
+
+function _expandRangeCount(startId, stopId, stepId, isFloat) {
+    const start = parseFloat($('#' + startId)?.value);
+    const stop = parseFloat($('#' + stopId)?.value);
+    const step = parseFloat($('#' + stepId)?.value);
+
+    if (isNaN(start)) return 1;  // Use default
+    if (isNaN(stop) || isNaN(step) || step === 0) return 1;
+    if (stop < start) return 1;
+
+    return Math.floor((stop - start) / step + 1.0001);
+}
+
+function _updateGridComboCount() {
+    const models = _gridModelPills ? _gridModelPills.getValue().length : 1;
+    const loras = _gridLoraPills ? Math.max(_gridLoraPills.getValue().length, 1) : 1;
+    const samplers = _gridSamplerPills ? _gridSamplerPills.getValue().length : 1;
+    const schedulers = _gridSchedulerPills ? _gridSchedulerPills.getValue().length : 1;
+    const cfgCount = _expandRangeCount('gen-grid-cfg-start', 'gen-grid-cfg-stop', 'gen-grid-cfg-step', true);
+    const stepsCount = _expandRangeCount('gen-grid-steps-start', 'gen-grid-steps-stop', 'gen-grid-steps-step', false);
+    const seeds = parseInt($('#gen-grid-num-seeds')?.value, 10) || 1;
+
+    const combos = Math.max(models, 0) * loras * Math.max(samplers, 0) * Math.max(schedulers, 0) * cfgCount * stepsCount;
+    const total = combos * seeds;
+
+    const comboEl = $('#gen-grid-combo-count');
+    const totalEl = $('#gen-grid-total-count');
+    if (comboEl) comboEl.textContent = `${combos} combination${combos !== 1 ? 's' : ''}`;
+    if (totalEl) {
+        totalEl.textContent = `${total} total image${total !== 1 ? 's' : ''}`;
+        totalEl.classList.toggle('gen-grid-warn', total > 50);
+    }
+
+    // Update seed reuse UI on count change
+    _updateSeedReuseUI();
+}
+
 // ── Submit generation ───────────────────────────────────────────────────
 
 async function submitGeneration() {
+    if (_activeGenTab === 'grid') {
+        return _submitGridGeneration();
+    }
+    return _submitSingleGeneration();
+}
+
+async function _submitSingleGeneration() {
     const btn = $('#gen-submit-btn');
     if (!btn) return;
 
@@ -271,7 +616,7 @@ async function submitGeneration() {
         // Close overlay
         closeGenerationOverlay();
 
-        // Dispatch custom event so Phase 8 (generation bubbles) can react
+        // Dispatch custom event so generation bubbles can react
         window.dispatchEvent(new CustomEvent('generation-submitted', {
             detail: { ...result, chatId, messageId, settings },
         }));
@@ -282,6 +627,83 @@ async function submitGeneration() {
         btn.disabled = false;
         btn.textContent = 'Generate';
     }
+}
+
+async function _submitGridGeneration() {
+    const btn = $('#gen-submit-btn');
+    if (!btn) return;
+
+    // Validate required pill inputs
+    let valid = true;
+    if (_gridModelPills && !_gridModelPills.validate()) valid = false;
+    if (_gridSamplerPills && !_gridSamplerPills.validate()) valid = false;
+    if (_gridSchedulerPills && !_gridSchedulerPills.validate()) valid = false;
+    if (!valid) return;
+
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+
+    try {
+        const gridSettings = _gatherGridValues();
+
+        const chatId = _currentGenChatId;
+        const messageId = _currentGenMessageId;
+
+        let result;
+        if (!chatId) {
+            result = await API.browserGridGenerate(gridSettings, _parentJobId);
+        } else {
+            result = await API.submitGridGeneration(chatId, messageId, gridSettings, _parentJobId);
+        }
+
+        // Save session (including seeds_used from response)
+        _previousGridSeeds = result.seeds_used || null;
+        _saveGridSession(gridSettings, result.seeds_used || []);
+
+        closeGenerationOverlay();
+
+        // Dispatch events for each job
+        if (result.jobs) {
+            for (const job of result.jobs) {
+                window.dispatchEvent(new CustomEvent('generation-submitted', {
+                    detail: { ...job, chatId, messageId },
+                }));
+            }
+        }
+    } catch (err) {
+        console.error('Grid generation submission failed:', err);
+        alert('Failed to submit grid generation: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+    }
+}
+
+function _gatherGridValues() {
+    const reuseCheckbox = $('#gen-grid-reuse-seeds');
+    const reusingSeeds = reuseCheckbox?.checked && _previousGridSeeds;
+
+    return {
+        positive_prompt: ($('#gen-grid-prompt') || {}).value || '',
+        base_models: _gridModelPills ? _gridModelPills.getValue() : [],
+        loras: _gridLoraPills ? _gridLoraPills.getValue() : [],
+        samplers: _gridSamplerPills ? _gridSamplerPills.getValue() : [],
+        schedulers: _gridSchedulerPills ? _gridSchedulerPills.getValue() : [],
+        output_folder: ($('#gen-grid-output-folder') || {}).value || '',
+        cfg_range: {
+            start: parseFloat($('#gen-grid-cfg-start')?.value) || null,
+            stop: parseFloat($('#gen-grid-cfg-stop')?.value) || null,
+            step: parseFloat($('#gen-grid-cfg-step')?.value) || 0,
+        },
+        steps_range: {
+            start: parseInt($('#gen-grid-steps-start')?.value, 10) || null,
+            stop: parseInt($('#gen-grid-steps-stop')?.value, 10) || null,
+            step: parseInt($('#gen-grid-steps-step')?.value, 10) || 0,
+        },
+        num_seeds: parseInt($('#gen-grid-num-seeds')?.value, 10) || 1,
+        seeds: reusingSeeds ? _previousGridSeeds : null,
+    };
 }
 
 // ── Internal: initialise widgets ────────────────────────────────────────
@@ -297,15 +719,6 @@ function _initGenWidgets() {
             placeholder: 'Select a diffusion model…',
             items: [],
             value: '',
-        });
-    }
-
-    // Auto-organize toggle: persist on change
-    const aoCheckbox = $('#gen-auto-organize');
-    if (aoCheckbox) {
-        aoCheckbox.addEventListener('change', () => {
-            _autoOrganizeCached = aoCheckbox.checked;
-            API.updateSettings({ auto_organize_output: aoCheckbox.checked ? "true" : "false" });
         });
     }
 

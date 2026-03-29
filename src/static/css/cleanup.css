@@ -103,28 +103,7 @@
     white-space: nowrap;
 }
 
-/* ── Batch scoring status ────────────────────────────────────── */
-.cleanup-batch-bar {
-    padding: 8px 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.cleanup-batch-indicator {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid var(--accent);
-    border-top-color: transparent;
-    animation: spin 0.8s linear infinite;
-}
-
-.cleanup-batch-label {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-}
+/* ── Batch scoring status (removed — scoring uses parse-blocker pattern) */
 
 /* ── Layout: sidebar + main ──────────────────────────────────── */
 .cleanup-layout {
@@ -280,6 +259,20 @@
     color: var(--accent);
 }
 
+/* Score All + Sort buttons, right-aligned in wave tab row */
+.cleanup-wave-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.cleanup-sort-btn {
+    font-size: 0.75rem;
+    min-width: 70px;
+}
+
 /* Small button variants */
 .btn-small {
     font-size: 0.78rem;
@@ -373,6 +366,26 @@
     color: var(--text-primary, var(--text-secondary));
 }
 
+/* Visited group — user expanded but did not delete */
+.cleanup-group-visited {
+    border-left: 3px solid var(--accent, #42a5f5);
+    background: rgba(66, 165, 245, 0.04);
+}
+
+.cleanup-group-visited .cleanup-dupe-header {
+    color: var(--text-muted);
+}
+
+/* Acted-upon group — user has deleted images from this group */
+.cleanup-group-acted {
+    border-left: 3px solid var(--success);
+    background: rgba(76, 175, 80, 0.04);
+}
+
+.cleanup-group-acted .cleanup-dupe-header {
+    color: var(--text-muted);
+}
+
 .cleanup-dupe-header {
     display: flex;
     align-items: center;
@@ -386,6 +399,13 @@
 
 .cleanup-dupe-header:hover {
     background: rgba(255, 255, 255, 0.04);
+}
+
+.cleanup-scroll-pct {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-left: 8px;
+    min-width: 30px;
 }
 
 .cleanup-dupe-header .best-pick-badge {

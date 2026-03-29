@@ -192,6 +192,31 @@ def generation_status_sse(job_id):
     )
 
 
+@api_bp.route("/generate/grid", methods=["POST"])
+def submit_grid_generation():
+    """Submit a grid of generation jobs (Cartesian product of parameters)."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    grid_settings = data.get("grid_settings", {})
+    if not grid_settings:
+        return jsonify({"error": "No grid_settings provided"}), 400
+
+    chat_id = data.get("chat_id")
+    message_id = data.get("message_id")
+    parent_job_id = data.get("parent_job_id")
+    session_id = data.get("session_id")
+
+    result = generation_controller.submit_grid_generation(
+        chat_id, message_id, grid_settings,
+        source="chat" if chat_id else "browser",
+        session_id=session_id,
+        parent_job_id=parent_job_id,
+    )
+    return jsonify(result)
+
+
 @api_bp.route("/generate/chat/<chat_id>", methods=["GET"])
 def get_chat_generations(chat_id):
     """Get all generations for a chat (for rebuilding UI on reload)."""

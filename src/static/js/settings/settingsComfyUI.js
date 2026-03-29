@@ -8,7 +8,9 @@
  *             searchableDropdown.js (createSearchableDropdown)
  */
 
-let _comfyuiModelDropdown = null; // Searchable dropdown instance
+let _comfyuiModelDropdown = null;     // Searchable dropdown instance
+let _comfyuiSamplerDropdown = null;   // Searchable dropdown for sampler
+let _comfyuiSchedulerDropdown = null; // Searchable dropdown for scheduler
 
 // ── Load settings into the ComfyUI tab ──────────────────────────────────
 
@@ -20,18 +22,20 @@ async function loadComfyUISettings() {
         $('#setting-comfyui-url').value = settings.comfyui_base_url || 'http://localhost:8188';
         $('#setting-comfyui-negative').value = settings.comfyui_default_negative || '';
 
-        // Sampler defaults
-        const samplerEl = $('#setting-comfyui-sampler');
-        if (samplerEl) samplerEl.value = settings.comfyui_default_sampler || '';
+        // Sampler defaults (numeric fields)
         const cfgEl = $('#setting-comfyui-cfg');
         if (cfgEl) cfgEl.value = settings.comfyui_default_cfg || '';
-        const schedulerEl = $('#setting-comfyui-scheduler');
-        if (schedulerEl) schedulerEl.value = settings.comfyui_default_scheduler || '';
         const stepsEl = $('#setting-comfyui-steps');
         if (stepsEl) stepsEl.value = settings.comfyui_default_steps || '';
 
         // Initialize or update model dropdown
         _initModelDropdown(settings.comfyui_default_model || '');
+
+        // Initialize sampler/scheduler dropdowns
+        _initSamplerDropdowns(
+            settings.comfyui_default_sampler || '',
+            settings.comfyui_default_scheduler || '',
+        );
 
         // Load workflow info
         await _loadWorkflowInfo();
@@ -67,6 +71,53 @@ function _initModelDropdown(currentModel) {
             // Value is stored; will be saved when user clicks Save
         },
     });
+}
+
+// ── Sampler / Scheduler dropdowns ───────────────────────────────────────
+
+function _initSamplerDropdowns(currentSampler, currentScheduler) {
+    const samplerContainer = $('#setting-comfyui-sampler-dropdown');
+    const schedulerContainer = $('#setting-comfyui-scheduler-dropdown');
+
+    if (samplerContainer) {
+        if (_comfyuiSamplerDropdown) {
+            _comfyuiSamplerDropdown.destroy();
+            _comfyuiSamplerDropdown = null;
+        }
+        _comfyuiSamplerDropdown = createSearchableDropdown({
+            container: samplerContainer,
+            placeholder: 'Select sampler…',
+            items: [],
+            value: currentSampler,
+        });
+    }
+
+    if (schedulerContainer) {
+        if (_comfyuiSchedulerDropdown) {
+            _comfyuiSchedulerDropdown.destroy();
+            _comfyuiSchedulerDropdown = null;
+        }
+        _comfyuiSchedulerDropdown = createSearchableDropdown({
+            container: schedulerContainer,
+            placeholder: 'Select scheduler…',
+            items: [],
+            value: currentScheduler,
+        });
+    }
+}
+
+async function _refreshSamplerOptions() {
+    try {
+        const opts = await API.getSamplerOptions();
+        if (_comfyuiSamplerDropdown && Array.isArray(opts.samplers)) {
+            _comfyuiSamplerDropdown.setItems(opts.samplers);
+        }
+        if (_comfyuiSchedulerDropdown && Array.isArray(opts.schedulers)) {
+            _comfyuiSchedulerDropdown.setItems(opts.schedulers);
+        }
+    } catch (err) {
+        console.warn('Failed to load sampler options:', err);
+    }
 }
 
 // ── Connection status ───────────────────────────────────────────────────
@@ -332,12 +383,12 @@ async function saveComfyUISettings() {
     data.comfyui_default_negative = negative;
 
     // Sampler defaults
-    const sampler = ($('#setting-comfyui-sampler') || {}).value || '';
-    data.comfyui_default_sampler = sampler;
+    data.comfyui_default_sampler = _comfyuiSamplerDropdown
+        ? _comfyuiSamplerDropdown.getValue() || '' : '';
     const cfg = ($('#setting-comfyui-cfg') || {}).value || '';
     data.comfyui_default_cfg = cfg;
-    const scheduler = ($('#setting-comfyui-scheduler') || {}).value || '';
-    data.comfyui_default_scheduler = scheduler;
+    data.comfyui_default_scheduler = _comfyuiSchedulerDropdown
+        ? _comfyuiSchedulerDropdown.getValue() || '' : '';
     const steps = ($('#setting-comfyui-steps') || {}).value || '';
     data.comfyui_default_steps = steps;
 
@@ -369,4 +420,7 @@ async function _refreshModelList() {
     } catch (err) {
         console.warn('Failed to load ComfyUI models:', err);
     }
+
+    // Also refresh sampler/scheduler options from ComfyUI
+    await _refreshSamplerOptions();
 }

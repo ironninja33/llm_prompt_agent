@@ -146,11 +146,22 @@ def get_deletions_for_jobs(job_ids: list[str]) -> dict[str, list[dict]]:
 
 
 def get_overall_stats() -> dict:
-    """Aggregate stats for the stats overlay."""
+    """Aggregate stats including both surviving and deleted images."""
     with get_db() as conn:
-        total_gens = conn.execute(
+        # Surviving completed jobs
+        surviving_gens = conn.execute(
             text("SELECT COUNT(*) as cnt FROM generation_jobs WHERE status = 'completed'")
         ).fetchone()._mapping["cnt"]
+
+        # Deleted jobs (distinct job_ids in deletion_log not in generation_jobs)
+        deleted_jobs = conn.execute(
+            text("""SELECT COUNT(DISTINCT dl.job_id) as cnt
+                    FROM deletion_log dl
+                    LEFT JOIN generation_jobs gj ON gj.id = dl.job_id
+                    WHERE gj.id IS NULL""")
+        ).fetchone()._mapping["cnt"]
+
+        total_gens = surviving_gens + deleted_jobs
 
         del_rows = conn.execute(
             text("SELECT reason, COUNT(*) as cnt FROM deletion_log GROUP BY reason")
@@ -165,12 +176,21 @@ def get_overall_stats() -> dict:
             text("SELECT AVG(generation_count) as avg FROM generation_sessions WHERE generation_count > 0")
         ).fetchone()._mapping["avg"] or 0
 
+        # Top lineage from both surviving jobs AND deletion log
         top_lineage = conn.execute(
-            text("""SELECT gs.positive_prompt, gj.lineage_depth
-                    FROM generation_jobs gj
-                    JOIN generation_settings gs ON gs.job_id = gj.id
-                    WHERE gj.lineage_depth > 0
-                    ORDER BY gj.lineage_depth DESC LIMIT 5""")
+            text("""SELECT prompt, MAX(depth) as depth FROM (
+                        SELECT gs.positive_prompt as prompt, gj.lineage_depth as depth
+                        FROM generation_jobs gj
+                        JOIN generation_settings gs ON gs.job_id = gj.id
+                        WHERE gj.lineage_depth > 0
+                    UNION ALL
+                        SELECT dl.positive_prompt as prompt, dl.lineage_depth as depth
+                        FROM deletion_log dl
+                        WHERE dl.lineage_depth > 0
+                          AND dl.positive_prompt IS NOT NULL
+                    )
+                    GROUP BY prompt
+                    ORDER BY depth DESC LIMIT 5""")
         ).fetchall()
 
     return {
@@ -179,7 +199,7 @@ def get_overall_stats() -> dict:
         "session_count": session_count,
         "avg_session_generations": round(avg_session, 1),
         "top_lineage": [
-            {"prompt": r._mapping["positive_prompt"][:100], "depth": r._mapping["lineage_depth"]}
+            {"prompt": r._mapping["prompt"][:100], "depth": r._mapping["depth"]}
             for r in top_lineage
         ],
     }

@@ -61,26 +61,6 @@
     border-color: var(--accent);
 }
 
-/* ── Checkbox toggle field ────────────────────────────────────── */
-.gen-toggle-field {
-    flex-direction: row !important;
-    align-items: center;
-    gap: 8px !important;
-    font-weight: 500 !important;
-    font-size: 0.82rem !important;
-    color: var(--text-muted) !important;
-    cursor: pointer;
-    user-select: none;
-}
-
-.gen-toggle-field input[type="checkbox"] {
-    width: 15px;
-    height: 15px;
-    margin: 0;
-    accent-color: var(--accent);
-    cursor: pointer;
-}
-
 /* ── Row layout for side-by-side fields ──────────────────────── */
 .gen-row {
     display: flex;
@@ -177,6 +157,80 @@
 
 .gen-seed-hint.hidden {
     display: none;
+}
+
+/* ── Generation Tab Bar ──────────────────────────────────────── */
+.gen-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+}
+
+.gen-tab {
+    padding: 8px 18px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.gen-tab:hover {
+    color: var(--text-primary);
+}
+
+.gen-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.gen-tab-pane.hidden {
+    display: none;
+}
+
+/* ── Grid tab specific ───────────────────────────────────────── */
+.gen-field-third {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.gen-grid-summary {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.gen-grid-summary .gen-grid-warn {
+    color: var(--danger, #e74c3c);
+}
+
+.gen-required {
+    color: var(--danger, #e74c3c);
+    font-weight: 700;
+}
+
+.gen-reuse-label {
+    flex-direction: row !important;
+    align-items: center;
+    gap: 8px !important;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.gen-reuse-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
 }
 
 /* ── Modal footer (Cancel / Generate buttons) ────────────────── */

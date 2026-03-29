@@ -115,7 +115,7 @@ def compute_keep_scores(folder_filter: str | None = None,
       - cluster_density:    smaller clusters = higher
       - folder_score:       finetune/compare folders = lower
       - dupe_member_score:  non-best dupe members = lower
-      - llm_score:          from image_quality_scores if available
+      - quality_score:       from image_quality_scores if available
 
     Wave assignment:
       wave 1: keep_score < 0.55
@@ -149,9 +149,9 @@ def compute_keep_scores(folder_filter: str | None = None,
     if not rows:
         return []
 
-    # Get keep flags and LLM scores
+    # Get keep flags and quality scores
     keep_flags = scoring_model.get_keep_flags()
-    llm_scores = scoring_model.get_all_quality_scores()
+    quality_scores = scoring_model.get_all_quality_scores()
 
     # Get cluster assignment counts for density signal
     cluster_sizes = _get_cluster_sizes()
@@ -256,13 +256,13 @@ def compute_keep_scores(folder_filter: str | None = None,
         else:
             dupe_member_score = 0.5   # neutral — not in any dupe group
 
-        # LLM quality score (if available)
-        llm_data = llm_scores.get(image_id)
-        has_llm = llm_data is not None
+        # Quality score (if available)
+        score_data = quality_scores.get(image_id)
+        has_score = score_data is not None
 
-        if has_llm:
-            llm_score = llm_data["overall"]
-            # Weights when LLM score is available
+        if has_score:
+            quality_score = score_data["overall"]
+            # Weights when quality score is available
             keep_score = (
                 0.08 * age_score +
                 0.06 * prompt_score +
@@ -271,10 +271,10 @@ def compute_keep_scores(folder_filter: str | None = None,
                 0.06 * cluster_density +
                 0.08 * folder_score +
                 0.15 * dupe_member_score +
-                0.45 * llm_score
+                0.45 * quality_score
             )
         else:
-            # Weights when no LLM score — redistribute LLM weight
+            # Weights when no quality score — redistribute weight
             keep_score = (
                 0.15 * age_score +
                 0.10 * prompt_score +
@@ -307,7 +307,7 @@ def compute_keep_scores(folder_filter: str | None = None,
             "created_at": row.get("created_at"),
             "positive_prompt": prompt[:200] if prompt else None,
             "seed": seed,
-            "llm_overall": llm_data["overall"] if has_llm else None,
+            "quality_overall": score_data["overall"] if has_score else None,
         })
 
     results.sort(key=lambda r: r["keep_score"])
@@ -501,7 +501,7 @@ def detect_near_duplicates(folder_filter: str | None = None,
     doc_to_image = _map_doc_ids_to_image_ids(all_ids)
 
     # Build output groups
-    llm_scores = scoring_model.get_all_quality_scores()
+    quality_scores = scoring_model.get_all_quality_scores()
     result_groups = []
     group_id = 0
 
@@ -512,11 +512,13 @@ def detect_near_duplicates(folder_filter: str | None = None,
             doc_id = all_ids[idx]
             img_info = doc_to_image.get(doc_id)
             if img_info:
+                sd = quality_scores.get(img_info["image_id"])
                 members.append({
                     "image_id": img_info["image_id"],
                     "job_id": img_info.get("job_id"),
                     "file_path": img_info.get("file_path"),
                     "file_size": img_info.get("file_size"),
+                    "quality_overall": sd["overall"] if sd else None,
                 })
                 if img_info.get("output_folder"):
                     folders.add(img_info["output_folder"])
@@ -537,8 +539,8 @@ def detect_near_duplicates(folder_filter: str | None = None,
             if not filtered:
                 continue
 
-        # Determine best pick: prefer highest LLM score, else newest, else largest file
-        best_pick = _pick_best(image_ids, llm_scores)
+        # Determine best pick: prefer highest quality score, else newest, else largest file
+        best_pick = _pick_best(image_ids, quality_scores)
 
         result_groups.append({
             "group_id": group_id,
@@ -625,13 +627,13 @@ def _map_doc_ids_to_image_ids(doc_ids: list[str]) -> dict[str, dict]:
     return mapping
 
 
-def _pick_best(image_ids: list[int], llm_scores: dict[int, dict]) -> int:
+def _pick_best(image_ids: list[int], quality_scores: dict[int, dict]) -> int:
     """Pick the best image from a near-duplicate group.
 
-    Priority: highest LLM overall score > newest > largest file size.
+    Priority: highest quality score > newest > largest file size.
     """
     best_id = image_ids[0]
-    best_llm = -1.0
+    best_quality = -1.0
     best_created = ""
     best_size = 0
 
@@ -648,15 +650,15 @@ def _pick_best(image_ids: list[int], llm_scores: dict[int, dict]) -> int:
         for row in result.fetchall():
             r = row._mapping
             iid = r["id"]
-            llm = llm_scores.get(iid, {}).get("overall", -1.0)
+            qs = quality_scores.get(iid, {}).get("overall", -1.0)
             created = str(r["created_at"] or "")
             size = r["file_size"] or 0
 
-            if (llm > best_llm or
-                (llm == best_llm and created > best_created) or
-                (llm == best_llm and created == best_created and size > best_size)):
+            if (qs > best_quality or
+                (qs == best_quality and created > best_created) or
+                (qs == best_quality and created == best_created and size > best_size)):
                 best_id = iid
-                best_llm = llm
+                best_quality = qs
                 best_created = created
                 best_size = size
 

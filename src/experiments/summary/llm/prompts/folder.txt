@@ -2,19 +2,6 @@ Here are sample image captions from a folder labeled "{folder_label}" with a tag
 
 {sample_prompts}
 
-Focus on describing the concept "{concept}", which is one of:
-- action: Focus on describing the person's actions and behavior.
-- body_type: Focus on describing the woman's body type.
-- camera: Focus on describing the camera angle.
-- character: Focus on describing the character, including the clothes.
-- clothes: Focus on describing the woman's clothes.
-- ethnicity: Focus on describing the woman's ethnicity.
-- lighting: Focus on describing the lighting and atmosphere.
-- object: Describe the object.
-- pose: Focus on describing the woman's pose, including her clothing.
-- setting: Focus on describing the setting, atmosphere, and lighting.
-- sex_act: Emphasize describing the sex act, including the position of the man and the woman and camera angle
-- test: Test data; describe overall themes.
-- woman: Emphasize describing the woman's ethnicity, build, age, hair, and clothing. Avoid using the woman's name.
+{concept_prompt}
 
-Focusing on the concept "{concept}", summarize the shared theme(s) present in ten or fewer words, avoiding stopwords and focusing on high information density. Avoid using the term "{concept}" in the summary.
+Focusing on the concept "{concept}", summarize the shared theme(s) present in ten or fewer words, focusing on high information density and avoiding stopwords. Avoid using the term "{concept}" in the summary.

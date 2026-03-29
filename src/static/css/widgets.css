@@ -106,6 +106,20 @@
     margin-top: 4px;
 }
 
+.pill-wrapper.pill-error .pill-dropdown-host input {
+    border-color: var(--danger, #e74c3c);
+}
+
+.pill-error-msg {
+    color: var(--danger, #e74c3c);
+    font-size: 0.75rem;
+    margin-top: 2px;
+}
+
+.pill-error-msg.hidden {
+    display: none;
+}
+
 .pill-container {
     display: flex;
     flex-wrap: wrap;
@@ -161,6 +175,107 @@
 
 .pill-dropdown-host {
     /* Host for the embedded searchable dropdown */
+}
+
+/* ── Checkbox Dropdown ───────────────────────────────────────── */
+.cbdd-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.cbdd-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 6px);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.cbdd-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.cbdd-arrow {
+    font-size: 0.65rem;
+}
+
+.cbdd-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 100;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 6px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 160px;
+    padding: 6px 0;
+    margin-top: 4px;
+}
+
+.cbdd-panel.hidden {
+    display: none;
+}
+
+.cbdd-controls {
+    display: flex;
+    gap: 8px;
+    padding: 4px 12px 6px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+}
+
+.cbdd-link {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 0.72rem;
+    cursor: pointer;
+    padding: 0;
+}
+
+.cbdd-link:hover {
+    text-decoration: underline;
+}
+
+.cbdd-items {
+    display: flex;
+    flex-direction: column;
+}
+
+.cbdd-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.cbdd-item:hover {
+    background: var(--bg-hover);
+}
+
+.cbdd-item-select {
+    cursor: pointer;
+}
+
+.cbdd-item-active {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.cbdd-item input[type="checkbox"] {
+    width: auto;
+    margin: 0;
 }
 
 /* ── Connection Status Dot ───────────────────────────────────── */

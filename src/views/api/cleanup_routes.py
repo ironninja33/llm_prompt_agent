@@ -144,55 +144,22 @@ def cleanup_triage_data():
     if wave not in (1, 2, 3):
         return jsonify({"error": "wave must be 1, 2, or 3"}), 400
 
-    result = cleanup_controller.get_triage_data(folder, wave)
+    sort_order = request.args.get("sort", "desc")
+    result = cleanup_controller.get_triage_data(folder, wave, sort_order)
     return jsonify(result)
-
-
-@api_bp.route("/cleanup/batch-status", methods=["GET"])
-def cleanup_batch_status():
-    """Get the most recent scoring batch status."""
-    batch = cleanup_controller.get_batch_status()
-    return jsonify({"batch": batch})
-
-
-@api_bp.route("/cleanup/active-batch", methods=["GET"])
-def cleanup_active_batch():
-    """Get the active (non-terminal) scoring batch."""
-    batch = cleanup_controller.get_active_batch()
-    return jsonify({"batch": batch})
 
 
 @api_bp.route("/cleanup/score", methods=["POST"])
 def cleanup_score():
-    """Submit a scoring batch to Gemini.
-
-    Body: { "mode": "near-dupes"|"all", "wave": int, "folder": str|null }
-    """
-    data = request.get_json()
-    if not data or "mode" not in data or "wave" not in data:
-        return jsonify({"error": "mode and wave required"}), 400
-
-    result = cleanup_controller.submit_scoring(
-        mode=data["mode"],
-        wave=int(data["wave"]),
-        folder=data.get("folder"),
-    )
-
+    """Start ImageReward scoring for all unscored images."""
+    result = cleanup_controller.start_scoring()
     if "error" in result:
-        return jsonify(result), 409 if "batch_id" in result else 400
-
+        return jsonify(result), 409
     return jsonify(result)
 
 
 @api_bp.route("/cleanup/scoring-progress", methods=["GET"])
 def cleanup_scoring_progress():
-    """Get upload/submission progress for the current scoring batch."""
+    """Get ImageReward scoring progress."""
     progress = cleanup_controller.get_scoring_progress()
     return jsonify(progress)
-
-
-@api_bp.route("/cleanup/poll-batch", methods=["POST"])
-def cleanup_poll_batch():
-    """Poll the scoring batch for status updates (and process results if done)."""
-    result = cleanup_controller.poll_scoring_batch()
-    return jsonify(result)

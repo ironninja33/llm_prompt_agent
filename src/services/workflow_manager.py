@@ -228,6 +228,13 @@ class ChromaSubgraphWorkflow(WorkflowDefinition):
     _FOLDER_LOOKUP = NodeLookup(title="Output Folder", class_type=None)
     _SEED_LOOKUP = NodeLookup(title="seed", class_type="Seed (rgthree)")
 
+    # Sampler node — try custom node first, then standard KSampler variants
+    _SAMPLER_LOOKUPS = [
+        NodeLookup(title=None, class_type="ClownsharKSampler_Beta"),
+        NodeLookup(title=None, class_type="KSampler"),
+        NodeLookup(title=None, class_type="KSamplerAdvanced"),
+    ]
+
     # -- LoRA stack: API-format input key patterns ----------------------------
     _LORA_SLOT_KEYS: list[tuple[str, str]] = [
         ("lora_01", "strength_01"),
@@ -290,6 +297,24 @@ class ChromaSubgraphWorkflow(WorkflowDefinition):
                 default=-1,
             ),
         ]
+
+    # -- sampler node lookup (tries multiple class_types) ----------------------
+
+    def _find_sampler_node_api(self, workflow: dict) -> tuple[str | None, dict | None]:
+        """Locate the sampler node in an API-format workflow."""
+        for lookup in self._SAMPLER_LOOKUPS:
+            node_id, node = self._find_api_node(workflow, lookup)
+            if node is not None:
+                return node_id, node
+        return None, None
+
+    def _find_sampler_node_ui(self, workflow: dict) -> dict | None:
+        """Locate the sampler node in a UI-format workflow."""
+        for lookup in self._SAMPLER_LOOKUPS:
+            node = self._find_node(workflow, lookup)
+            if node is not None:
+                return node
+        return None
 
     # -- extract / apply: dispatch by format ----------------------------------
 
@@ -367,6 +392,16 @@ class ChromaSubgraphWorkflow(WorkflowDefinition):
             logger.warning("ChromaSubgraphWorkflow(API): Seed node not found")
             settings["seed"] = -1
 
+        # -- Sampler settings (sampler, scheduler, cfg, steps) ----------------
+        _, sampler_node = self._find_sampler_node_api(workflow)
+        if sampler_node:
+            inputs = sampler_node.get("inputs", {})
+            # Remap node keys → settings keys (sampler_name→sampler, cfg→cfg_scale)
+            settings["sampler"] = inputs.get("sampler_name")
+            settings["cfg_scale"] = inputs.get("cfg")
+            settings["scheduler"] = inputs.get("scheduler")
+            settings["steps"] = inputs.get("steps")
+
         return settings
 
     def _apply_settings_api(self, workflow: dict, settings: dict) -> dict:
@@ -423,6 +458,20 @@ class ChromaSubgraphWorkflow(WorkflowDefinition):
                 node.setdefault("inputs", {})["seed"] = seed_value
             else:
                 logger.warning("ChromaSubgraphWorkflow(API): Seed node not found — skipping")
+
+        # -- Sampler settings (sampler, scheduler, cfg, steps) ----------------
+        _, sampler_node = self._find_sampler_node_api(wf)
+        if sampler_node:
+            inputs = sampler_node.setdefault("inputs", {})
+            # Remap settings keys → node keys (sampler→sampler_name, cfg_scale→cfg)
+            if settings.get("sampler") is not None:
+                inputs["sampler_name"] = settings["sampler"]
+            if settings.get("cfg_scale") is not None:
+                inputs["cfg"] = float(settings["cfg_scale"])
+            if settings.get("scheduler") is not None:
+                inputs["scheduler"] = settings["scheduler"]
+            if settings.get("steps") is not None:
+                inputs["steps"] = int(settings["steps"])
 
         return wf
 
@@ -523,6 +572,14 @@ class ChromaSubgraphWorkflow(WorkflowDefinition):
             logger.warning("ChromaSubgraphWorkflow(UI): Seed node not found")
             settings["seed"] = -1
 
+        # -- Sampler settings (sampler, scheduler, cfg, steps) ----------------
+        # UI format: widget_values layout depends on node type.  For
+        # ClownsharKSampler_Beta the order observed in the workflow JSON is:
+        #   [eta, sampler_name, scheduler, steps, cfg, seed_link, ...]
+        # We don't hard-code indices — instead look up the node's inputs spec
+        # at runtime only when we have object_info.  For now, skip UI extract
+        # since API format is the primary submission target.
+
         return settings
 
     def _apply_settings_ui(self, workflow: dict, settings: dict) -> dict:
@@ -579,6 +636,10 @@ class ChromaSubgraphWorkflow(WorkflowDefinition):
                 _set_widget_value(node, 0, seed_value)
             else:
                 logger.warning("ChromaSubgraphWorkflow(UI): Seed node not found — skipping")
+
+        # -- Sampler settings (sampler, scheduler, cfg, steps) ----------------
+        # UI format: skip for now — API format is the submission target.
+        # UI workflow is only passed as extra_pnginfo for introspection nodes.
 
         return wf
 

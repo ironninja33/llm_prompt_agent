@@ -10,7 +10,6 @@ from .orchestration import (
     remove_status_listener,
     is_running,
     start_clustering,
-    start_clustering_single,
     get_current_status,
 )
 
@@ -38,7 +37,6 @@ __all__ = [
     "remove_status_listener",
     "is_running",
     "start_clustering",
-    "start_clustering_single",
     "generate_cross_folder_clusters",
     "generate_intra_folder_clusters",
     "assign_new_docs_to_clusters",

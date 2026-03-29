@@ -1,7 +1,8 @@
 #!/bin/bash
+cd "$(dirname "$0")/.."
 # Tool Study — analyze agent tool usage and test alternative query strategies
 #
-# Usage: ./run_tool_study.sh <command> [args]
+# Usage: ./run/run_tool_study.sh <command> [args]
 #
 # Phase 1 — Database Analysis:
 #   analyze       - Tool call patterns (no API key needed)
@@ -13,13 +14,13 @@
 #   experiment    - Run query experiment
 #
 # Examples:
-#   ./run_tool_study.sh analyze
-#   ./run_tool_study.sh leakage
-#   ./run_tool_study.sh bias --k 10
-#   ./run_tool_study.sh redundancy --limit 5
-#   ./run_tool_study.sh experiment --strategy baseline --k 10
-#   ./run_tool_study.sh experiment --strategy source_balanced --training-ratio 0.5
-#   ./run_tool_study.sh experiment --strategy decomposed --query "elegant gown dramatic lighting"
+#   ./run/run_tool_study.sh analyze
+#   ./run/run_tool_study.sh leakage
+#   ./run/run_tool_study.sh bias --k 10
+#   ./run/run_tool_study.sh redundancy --limit 5
+#   ./run/run_tool_study.sh experiment --strategy baseline --k 10
+#   ./run/run_tool_study.sh experiment --strategy source_balanced --training-ratio 0.5
+#   ./run/run_tool_study.sh experiment --strategy decomposed --query "elegant gown dramatic lighting"
 
 set -e
 

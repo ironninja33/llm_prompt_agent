@@ -62,7 +62,93 @@ function renderBreadcrumb(breadcrumb, recursiveImageCount) {
         actionsGroup.appendChild(count);
     }
 
+    // Parameter display dropdown
+    if (typeof initBrowserParamDisplay === 'function') {
+        const paramContainer = document.createElement('div');
+        paramContainer.style.display = 'inline-block';
+        actionsGroup.appendChild(paramContainer);
+        initBrowserParamDisplay(paramContainer);
+    }
+
+    // Thumbnail size dropdown
+    const sizeContainer = document.createElement('div');
+    sizeContainer.style.display = 'inline-block';
+    actionsGroup.appendChild(sizeContainer);
+    _createSizeDropdown(sizeContainer);
+
     el.appendChild(actionsGroup);
+}
+
+const _SIZE_OPTIONS = [
+    { key: 'small', label: 'Small' },
+    { key: 'medium', label: 'Medium' },
+    { key: 'large', label: 'Large' },
+];
+
+function _createSizeDropdown(container) {
+    const current = BrowserState.thumbnailSize || 'medium';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cbdd-wrapper';
+
+    const btn = document.createElement('button');
+    btn.className = 'cbdd-btn';
+    btn.type = 'button';
+    const currentLabel = _SIZE_OPTIONS.find(o => o.key === current)?.label || 'Medium';
+    btn.innerHTML = `<span class="cbdd-label">${currentLabel}</span><span class="cbdd-arrow">▾</span>`;
+
+    const panel = document.createElement('div');
+    panel.className = 'cbdd-panel hidden';
+
+    const items = document.createElement('div');
+    items.className = 'cbdd-items';
+    for (const opt of _SIZE_OPTIONS) {
+        const row = document.createElement('div');
+        row.className = 'cbdd-item cbdd-item-select' + (opt.key === current ? ' cbdd-item-active' : '');
+        row.dataset.key = opt.key;
+        row.textContent = opt.label;
+        items.appendChild(row);
+    }
+    panel.appendChild(items);
+    wrapper.appendChild(btn);
+    wrapper.appendChild(panel);
+    container.appendChild(wrapper);
+
+    // Toggle panel
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        panel.classList.toggle('hidden');
+    });
+
+    // Click outside to close
+    function onDocClick(e) {
+        if (!wrapper.contains(e.target)) panel.classList.add('hidden');
+    }
+    document.addEventListener('click', onDocClick);
+
+    // Item click: apply, close, save
+    items.addEventListener('click', (e) => {
+        const row = e.target.closest('.cbdd-item-select');
+        if (!row) return;
+        const size = row.dataset.key;
+
+        // Update active state
+        items.querySelectorAll('.cbdd-item-select').forEach(r => r.classList.remove('cbdd-item-active'));
+        row.classList.add('cbdd-item-active');
+
+        // Update button label
+        btn.querySelector('.cbdd-label').textContent = row.textContent;
+
+        // Close panel
+        panel.classList.add('hidden');
+
+        // Apply
+        BrowserState.thumbnailSize = size;
+        window.dispatchEvent(new CustomEvent('thumbnail-size-changed', { detail: { browser: size } }));
+
+        // Persist to DB
+        API.updateSettings({ thumbnail_size_browser: size }).catch(() => {});
+    });
 }
 
 /**
@@ -130,14 +216,6 @@ async function loadBrowserContents() {
 
         BrowserState.hasMore = result.has_more || false;
 
-        // Show "Suggest subfolders" button if applicable
-        if (typeof maybeShowReorgButton === 'function') {
-            maybeShowReorgButton(
-                BrowserState.currentPath,
-                result.total_image_count || 0,
-                (result.directories && result.directories.length > 0)
-            );
-        }
 
     } catch (err) {
         console.error('Failed to load browser contents:', err);

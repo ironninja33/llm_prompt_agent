@@ -299,6 +299,59 @@ def prepare_for_generation(user_settings: dict) -> tuple[dict, dict | None]:
     return prepared_api, prepared_ui
 
 
+def get_sampler_options() -> dict:
+    """Get available samplers/schedulers for the active workflow's sampler node.
+
+    Queries ComfyUI's ``/object_info`` endpoint, finds the sampler node type
+    used in the stored workflow, and extracts the enum values for
+    ``sampler_name`` and ``scheduler``.
+
+    Returns:
+        Dict with ``samplers``, ``schedulers`` (lists of strings), and
+        ``sampler_node_type`` (the class_type of the sampler node, or None).
+    """
+    from src.services import comfyui_service
+
+    empty = {"samplers": [], "schedulers": [], "sampler_node_type": None}
+
+    api_json_str = settings_model.get_setting("comfyui_workflow_api_json") or ""
+    if not api_json_str:
+        return empty
+
+    try:
+        api_workflow = json.loads(api_json_str)
+    except json.JSONDecodeError:
+        return empty
+
+    api_filename = settings_model.get_setting("comfyui_workflow_api_filename") or ""
+    defn = workflow_manager.get_definition_for_workflow(api_filename) if api_filename else None
+    if not defn or not hasattr(defn, "_find_sampler_node_api"):
+        return empty
+
+    _, sampler_node = defn._find_sampler_node_api(api_workflow)
+    if not sampler_node:
+        return empty
+
+    class_type = sampler_node.get("class_type", "")
+    object_info = comfyui_service.get_object_info()
+    node_info = object_info.get(class_type, {})
+    required_inputs = node_info.get("input", {}).get("required", {})
+
+    samplers: list[str] = []
+    schedulers: list[str] = []
+    for key, val in required_inputs.items():
+        if key in ("sampler_name", "sampler") and isinstance(val, list) and val and isinstance(val[0], list):
+            samplers = val[0]
+        if key == "scheduler" and isinstance(val, list) and val and isinstance(val[0], list):
+            schedulers = val[0]
+
+    return {
+        "samplers": samplers,
+        "schedulers": schedulers,
+        "sampler_node_type": class_type,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
