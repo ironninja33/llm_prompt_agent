@@ -48,6 +48,9 @@ let _cachedModels = null;
 let _cachedLoras = null;
 let _cachedFolders = null;
 
+// Cached most-recent job settings (for "pull from latest" buttons)
+let _cachedRecentSettings = null;
+
 
 // ── Open the overlay ────────────────────────────────────────────────────
 
@@ -95,6 +98,9 @@ async function openGenerationOverlay(options) {
 
     // Initialise widgets on first open
     _initGenWidgets();
+
+    // Pre-fetch most-recent job settings for "pull from latest" buttons
+    API.getMostRecentGenerationSettings().then(s => { _cachedRecentSettings = s; });
 
     // Load model/lora/folder lists (folders always refreshed, models/loras cached)
     _cachedFolders = null;
@@ -208,6 +214,7 @@ function closeGenerationOverlay() {
     const overlay = $('#generation-overlay');
     if (overlay) overlay.classList.add('hidden');
     _parentJobId = null;
+    window.dispatchEvent(new CustomEvent('overlay-closed'));
 }
 
 // ── Random seed ─────────────────────────────────────────────────────────
@@ -731,6 +738,15 @@ function _initGenWidgets() {
             truncateAt: 35,
         });
     }
+
+    // "Pull from latest" icon buttons
+    document.querySelectorAll('.gen-pull-latest').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!_cachedRecentSettings) return;
+            _applyLatestField(btn.dataset.field, _cachedRecentSettings);
+        });
+    });
 }
 
 // ── Internal: load models, loras, and output folders ────────────────────
@@ -795,6 +811,30 @@ function _populateFolderDatalist(folders) {
     const datalist = $('#gen-folder-list');
     if (!datalist) return;
     datalist.innerHTML = folders.map(f => `<option value="${escapeHtml(f)}">`).join('');
+}
+
+// ── Internal: apply a single field from most-recent job settings ────────
+
+function _applyLatestField(field, settings) {
+    switch (field) {
+        case 'base_model':
+            if (_genModelDropdown && settings.base_model) {
+                _genModelDropdown.setValue(settings.base_model);
+            }
+            break;
+        case 'loras':
+            if (_genLoraInput) {
+                const raw = Array.isArray(settings.loras) ? settings.loras : [];
+                const normalized = raw.map(l => typeof l === 'object' ? l.name : l);
+                _genLoraInput.setValue(normalized);
+            }
+            break;
+        case 'output_folder': {
+            const fi = document.getElementById('gen-output-folder');
+            if (fi) fi.value = settings.output_folder || '';
+            break;
+        }
+    }
 }
 
 // ── Internal: fill overlay fields ───────────────────────────────────────

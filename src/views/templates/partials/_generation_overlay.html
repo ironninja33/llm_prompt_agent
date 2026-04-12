@@ -20,19 +20,46 @@
                 </label>
 
                 <div class="gen-row">
-                    <label class="gen-field-wide">Base Model
+                    <label class="gen-field-wide">
+                        <span class="gen-label-row">
+                            <button type="button" class="gen-pull-latest" data-field="base_model"
+                                    title="Use from most recent job">
+                                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="8" cy="8" r="6.25"/><path d="M8 4.5V8l2.5 1.5"/>
+                                </svg>
+                            </button>
+                            Base Model
+                        </span>
                         <div id="gen-model-dropdown"></div>
                     </label>
                 </div>
 
                 <div class="gen-row">
-                    <label class="gen-field-wide">LoRAs
+                    <label class="gen-field-wide">
+                        <span class="gen-label-row">
+                            <button type="button" class="gen-pull-latest" data-field="loras"
+                                    title="Use from most recent job">
+                                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="8" cy="8" r="6.25"/><path d="M8 4.5V8l2.5 1.5"/>
+                                </svg>
+                            </button>
+                            LoRAs
+                        </span>
                         <div id="gen-lora-input"></div>
                     </label>
                 </div>
 
                 <div class="gen-row">
-                    <label class="gen-field">Output Folder
+                    <label class="gen-field">
+                        <span class="gen-label-row">
+                            <button type="button" class="gen-pull-latest" data-field="output_folder"
+                                    title="Use from most recent job">
+                                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="8" cy="8" r="6.25"/><path d="M8 4.5V8l2.5 1.5"/>
+                                </svg>
+                            </button>
+                            Output Folder
+                        </span>
                         <input type="text" id="gen-output-folder" placeholder="subfolder name" list="gen-folder-list">
                         <datalist id="gen-folder-list"></datalist>
                     </label>

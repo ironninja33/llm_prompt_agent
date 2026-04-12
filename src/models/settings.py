@@ -182,6 +182,10 @@ def insert_default_settings(conn):
         "summarizer_max_words": "12",
         "context_history_pairs": "3",
         "context_stale_iterations": "2",
+        "browser_sort_mode": "date",
+        "browser_sort_direction": "desc",
+        "browser_auto_refresh": "true",
+        "browser_display_params": '["filename", "file_size", "created_at"]',
     }
 
     # Load bundled prompt templates for summarizer defaults

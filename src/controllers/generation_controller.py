@@ -92,7 +92,11 @@ def submit_generation(chat_id: str | None, message_id: int | None, settings: dic
         num_images = settings.get("num_images", 1) or 1
 
         # Submit to ComfyUI
-        result = comfyui_service.submit_prompt(prepared_api, ui_workflow=prepared_ui)
+        result = comfyui_service.submit_prompt(
+            prepared_api,
+            client_id=comfyui_service.COMFYUI_CLIENT_ID,
+            ui_workflow=prepared_ui,
+        )
 
         if not result.success:
             gen_model.update_job_status(job_id, "failed")
@@ -634,6 +638,7 @@ def initialize():
     """
     comfyui_service.add_completion_callback(handle_generation_complete)
     comfyui_service.add_status_listener(_handle_generation_status)
+    comfyui_service.start_poller()
 
     # Resume polling for any active jobs from a previous session
     active_jobs = gen_model.get_active_jobs()

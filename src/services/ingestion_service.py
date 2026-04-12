@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 # Global ingestion state
 _ingestion_lock = threading.Lock()
 _ingestion_running = False
+_ingestion_thread: threading.Thread | None = None
+_shutdown_event = threading.Event()
 _status_listeners: list = []  # list of callback functions
 _current_status: dict = {"phase": "idle", "complete": True}
 
@@ -89,19 +91,36 @@ def start_ingestion(output_only: bool = False):
     Args:
         output_only: If True, only re-scan output directories.
     """
-    global _ingestion_running
+    global _ingestion_running, _ingestion_thread
     with _ingestion_lock:
         if _ingestion_running:
             logger.warning("Ingestion already running, skipping")
             return
         _ingestion_running = True
 
+    _shutdown_event.clear()
     thread = threading.Thread(
         target=_run_ingestion,
         args=(output_only,),
-        daemon=True,
+        daemon=False,
     )
     thread.start()
+    _ingestion_thread = thread
+
+
+def stop_ingestion(timeout: float = 30):
+    """Signal the ingestion thread to stop and wait for it to finish."""
+    global _ingestion_thread
+    _shutdown_event.set()
+    if _ingestion_thread is not None and _ingestion_thread.is_alive():
+        print(f"Waiting for ingestion thread to finish (timeout={timeout}s)...")
+        logger.info(f"Waiting for ingestion thread to finish (timeout={timeout}s)...")
+        _ingestion_thread.join(timeout=timeout)
+        if _ingestion_thread.is_alive():
+            logger.warning("Ingestion thread did not finish in time")
+        else:
+            print("Ingestion thread stopped.")
+    _ingestion_thread = None
 
 
 def _run_ingestion(output_only: bool = False):
@@ -241,6 +260,10 @@ def _run_ingestion(output_only: bool = False):
                 _process_batch(batch_ids, batch_texts, batch_metadatas, batch_source_types,
                                status_callback=_embedding_status_callback)
                 batch_ids, batch_texts, batch_metadatas, batch_source_types = [], [], [], []
+
+                if _shutdown_event.is_set():
+                    logger.info("Shutdown requested — stopping ingestion after current batch")
+                    break
 
         # Process remaining batch
         if batch_ids:
@@ -411,27 +434,49 @@ def _process_batch(
     status_callback=None,
 ):
     """Generate embeddings and store a batch of documents."""
+    # Step 1: Generate embeddings (API call — retry-worthy)
     try:
         embeddings = embedding_service.embed_batch(texts, status_callback=status_callback)
-
-        # Group by source type for ChromaDB
-        groups: dict[str, tuple[list, list, list, list]] = {}
-        for doc_id, text_val, embedding, metadata, stype in zip(
-            ids, texts, embeddings, metadatas, source_types
-        ):
-            if stype not in groups:
-                groups[stype] = ([], [], [], [])
-            g = groups[stype]
-            g[0].append(doc_id)
-            g[1].append(text_val)
-            g[2].append(embedding)
-            g[3].append(metadata)
-
-        for stype, (gids, gtexts, gembs, gmetas) in groups.items():
-            vector_store.add_documents_batch(gids, gtexts, gembs, stype, gmetas)
-
     except Exception as e:
-        logger.error(f"Error processing batch: {e}", exc_info=True)
+        logger.error("Embedding API failed for batch of %d: %s", len(ids), e, exc_info=True)
+        return
+
+    if len(embeddings) != len(ids):
+        logger.error(
+            "Embedding count mismatch: got %d embeddings for %d documents, skipping batch",
+            len(embeddings), len(ids),
+        )
+        return
+
+    # Step 2: Store in ChromaDB (let write-verification errors propagate)
+    groups: dict[str, tuple[list, list, list, list]] = {}
+    for doc_id, text_val, embedding, metadata, stype in zip(
+        ids, texts, embeddings, metadatas, source_types
+    ):
+        if stype not in groups:
+            groups[stype] = ([], [], [], [])
+        g = groups[stype]
+        g[0].append(doc_id)
+        g[1].append(text_val)
+        g[2].append(embedding)
+        g[3].append(metadata)
+
+    for stype, (gids, gtexts, gembs, gmetas) in groups.items():
+        try:
+            vector_store.add_documents_batch(gids, gtexts, gembs, stype, gmetas)
+        except RuntimeError:
+            # Write verification failed — already retried inside add_documents_batch.
+            # Log as critical since this means ChromaDB is dropping data.
+            logger.critical(
+                "ChromaDB write verification failed for %d %s documents. "
+                "Data may be corrupted — consider restarting the application.",
+                len(gids), stype,
+            )
+        except Exception as e:
+            logger.error(
+                "ChromaDB write failed for %d %s documents: %s",
+                len(gids), stype, e, exc_info=True,
+            )
 
 
 def _ensure_sqlite_records(filepath: str, parsed: ParsedImageData, dir_info: dict):

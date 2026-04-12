@@ -112,6 +112,9 @@ function createBrowserImageThumbnail(imageData) {
     // Wrap in browser-specific container with extra info
     const wrapper = document.createElement('div');
     wrapper.className = 'browser-img-item';
+    wrapper.dataset.imageId = String(imageData.id);
+    wrapper.dataset.sortDate = imageData.created_at || '';
+    wrapper.dataset.sortSeed = String(imageData.settings?.seed ?? '');
     wrapper.appendChild(item);
 
     // Filename
@@ -147,6 +150,12 @@ function createBrowserImageThumbnail(imageData) {
     const params = document.createElement('div');
     params.className = 'browser-img-params';
     params.dataset.settings = JSON.stringify(imageData.settings || {});
+    params.dataset.meta = JSON.stringify({
+        file_size: imageData.file_size,
+        width: imageData.width,
+        height: imageData.height,
+        created_at: imageData.created_at,
+    });
     wrapper.appendChild(params);
 
     return wrapper;

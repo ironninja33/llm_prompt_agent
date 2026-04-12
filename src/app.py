@@ -29,17 +29,27 @@ def create_app() -> Flask:
     logger.info("Initializing database...")
     initialize_database()
 
-    # Initialize ChromaDB
-    from src.models.vector_store import initialize as init_vector_store
-    logger.info("Initializing vector store...")
-    init_vector_store()
+    # Skip heavy initialisation in the reloader parent process — only the
+    # child (WERKZEUG_RUN_MAIN=true) or non-debug mode should open ChromaDB,
+    # poll, and ingest.  Two PersistentClient instances hitting the same
+    # directory is a known corruption vector.
+    _is_reloader_parent = app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
 
-    # One-time fixup: repair subfolder concepts in ChromaDB (needs vector store)
-    from src.models.settings import get_setting, update_setting
-    if get_setting("subfolder_concepts_fixed") != "true":
-        from src.models.fixups import fix_subfolder_concepts
-        fix_subfolder_concepts()
-        update_setting("subfolder_concepts_fixed", "true")
+    if _is_reloader_parent:
+        # Parent only needs routes for the reloader to monitor file changes.
+        from src.models.settings import get_setting
+    else:
+        # Initialize ChromaDB (child / non-debug only)
+        from src.models.vector_store import initialize as init_vector_store
+        logger.info("Initializing vector store...")
+        init_vector_store()
+
+        # One-time fixup: repair subfolder concepts in ChromaDB
+        from src.models.settings import get_setting, update_setting
+        if get_setting("subfolder_concepts_fixed") != "true":
+            from src.models.fixups import fix_subfolder_concepts
+            fix_subfolder_concepts()
+            update_setting("subfolder_concepts_fixed", "true")
 
     # Initialize LLM service (if API key is set)
     from src.services.llm_service import initialize as init_llm
@@ -56,10 +66,6 @@ def create_app() -> Flask:
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
 
-    # Skip background work in the reloader parent process — only the child
-    # (WERKZEUG_RUN_MAIN=true) or non-debug mode should poll and ingest.
-    _is_reloader_parent = app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
-
     # Initialize generation listener
     from src.controllers import generation_controller
     if not _is_reloader_parent:
@@ -71,6 +77,24 @@ def create_app() -> Flask:
     if not _is_reloader_parent:
         logger.info("Starting background data ingestion...")
         start_ingestion()
+
+    # Register graceful shutdown handler to flush ChromaDB
+    if not _is_reloader_parent:
+        import signal
+
+        def _graceful_shutdown(signum, frame):
+            print("\nShutting down...")
+            logger.info("Shutdown signal received — cleaning up...")
+            from src.services.ingestion_service import stop_ingestion
+            stop_ingestion(timeout=30)
+            from src.services import comfyui_service
+            comfyui_service.stop_poller(timeout=10)
+            from src.models.vector_store import shutdown as shutdown_vector_store
+            shutdown_vector_store()
+            raise SystemExit(0)
+
+        signal.signal(signal.SIGINT, _graceful_shutdown)
+        signal.signal(signal.SIGTERM, _graceful_shutdown)
 
     logger.info("Application initialized successfully")
     return app

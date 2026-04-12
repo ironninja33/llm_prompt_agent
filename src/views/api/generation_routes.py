@@ -77,6 +77,15 @@ def get_latest_settings():
     return jsonify(settings)
 
 
+@api_bp.route("/generate/most-recent-settings", methods=["GET"])
+def get_most_recent_settings():
+    """Return settings from the most recent job (completed or submitted)."""
+    settings = gen_model.get_most_recent_job_settings()
+    if not settings:
+        return jsonify({}), 200
+    return jsonify(settings)
+
+
 @api_bp.route("/generate", methods=["POST"])
 def submit_generation():
     """Submit a generation job."""

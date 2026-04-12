@@ -220,315 +220,388 @@ def _emit_completed(job_id: str, prompt_id: str, total_images: int) -> list[dict
 
 
 # ---------------------------------------------------------------------------
-# Threaded job poller
+# Consolidated job poller — single thread manages all jobs
 # ---------------------------------------------------------------------------
+
+# Fixed client ID shared between WS connection and prompt submission
+# so ComfyUI routes execution events to our poller's WebSocket.
+COMFYUI_CLIENT_ID = str(uuid.uuid4())
+
+_MAX_QUEUE_TIME = 1800   # 30 min waiting in queue
+_MAX_EXEC_TIME = 600     # 10 min once execution starts
+_SWEEP_INTERVAL = 30.0   # seconds between full HTTP reconciliation sweeps
+_UNKNOWN_FAIL_COUNT = 3  # consecutive "unknown" results before marking failed
+
+
+@dataclass
+class JobEntry:
+    """Per-job tracking state held in the registry."""
+    job_id: str
+    prompt_id: str
+    total_images: int
+    phase: str = "queued"
+    registered_at: float = field(default_factory=time.monotonic)
+    exec_start_time: float | None = None
+    queue_position: int = 0
+    last_queue_remaining: int = -1
+    unknown_count: int = 0
+
+
+# Job registry — maps job_id → JobEntry
+_job_registry: dict[str, JobEntry] = {}
+# Reverse lookup — maps prompt_id → job_id
+_prompt_to_job: dict[str, str] = {}
+_registry_lock = threading.Lock()
+
+# Poller thread management
+_poller_thread: threading.Thread | None = None
+_shutdown_event = threading.Event()
+
 
 def poll_job(
     job_id: str,
     prompt_id: str,
     total_images: int = 1,
 ) -> None:
-    """Start a background thread that polls job progress until completion.
+    """Register a job for tracking by the consolidated poller.
 
-    Polls every 1 second, notifying registered listeners with
-    :class:`GenerationProgress` updates.  Stops when the job reaches
-    ``"completed"`` or ``"failed"`` status, or after a maximum of
-    600 polls (~10 minutes).
+    This replaces the old per-job thread model.  The job is added to an
+    internal registry and picked up by the single poller thread on its
+    next iteration.
 
     Args:
         job_id: Application-level job identifier.
         prompt_id: ComfyUI prompt ID (from :class:`SubmitResult`).
         total_images: Expected number of output images.
     """
-    thread = threading.Thread(
-        target=_poll_loop,
-        args=(job_id, prompt_id, total_images),
-        daemon=True,
-    )
-    thread.start()
-    logger.info("Started polling thread for job %s (prompt_id=%s)", job_id, prompt_id)
+    entry = JobEntry(job_id=job_id, prompt_id=prompt_id, total_images=total_images)
 
+    with _registry_lock:
+        _job_registry[job_id] = entry
+        _prompt_to_job[prompt_id] = job_id
 
-def _poll_loop(
-    job_id: str,
-    prompt_id: str,
-    total_images: int,
-) -> None:
-    """Internal polling loop -- tries WebSocket first, falls back to HTTP."""
+    # Quick HTTP check — job may already be done before we start watching
     try:
-        _ws_poll_loop(job_id, prompt_id, total_images)
-    except Exception as exc:
-        logger.warning("WS poll failed, falling back to HTTP: %s", exc)
-        _http_poll_loop(job_id, prompt_id, total_images)
-
-
-def _ws_poll_loop(
-    job_id: str,
-    prompt_id: str,
-    total_images: int,
-) -> None:
-    """WebSocket-based progress loop.  Falls back to HTTP polling on failure."""
-    try:
-        import websocket  # websocket-client library
-    except ImportError:
-        logger.warning("websocket-client not installed, falling back to HTTP polling")
-        _http_poll_loop(job_id, prompt_id, total_images)
-        return
-
-    base_url = _get_base_url()
-    ws_url = base_url.replace("https://", "wss://").replace("http://", "ws://")
-    client_id = str(uuid.uuid4())
-    ws_url = f"{ws_url}/ws?clientId={client_id}"
-
-    # Get initial status via HTTP before entering WS loop
-    initial_progress = get_job_progress(prompt_id)
-
-    # Fast path: job already completed before we started polling
-    if initial_progress.status == "completed":
-        output_images = _emit_completed(job_id, prompt_id, total_images)
-        logger.info("Job %s already completed at poll start (%d images)",
-                     job_id, len(output_images))
-        return
-    if initial_progress.status == "failed":
-        _emit(job_id, prompt_id, total_images, phase="failed",
-              message=initial_progress.message or "Generation failed",
-              complete=True)
-        logger.warning("Job %s already failed at poll start", job_id)
-        return
-
-    last_queue_position = 0
-    if initial_progress.status == "queued":
-        # Extract position from message like "Job is queued (position 2/5)"
-        msg = initial_progress.message
-        if "(position " in msg:
+        progress = get_job_progress(prompt_id)
+        if progress.status == "completed":
+            _complete_job(entry)
+            logger.info("Job %s already completed at registration (%s)", job_id, prompt_id)
+            return
+        if progress.status == "failed":
+            _fail_job(entry, progress.message or "Generation failed")
+            logger.warning("Job %s already failed at registration", job_id)
+            return
+        # Extract queue position if available
+        if progress.status == "queued" and "(position " in progress.message:
             try:
-                pos_str = msg.split("(position ")[1].split("/")[0]
-                last_queue_position = int(pos_str)
+                pos_str = progress.message.split("(position ")[1].split("/")[0]
+                entry.queue_position = int(pos_str)
             except (IndexError, ValueError):
                 pass
+    except Exception:
+        pass  # HTTP check failed — poller thread will pick it up
 
     # Emit initial queued status
     _emit(job_id, prompt_id, total_images, phase="queued",
-          queue_position=last_queue_position,
-          message=f"Queue position: {last_queue_position}" if last_queue_position > 0
+          queue_position=entry.queue_position,
+          message=f"Queue position: {entry.queue_position}" if entry.queue_position > 0
               else "Job submitted, waiting in queue\u2026")
 
-    try:
-        ws = websocket.create_connection(ws_url, timeout=10)
-    except Exception as exc:
-        logger.warning("WebSocket connection failed (%s), falling back to HTTP: %s", ws_url, exc)
-        _http_poll_loop(job_id, prompt_id, total_images)
+    logger.info("Registered job %s for polling (prompt_id=%s)", job_id, prompt_id)
+
+
+def start_poller() -> None:
+    """Start the consolidated poller thread (idempotent)."""
+    global _poller_thread
+    if _poller_thread is not None and _poller_thread.is_alive():
         return
+    _shutdown_event.clear()
+    _poller_thread = threading.Thread(target=_poller_main, daemon=False, name="comfyui-poller")
+    _poller_thread.start()
+    logger.info("Consolidated ComfyUI poller thread started")
 
-    ws_failed = False
+
+def stop_poller(timeout: float = 10) -> None:
+    """Signal the poller thread to stop and wait for it to finish."""
+    global _poller_thread
+    _shutdown_event.set()
+    if _poller_thread is not None and _poller_thread.is_alive():
+        print(f"Waiting for ComfyUI poller thread to stop (timeout={timeout}s)...")
+        logger.info("Waiting for ComfyUI poller thread to stop...")
+        _poller_thread.join(timeout=timeout)
+        if _poller_thread.is_alive():
+            logger.warning("ComfyUI poller thread did not finish in time")
+        else:
+            print("ComfyUI poller thread stopped.")
+    _poller_thread = None
+
+
+# ---------------------------------------------------------------------------
+# Main poller loop
+# ---------------------------------------------------------------------------
+
+def _poller_main() -> None:
+    """Single thread that manages all job polling via one WebSocket."""
+    ws = None
+    last_sweep = 0.0
+
     try:
-        ws.settimeout(1.0)  # 1s receive timeout for poll loop responsiveness
-        max_queue_time = 1800  # 30 min max waiting in queue
-        max_exec_time = 600   # 10 min max once execution starts
-        start = time.monotonic()
-        exec_start_time = None  # set when execution begins
-        execution_started = False
-        last_queue_remaining = -1  # track for delta-based position updates
-        last_http_check = time.monotonic()
-        _HTTP_CHECK_INTERVAL = 3.0  # seconds between HTTP fallback checks
+        import websocket as _ws_lib
+    except ImportError:
+        _ws_lib = None
+        logger.warning("websocket-client not installed — using HTTP-only polling")
 
-        while True:
-            now = time.monotonic()
-            if exec_start_time is not None:
-                if now - exec_start_time > max_exec_time:
-                    break  # execution timeout
-            elif now - start > max_queue_time:
-                break  # queue timeout
+    ws_url = _build_ws_url() if _ws_lib else None
 
-            # HTTP safety-net check — runs every _HTTP_CHECK_INTERVAL
-            # regardless of whether WebSocket messages are flowing.
-            # Catches completions that WS events miss (e.g. prompt_id
-            # filtering, events arriving before WS connects, etc.).
-            if now - last_http_check >= _HTTP_CHECK_INTERVAL:
-                last_http_check = now
+    while not _shutdown_event.is_set():
+        # --- Idle when no jobs ---
+        with _registry_lock:
+            job_count = len(_job_registry)
+        if job_count == 0:
+            # Close WS when idle to avoid stale connections
+            if ws is not None:
                 try:
-                    job_prog = get_job_progress(prompt_id)
-                    if job_prog.status == "completed":
-                        output_images = _emit_completed(job_id, prompt_id, total_images)
-                        logger.info("Job %s completed (detected via HTTP fallback)", job_id)
-                        return
-                    elif job_prog.status == "failed":
-                        _emit(job_id, prompt_id, total_images, phase="failed",
-                              message=job_prog.message or "Generation failed",
-                              complete=True)
-                        logger.warning("Job %s failed (detected via HTTP fallback)", job_id)
-                        return
-                    elif job_prog.status == "running" and not execution_started:
-                        # Job started but we missed the WS event
-                        execution_started = True
-                        if exec_start_time is None:
-                            exec_start_time = time.monotonic()
-                        _emit(job_id, prompt_id, total_images, phase="running",
-                              progress=0.5, message="Generating\u2026")
+                    ws.close()
                 except Exception:
-                    pass  # HTTP check failed, keep listening on WS
-
-            try:
-                raw = ws.recv()
-            except websocket.WebSocketTimeoutException:
-                continue
-            except Exception:
-                logger.warning("WebSocket recv error for job %s, falling back to HTTP", job_id)
-                ws_failed = True
-                break
-
-            msg = _json.loads(raw)
-            msg_type = msg.get("type")
-            data = msg.get("data", {})
-
-            # Filter to our prompt_id where applicable
-            msg_prompt_id = data.get("prompt_id")
-            if msg_prompt_id and msg_prompt_id != prompt_id:
-                continue
-
-            if msg_type == "status":
-                queue_remaining = data.get("status", {}).get("exec_info", {}).get("queue_remaining", 0)
-                if not execution_started and queue_remaining > 0:
-                    # Update position estimate using delta from last known queue_remaining
-                    if last_queue_remaining >= 0 and queue_remaining < last_queue_remaining:
-                        delta = last_queue_remaining - queue_remaining
-                        last_queue_position = max(1, last_queue_position - delta)
-                    last_queue_remaining = queue_remaining
-                    _emit(job_id, prompt_id, total_images, phase="queued",
-                          queue_position=last_queue_position,
-                          message=f"Queue position: {last_queue_position}" if last_queue_position > 0
-                              else "Waiting in queue\u2026")
-
-            elif msg_type == "execution_start":
-                execution_started = True
-                if exec_start_time is None:
-                    exec_start_time = time.monotonic()
-                _emit(job_id, prompt_id, total_images, phase="running",
-                      message="Starting generation\u2026")
-
-            elif msg_type == "progress":
-                execution_started = True
-                if exec_start_time is None:
-                    exec_start_time = time.monotonic()
-                value = data.get("value", 0)
-                max_val = data.get("max", 1)
-                pct = value / max_val if max_val > 0 else 0.0
-                _emit(job_id, prompt_id, total_images, phase="running",
-                      progress=pct, message=f"Step {value}/{max_val}")
-
-            elif msg_type == "executing":
-                if data.get("node") is None:
-                    # Execution complete -- fetch history for output images
-                    time.sleep(0.5)
-                    output_images = _emit_completed(job_id, prompt_id, total_images)
-                    logger.info("Job %s completed via WebSocket (%d output images)",
-                                job_id, len(output_images))
-                    return
-                else:
-                    execution_started = True
-                    if exec_start_time is None:
-                        exec_start_time = time.monotonic()
-
-    finally:
-        ws.close()
-
-    # If we broke out due to WS error, fall back to HTTP polling
-    if ws_failed:
-        _http_poll_loop(job_id, prompt_id, total_images)
-        return
-
-    # Timed out -- do a final completion check before marking failed
-    try:
-        final_progress = get_job_progress(prompt_id)
-        if final_progress.status == "completed":
-            output_images = _emit_completed(job_id, prompt_id, total_images)
-            logger.info("Job %s completed (detected at timeout via final check)", job_id)
-            return
-    except Exception:
-        pass  # final check failed, proceed to mark as failed
-
-    timeout_type = "execution" if exec_start_time is not None else "queue"
-    timeout_duration = "10 minutes" if exec_start_time is not None else "30 minutes"
-    _emit(job_id, prompt_id, total_images, phase="failed",
-          message=f"Timed out after {timeout_duration} ({timeout_type} timeout)",
-          complete=True)
-    logger.warning("WebSocket polling %s timeout for job %s", timeout_type, job_id)
-
-
-def _http_poll_loop(
-    job_id: str,
-    prompt_id: str,
-    total_images: int,
-) -> None:
-    """HTTP-based polling loop -- fallback when WebSocket is unavailable."""
-    max_queue_polls = 1800  # ~30 minutes at 1s interval
-    max_exec_polls = 600    # ~10 minutes at 1s interval
-    poll_count = 0
-    exec_poll_count = None  # None = still queued, 0+ = executing
-
-    # Emit initial queued status
-    _emit(job_id, prompt_id, total_images, phase="queued",
-          message="Job submitted, waiting in queue\u2026")
-
-    while True:
-        # Check appropriate timeout
-        if exec_poll_count is not None:
-            if exec_poll_count > max_exec_polls:
-                break
-        elif poll_count > max_queue_polls:
-            break
-        time.sleep(1.0)
-        poll_count += 1
-
-        try:
-            job_prog = get_job_progress(prompt_id)
-        except Exception as exc:
-            logger.debug("Poll error for %s: %s", prompt_id, exc)
+                    pass
+                ws = None
+            _shutdown_event.wait(timeout=1.0)
             continue
 
-        if job_prog.status == "completed":
-            output_images = _emit_completed(job_id, prompt_id, total_images)
-            logger.info("Job %s completed (%d output images)", job_id, len(output_images))
-            return
+        # --- Ensure WebSocket connected ---
+        if _ws_lib and (ws is None or not ws.connected):
+            if ws is not None:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+                ws = None
+            try:
+                ws_url = _build_ws_url()  # fresh client_id on reconnect
+                ws = _ws_lib.create_connection(ws_url, timeout=10)
+                ws.settimeout(1.0)
+                logger.info("WebSocket connected to ComfyUI")
+                # Immediate sweep on reconnect to catch anything missed
+                _http_reconciliation_sweep()
+                last_sweep = time.monotonic()
+            except Exception as exc:
+                logger.debug("WebSocket connection failed: %s", exc)
+                ws = None
+                # HTTP-only fallback sweep
+                _http_reconciliation_sweep()
+                last_sweep = time.monotonic()
+                _shutdown_event.wait(timeout=3.0)
+                continue
 
-        elif job_prog.status == "failed":
-            _emit(job_id, prompt_id, total_images, phase="failed",
-                  message=job_prog.message or "Generation failed",
-                  complete=True)
-            logger.warning("Job %s failed: %s", job_id, job_prog.message)
-            return
+        # --- Receive and handle WS message ---
+        if ws is not None:
+            try:
+                raw = ws.recv()
+                _handle_ws_message(raw)
+            except Exception as exc:
+                exc_name = type(exc).__name__
+                if exc_name == "WebSocketTimeoutException":
+                    pass  # normal — 1s timeout
+                else:
+                    logger.warning("WebSocket recv error: %s", exc)
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+                    ws = None  # will reconnect next iteration
+        else:
+            # No WS available — just sleep briefly
+            _shutdown_event.wait(timeout=1.0)
 
-        elif job_prog.status == "running":
-            if exec_poll_count is None:
-                exec_poll_count = 0  # start execution counter
-            exec_poll_count += 1
-            _emit(job_id, prompt_id, total_images, phase="running",
-                  progress=job_prog.progress,
-                  message=job_prog.message or "Generating\u2026")
+        # --- Periodic HTTP reconciliation sweep ---
+        now = time.monotonic()
+        if now - last_sweep >= _SWEEP_INTERVAL:
+            last_sweep = now
+            _http_reconciliation_sweep()
+            _check_timeouts()
 
-        elif job_prog.status == "queued":
-            _emit(job_id, prompt_id, total_images, phase="queued",
-                  message=job_prog.message or "Waiting in queue\u2026")
+    # --- Shutdown ---
+    if ws is not None:
+        try:
+            ws.close()
+        except Exception:
+            pass
+    logger.info("ComfyUI poller thread stopped")
 
-        # "unknown" status -- keep polling silently
-        logger.debug(
-            "Poll #%d for job %s: status=%s progress=%.1f%%",
-            poll_count, job_id, job_prog.status, job_prog.progress * 100,
-        )
 
-    # Timed out -- do a final completion check before marking failed
+def _build_ws_url() -> str:
+    """Build a WebSocket URL using the shared client ID."""
+    base_url = _get_base_url()
+    ws_url = base_url.replace("https://", "wss://").replace("http://", "ws://")
+    return f"{ws_url}/ws?clientId={COMFYUI_CLIENT_ID}"
+
+
+# ---------------------------------------------------------------------------
+# WebSocket message handling
+# ---------------------------------------------------------------------------
+
+def _handle_ws_message(raw: str) -> None:
+    """Route a single WebSocket message to the correct job(s)."""
     try:
-        final_progress = get_job_progress(prompt_id)
-        if final_progress.status == "completed":
-            output_images = _emit_completed(job_id, prompt_id, total_images)
-            logger.info("Job %s completed (detected at timeout via final check)", job_id)
-            return
+        msg = _json.loads(raw)
     except Exception:
-        pass  # final check failed, proceed to mark as failed
+        return
 
-    timeout_type = "execution" if exec_poll_count is not None else "queue"
-    timeout_duration = "10 minutes" if exec_poll_count is not None else "30 minutes"
-    _emit(job_id, prompt_id, total_images, phase="failed",
-          message=f"Polling timed out after {timeout_duration} ({timeout_type} timeout)",
-          complete=True)
-    logger.warning("Polling %s timeout for job %s after %d polls", timeout_type, job_id, poll_count)
+    msg_type = msg.get("type")
+    data = msg.get("data", {})
+    msg_prompt_id = data.get("prompt_id")
+
+    # "status" messages are broadcast (no prompt_id) — update all queued jobs
+    if msg_type == "status":
+        queue_remaining = data.get("status", {}).get("exec_info", {}).get("queue_remaining", 0)
+        with _registry_lock:
+            entries = [e for e in _job_registry.values() if e.phase == "queued"]
+        for entry in entries:
+            if queue_remaining > 0:
+                if entry.last_queue_remaining >= 0 and queue_remaining < entry.last_queue_remaining:
+                    delta = entry.last_queue_remaining - queue_remaining
+                    entry.queue_position = max(1, entry.queue_position - delta)
+                entry.last_queue_remaining = queue_remaining
+                _emit(entry.job_id, entry.prompt_id, entry.total_images, phase="queued",
+                      queue_position=entry.queue_position,
+                      message=f"Queue position: {entry.queue_position}" if entry.queue_position > 0
+                          else "Waiting in queue\u2026")
+        return
+
+    # All other messages require a prompt_id match
+    if not msg_prompt_id:
+        return
+
+    with _registry_lock:
+        job_id = _prompt_to_job.get(msg_prompt_id)
+        if not job_id:
+            return  # not our job (external ComfyUI submission)
+        entry = _job_registry.get(job_id)
+        if not entry:
+            return
+
+    if msg_type == "execution_start":
+        entry.phase = "running"
+        if entry.exec_start_time is None:
+            entry.exec_start_time = time.monotonic()
+        _emit(entry.job_id, entry.prompt_id, entry.total_images, phase="running",
+              message="Starting generation\u2026")
+
+    elif msg_type == "progress":
+        entry.phase = "running"
+        if entry.exec_start_time is None:
+            entry.exec_start_time = time.monotonic()
+        value = data.get("value", 0)
+        max_val = data.get("max", 1)
+        pct = value / max_val if max_val > 0 else 0.0
+        _emit(entry.job_id, entry.prompt_id, entry.total_images, phase="running",
+              progress=pct, message=f"Step {value}/{max_val}")
+
+    elif msg_type == "executing":
+        if data.get("node") is None:
+            # Execution complete
+            logger.info("WS completion detected for job %s (prompt_id=%s)", entry.job_id, entry.prompt_id)
+            _complete_job(entry)
+        else:
+            entry.phase = "running"
+            if entry.exec_start_time is None:
+                entry.exec_start_time = time.monotonic()
+
+
+# ---------------------------------------------------------------------------
+# HTTP reconciliation & timeout checks
+# ---------------------------------------------------------------------------
+
+def _http_reconciliation_sweep() -> None:
+    """Check all active jobs via HTTP. Catches anything WebSocket missed."""
+    with _registry_lock:
+        entries = list(_job_registry.values())
+    if not entries:
+        return
+
+    for entry in entries:
+        # Skip jobs that were already unregistered by a WS completion
+        # between the snapshot and this iteration
+        with _registry_lock:
+            if entry.job_id not in _job_registry:
+                continue
+
+        try:
+            progress = get_job_progress(entry.prompt_id)
+        except Exception:
+            continue
+
+        if progress.status == "completed":
+            logger.info("HTTP sweep completion detected for job %s (prompt_id=%s)", entry.job_id, entry.prompt_id)
+            _complete_job(entry)
+        elif progress.status == "failed":
+            _fail_job(entry, progress.message or "Generation failed")
+        elif progress.status == "running" and entry.phase == "queued":
+            entry.phase = "running"
+            entry.exec_start_time = time.monotonic()
+            _emit(entry.job_id, entry.prompt_id, entry.total_images, phase="running",
+                  progress=progress.progress,
+                  message=progress.message or "Generating\u2026")
+            entry.unknown_count = 0
+        elif progress.status == "unknown":
+            entry.unknown_count += 1
+            if entry.unknown_count >= _UNKNOWN_FAIL_COUNT:
+                _fail_job(entry, "Job not found in ComfyUI")
+        else:
+            entry.unknown_count = 0
+
+
+def _check_timeouts() -> None:
+    """Check all jobs for queue/execution timeouts."""
+    now = time.monotonic()
+    with _registry_lock:
+        entries = list(_job_registry.values())
+
+    for entry in entries:
+        if entry.exec_start_time is not None:
+            if now - entry.exec_start_time > _MAX_EXEC_TIME:
+                # Final check before failing
+                try:
+                    progress = get_job_progress(entry.prompt_id)
+                    if progress.status == "completed":
+                        _complete_job(entry)
+                        continue
+                except Exception:
+                    pass
+                _fail_job(entry, f"Timed out after 10 minutes (execution timeout)")
+        elif now - entry.registered_at > _MAX_QUEUE_TIME:
+            try:
+                progress = get_job_progress(entry.prompt_id)
+                if progress.status == "completed":
+                    _complete_job(entry)
+                    continue
+            except Exception:
+                pass
+            _fail_job(entry, f"Timed out after 30 minutes (queue timeout)")
+
+
+# ---------------------------------------------------------------------------
+# Job completion & failure
+# ---------------------------------------------------------------------------
+
+def _complete_job(entry: JobEntry) -> None:
+    """Handle job completion: emit, unregister."""
+    time.sleep(0.5)  # let ComfyUI write history
+    output_images = _emit_completed(entry.job_id, entry.prompt_id, entry.total_images)
+    logger.info("Job %s completed (%d output images)", entry.job_id, len(output_images))
+    _unregister_job(entry.job_id, entry.prompt_id)
+
+
+def _fail_job(entry: JobEntry, message: str) -> None:
+    """Handle job failure: emit, unregister."""
+    _emit(entry.job_id, entry.prompt_id, entry.total_images, phase="failed",
+          message=message, complete=True)
+    logger.warning("Job %s failed: %s", entry.job_id, message)
+    _unregister_job(entry.job_id, entry.prompt_id)
+
+
+def _unregister_job(job_id: str, prompt_id: str) -> None:
+    """Remove a job from the registry."""
+    with _registry_lock:
+        _job_registry.pop(job_id, None)
+        _prompt_to_job.pop(prompt_id, None)

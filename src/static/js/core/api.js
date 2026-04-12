@@ -203,6 +203,12 @@ const API = {
         return res.json();
     },
 
+    async getMostRecentGenerationSettings() {
+        const res = await fetch('/api/generate/most-recent-settings');
+        if (!res.ok) return null;
+        return res.json();
+    },
+
     async submitGeneration(chatId, messageId, settings, parentJobId) {
         const res = await fetch('/api/generate', {
             method: 'POST',
@@ -239,12 +245,22 @@ const API = {
     },
 
     // ── Browser endpoints ─────────────────────────────────────
-    async browserListing(path, offset, limit) {
+    async browserListing(path, offset, limit, sort, direction) {
         const params = new URLSearchParams();
         if (path) params.set('path', path);
         if (offset != null) params.set('offset', offset);
         if (limit != null) params.set('limit', limit);
+        if (sort) params.set('sort', sort);
+        if (direction) params.set('direction', direction);
         const res = await fetch(`/api/browser/listing?${params}`);
+        return res.json();
+    },
+
+    async browserNewImages(path, since) {
+        const params = new URLSearchParams();
+        if (path) params.set('path', path);
+        if (since) params.set('since', since);
+        const res = await fetch(`/api/browser/new-images?${params}`);
         return res.json();
     },
 

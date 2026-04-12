@@ -66,15 +66,17 @@ def get_root_directories() -> list[dict]:
 
 
 def get_directory_contents(abs_dir_path: str, offset: int = 0, limit: int = 50,
-                           sort: str = "date") -> dict:
+                           sort: str = "date", direction: str = "desc") -> dict:
     """Get paginated listing of subdirectories + images for a directory.
 
     Returns { directories: [...], images: [...], total_image_count, has_more }
     Directories come from filesystem scan; images from generated_images table.
 
     Sort modes:
-        "date" (default): directories by most recent image DESC, images by created_at DESC
-        "name": directories alphabetical, images by filename ASC
+        "date" (default): directories by most recent image, images by created_at
+        "name": directories alphabetical, images by filename
+        "seed": images by seed value
+    Direction: "asc" or "desc"
     """
     from src.models import generation as gen_model
 
@@ -102,13 +104,13 @@ def get_directory_contents(abs_dir_path: str, offset: int = 0, limit: int = 50,
     if sort == "date":
         for d in directories:
             d["_latest"] = get_latest_image_timestamp(d["path"])
-        directories.sort(key=lambda d: str(d["_latest"]) if d["_latest"] is not None else "", reverse=True)
+        directories.sort(key=lambda d: str(d["_latest"]) if d["_latest"] is not None else "", reverse=(direction == "desc"))
         for d in directories:
             d.pop("_latest", None)
     # sort="name" keeps the existing alphabetical order from sorted(os.listdir)
 
     # Get images from DB for this directory
-    result = gen_model.get_images_for_directory(abs_dir_path, offset, limit, sort=sort)
+    result = gen_model.get_images_for_directory(abs_dir_path, offset, limit, sort=sort, direction=direction)
 
     return {
         "directories": directories,

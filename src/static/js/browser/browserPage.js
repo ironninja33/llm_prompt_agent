@@ -15,6 +15,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (settings.thumbnail_size_browser) {
             BrowserState.thumbnailSize = settings.thumbnail_size_browser;
         }
+        if (settings.browser_sort_mode) {
+            BrowserState.sortMode = settings.browser_sort_mode;
+        }
+        if (settings.browser_sort_direction) {
+            BrowserState.sortDirection = settings.browser_sort_direction;
+        }
+        if (settings.browser_auto_refresh != null) {
+            BrowserState.autoRefresh = settings.browser_auto_refresh !== 'false';
+        }
+        if (settings.browser_display_params) {
+            try { BrowserState.displayParams = JSON.parse(settings.browser_display_params); } catch (e) { /* use default */ }
+        }
     } catch (e) {
         // Use defaults
     }

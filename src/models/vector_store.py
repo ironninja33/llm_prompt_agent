@@ -69,6 +69,13 @@ def document_exists(doc_id: str, source_type: str) -> bool:
         return False
 
 
+def _verify_ids(collection, doc_ids: list[str], label: str = "") -> list[str]:
+    """Verify that all doc_ids exist in the collection. Return missing IDs."""
+    result = collection.get(ids=doc_ids)
+    stored = set(result["ids"])
+    return [did for did in doc_ids if did not in stored]
+
+
 def add_document(
     doc_id: str,
     text: str,
@@ -94,6 +101,18 @@ def add_document(
         embeddings=[embedding],
         metadatas=[clean_meta],
     )
+
+    # Verify the write persisted
+    missing = _verify_ids(collection, [doc_id])
+    if missing:
+        logger.warning("Document %s missing after add, retrying...", doc_id)
+        collection.add(
+            ids=[doc_id], documents=[text],
+            embeddings=[embedding], metadatas=[clean_meta],
+        )
+        missing = _verify_ids(collection, [doc_id])
+        if missing:
+            raise RuntimeError(f"ChromaDB write failed: {doc_id} not stored after retry")
 
 
 def add_documents_batch(
@@ -124,6 +143,31 @@ def add_documents_batch(
         embeddings=embeddings,
         metadatas=clean_metadatas,
     )
+
+    # Verify the write persisted — retry any missing documents once
+    missing = _verify_ids(collection, doc_ids)
+    if missing:
+        logger.warning(
+            "%d/%d documents missing after batch add, retrying...",
+            len(missing), len(doc_ids),
+        )
+        idx_map = {did: i for i, did in enumerate(doc_ids)}
+        retry_ids = missing
+        retry_texts = [texts[idx_map[did]] for did in missing]
+        retry_embs = [embeddings[idx_map[did]] for did in missing]
+        retry_metas = [clean_metadatas[idx_map[did]] for did in missing]
+
+        collection.add(
+            ids=retry_ids, documents=retry_texts,
+            embeddings=retry_embs, metadatas=retry_metas,
+        )
+
+        still_missing = _verify_ids(collection, retry_ids)
+        if still_missing:
+            raise RuntimeError(
+                f"ChromaDB write failed: {len(still_missing)} documents "
+                f"not stored after retry: {still_missing[:5]}"
+            )
 
 
 def search_similar(
@@ -413,3 +457,15 @@ def delete_documents_by_directory(dir_path: str, source_type: str) -> int:
     except Exception as e:
         logger.error(f"Error deleting documents for directory {dir_path}: {e}")
         return 0
+
+
+def shutdown():
+    """Flush ChromaDB HNSW index to disk by stopping the Rust bindings."""
+    global _client
+    if _client is not None:
+        try:
+            _client._system.stop()
+            logger.info("ChromaDB shut down cleanly (HNSW flushed)")
+        except Exception as e:
+            logger.error(f"Error during ChromaDB shutdown: {e}")
+        _client = None

@@ -135,7 +135,6 @@
 
 .folder-name {
     font-weight: 600;
-    font-family: var(--font-mono);
     font-size: 0.85rem;
     color: var(--text-primary);
 }

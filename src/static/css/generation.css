@@ -98,6 +98,36 @@
     color: var(--text-secondary);
 }
 
+/* ── "Pull from latest" icon buttons ────────────────────────── */
+.gen-label-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.gen-pull-latest {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 1px;
+    border-radius: 3px;
+    transition: color 0.12s, background 0.12s;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.gen-pull-latest:hover {
+    color: var(--accent);
+    background: rgba(255, 255, 255, 0.06);
+}
+.gen-pull-latest svg {
+    width: 13px;
+    height: 13px;
+}
+
 /* ── Seed input group (number + dice button) ─────────────────── */
 .generation-body .input-group {
     display: flex;

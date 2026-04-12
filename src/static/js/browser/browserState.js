@@ -16,6 +16,11 @@ const BrowserState = {
     isSearchActive: false,
     deletePending: false,
     thumbnailSize: 'medium',
+    sortMode: 'date',
+    sortDirection: 'desc',
+    autoRefresh: true,
+    pendingNewCount: 0,
+    newestCreatedAt: null,
     lastCompletionSeq: null,
     displayParams: [],
 };

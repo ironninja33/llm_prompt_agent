@@ -32,6 +32,7 @@ from src.services.comfyui_service.client import (
 # --- poller.py exports ---
 from src.services.comfyui_service.poller import (
     GenerationProgress,
+    COMFYUI_CLIENT_ID,
     add_status_listener,
     remove_status_listener,
     add_completion_callback,
@@ -39,6 +40,8 @@ from src.services.comfyui_service.poller import (
     get_active_job_ids,
     get_completion_seq_for_path,
     poll_job,
+    start_poller,
+    stop_poller,
 )
 
 __all__ = [
@@ -71,4 +74,7 @@ __all__ = [
     "get_active_job_ids",
     "get_completion_seq_for_path",
     "poll_job",
+    "start_poller",
+    "stop_poller",
+    "COMFYUI_CLIENT_ID",
 ]

@@ -519,6 +519,27 @@ def get_latest_job_settings(output_folder: str | None = None,
         return _deserialize_settings(row)
 
 
+def get_most_recent_job_settings() -> dict | None:
+    """Settings from the single most recent job — completed or submitted.
+
+    Returns the settings from whichever job is newest by
+    ``COALESCE(completed_at, created_at)``, regardless of status.
+    """
+    with get_db() as conn:
+        result = conn.execute(
+            text("""SELECT gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
+                      gs.output_folder, gs.seed, gs.num_images, gs.workflow_name,
+                      gs.extra_settings, gs.sampler, gs.cfg_scale, gs.scheduler, gs.steps
+               FROM generation_settings gs
+               JOIN generation_jobs gj ON gs.job_id = gj.id
+               ORDER BY COALESCE(gj.completed_at, gj.created_at) DESC LIMIT 1"""),
+        )
+        row = result.fetchone()
+        if not row:
+            return None
+        return _deserialize_settings(row)
+
+
 def get_jobs_by_message_id(message_id: int) -> list[dict]:
     """Get all generation jobs for a given message_id, with settings.
 
@@ -721,14 +742,17 @@ def get_image_by_filepath(file_path: str) -> dict | None:
 
 
 def get_images_for_directory(path_prefix: str, offset: int = 0, limit: int = 50,
-                             sort: str = "date") -> dict:
+                             sort: str = "date", direction: str = "desc") -> dict:
     """Get images whose file_path is directly inside the given directory.
 
     Only matches direct children — files in subdirectories are excluded.
 
     Sort modes:
-        "date" (default): newest first (created_at DESC)
-        "name": alphabetical by filename (filename ASC)
+        "date" (default): by created_at
+        "name": alphabetical by filename
+        "seed": by seed value, tiebreaker created_at (opposite direction)
+
+    Direction: "asc" or "desc"
 
     Returns dict with keys: images (list of job+settings+image dicts),
     total_count, has_more.
@@ -750,10 +774,15 @@ def get_images_for_directory(path_prefix: str, offset: int = 0, limit: int = 50,
         total_count = result.fetchone()._mapping["cnt"]
 
         # Fetch paginated images with their job + settings
+        dir_sql = "ASC" if direction == "asc" else "DESC"
+        opp_sql = "DESC" if direction == "asc" else "ASC"
+
         if sort == "name":
-            order_clause = "ORDER BY gi.filename ASC"
+            order_clause = f"ORDER BY gi.filename {dir_sql}"
+        elif sort == "seed":
+            order_clause = f"ORDER BY gs.seed {dir_sql}, gj.created_at {opp_sql}"
         else:  # "date" (default)
-            order_clause = "ORDER BY gj.created_at DESC"
+            order_clause = f"ORDER BY gj.created_at {dir_sql}"
 
         result = conn.execute(
             text(f"""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
@@ -780,6 +809,36 @@ def get_images_for_directory(path_prefix: str, offset: int = 0, limit: int = 50,
             "total_count": total_count,
             "has_more": offset + limit < total_count,
         }
+
+
+def get_new_images_for_directory(path_prefix: str, since_created_at: str) -> list[dict]:
+    """Return images in directory created after since_created_at.
+
+    Used for incremental grid insertion — no pagination.
+    """
+    if not path_prefix.endswith(os.sep):
+        path_prefix = path_prefix + os.sep
+    like_pattern = path_prefix + "%"
+    not_like_pattern = path_prefix + "%/%"
+
+    with get_db() as conn:
+        result = conn.execute(
+            text("""SELECT gi.id as image_id, gi.job_id, gi.filename, gi.subfolder,
+                      gi.width, gi.height, gi.created_at, gi.file_size, gi.file_path,
+                      gi.metadata_status,
+                      gj.status, gj.source,
+                      gs.positive_prompt, gs.negative_prompt, gs.base_model, gs.loras,
+                      gs.output_folder, gs.seed, gs.num_images, gs.sampler, gs.cfg_scale,
+                      gs.scheduler, gs.steps
+               FROM generated_images gi
+               JOIN generation_jobs gj ON gi.job_id = gj.id
+               LEFT JOIN generation_settings gs ON gi.job_id = gs.job_id
+               WHERE gi.file_path LIKE :like AND gi.file_path NOT LIKE :not_like
+                 AND gi.created_at > :since
+               ORDER BY gi.created_at DESC"""),
+            {"like": like_pattern, "not_like": not_like_pattern, "since": since_created_at},
+        )
+        return _rows_to_image_list(result.fetchall())
 
 
 def search_by_keywords(keywords: list[str], offset: int = 0, limit: int = 50) -> dict:

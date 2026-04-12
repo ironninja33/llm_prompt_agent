@@ -17,10 +17,11 @@ def browser_listing():
     offset = int(request.args.get("offset", 0))
     limit = int(request.args.get("limit", 50))
     sort = request.args.get("sort", "date")
+    direction = request.args.get("direction", "desc")
 
     if not path:
         # Root listing
-        roots = browser_controller.get_root_listing(sort=sort)
+        roots = browser_controller.get_root_listing(sort=sort, direction=direction)
         return jsonify({
             "directories": roots,
             "images": [],
@@ -29,7 +30,7 @@ def browser_listing():
             "breadcrumb": [{"name": "Root", "path": ""}],
         })
 
-    result = browser_controller.get_directory_contents(path, offset, limit, sort=sort)
+    result = browser_controller.get_directory_contents(path, offset, limit, sort=sort, direction=direction)
     result["breadcrumb"] = browser_controller.get_breadcrumb(path)
     return jsonify(result)
 
@@ -42,6 +43,18 @@ def browser_poll():
 
     result = browser_controller.poll_new_files(path, since)
     return jsonify(result)
+
+
+@api_bp.route("/browser/new-images", methods=["GET"])
+def browser_new_images():
+    """Fetch images created after a given timestamp for incremental grid updates."""
+    path = request.args.get("path", "")
+    since = request.args.get("since", "")
+    if not path or not since:
+        return jsonify({"images": []})
+
+    images = browser_controller.get_new_images(path, since)
+    return jsonify({"images": images})
 
 
 @api_bp.route("/browser/search", methods=["GET"])

@@ -66,6 +66,7 @@ function closeFullSizeViewer() {
     _viewerItems = [];
     _viewerMissingSet = new Set();
     document.removeEventListener('keydown', _viewerKeyHandler);
+    window.dispatchEvent(new CustomEvent('overlay-closed'));
 }
 
 function _viewerKeyHandler(e) {

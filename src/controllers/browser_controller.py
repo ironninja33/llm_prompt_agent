@@ -10,7 +10,7 @@ from src.models import generation as gen_model
 logger = logging.getLogger(__name__)
 
 
-def get_root_listing(sort: str = "date") -> list[dict]:
+def get_root_listing(sort: str = "date", direction: str = "desc") -> list[dict]:
     """Virtual root: all output directories with preview thumbnails."""
     roots = browser_model.get_root_directories()
     for root in roots:
@@ -20,7 +20,7 @@ def get_root_listing(sort: str = "date") -> list[dict]:
     if sort == "date":
         for root in roots:
             root["_latest"] = browser_model.get_latest_image_timestamp(root["path"])
-        roots.sort(key=lambda r: str(r["_latest"]) if r["_latest"] is not None else "", reverse=True)
+        roots.sort(key=lambda r: str(r["_latest"]) if r["_latest"] is not None else "", reverse=(direction == "desc"))
         for root in roots:
             root.pop("_latest", None)
 
@@ -28,7 +28,7 @@ def get_root_listing(sort: str = "date") -> list[dict]:
 
 
 def get_directory_contents(virtual_path: str, offset: int = 0, limit: int = 50,
-                           sort: str = "date") -> dict:
+                           sort: str = "date", direction: str = "desc") -> dict:
     """Resolve virtual path to absolute path and return paginated results.
 
     Two-phase approach:
@@ -56,7 +56,7 @@ def get_directory_contents(virtual_path: str, offset: int = 0, limit: int = 50,
         logger.warning("Error fast-registering images in %s: %s", abs_path, e)
 
     # Phase 2: Query DB for paginated results
-    result = browser_model.get_directory_contents(abs_path, offset, limit, sort=sort)
+    result = browser_model.get_directory_contents(abs_path, offset, limit, sort=sort, direction=direction)
 
     # Phase 3: Parse metadata for any pending images on this page
     pending_ids = [img["id"] for img in result["images"] if img.get("metadata_status") == "pending"]
@@ -67,7 +67,7 @@ def get_directory_contents(virtual_path: str, offset: int = 0, limit: int = 50,
             if parsed_count > 0:
                 logger.info("Parsed metadata for %d images", parsed_count)
                 # Phase 4: Re-fetch page with full metadata
-                result = browser_model.get_directory_contents(abs_path, offset, limit, sort=sort)
+                result = browser_model.get_directory_contents(abs_path, offset, limit, sort=sort, direction=direction)
         except Exception as e:
             logger.warning("Error parsing pending metadata: %s", e)
 
@@ -114,6 +114,26 @@ def get_breadcrumb(virtual_path: str) -> list[dict]:
             seg["display_name"] = parsed["display_name"]
         segments.append(seg)
     return segments
+
+
+def get_new_images(virtual_path: str, since_created_at: str) -> list[dict]:
+    """Get images created after the given timestamp for incremental grid updates."""
+    abs_path = resolve_virtual_path(virtual_path)
+    if abs_path is None:
+        return []
+
+    try:
+        browser_model.fast_register_images(abs_path)
+    except Exception:
+        pass
+
+    images = gen_model.get_new_images_for_directory(abs_path, since_created_at)
+
+    for img in images:
+        if img.get("file_path"):
+            img["settings"]["output_folder"] = browser_model._output_folder_from_path(img["file_path"])
+
+    return images
 
 
 def search_keyword(keywords_str: str, offset: int = 0, limit: int = 50) -> dict:

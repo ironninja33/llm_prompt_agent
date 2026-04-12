@@ -39,6 +39,7 @@ function createPillInput(options) {
 
     let allItems = [...initialItems];
     let selected = [...initialValue];
+    let _suppressRemoval = false;
 
     // ── Build DOM ───────────────────────────────────────────────
     const wrapper = document.createElement('div');
@@ -66,6 +67,12 @@ function createPillInput(options) {
         items: availableItems(),
         maxVisible,
         onSelect: (value) => {
+            // Suppress pill removal clicks briefly — the dropdown uses mousedown
+            // which hides the panel before the click event fires, causing the
+            // click to land on a pill remove button underneath.
+            _suppressRemoval = true;
+            setTimeout(() => { _suppressRemoval = false; }, 300);
+
             addPill(value);
             // Reset the input text after selection
             dropdown.setValue('');
@@ -158,6 +165,7 @@ function createPillInput(options) {
 
     // ── Events ──────────────────────────────────────────────────
     pillsContainer.addEventListener('click', (e) => {
+        if (_suppressRemoval) return;
         const btn = e.target.closest('.pill-remove');
         if (btn) {
             e.preventDefault();

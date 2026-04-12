@@ -46,6 +46,30 @@
     font-size: 0.78rem;
 }
 
+.browser-refresh-toggle {
+    opacity: 0.45;
+    font-size: 0.85rem;
+    transition: opacity 0.15s;
+    position: relative;
+}
+.browser-refresh-toggle.active {
+    opacity: 1;
+    color: var(--accent);
+}
+.refresh-badge {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 8px;
+    font-size: 0.6rem;
+    padding: 1px 5px;
+    margin-left: 3px;
+    min-width: 14px;
+    text-align: center;
+    vertical-align: top;
+}
+.refresh-badge.hidden { display: none; }
+
 .breadcrumb-segment {
     color: var(--text-muted);
     cursor: pointer;
