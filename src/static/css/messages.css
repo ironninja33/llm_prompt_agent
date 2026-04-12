@@ -293,6 +293,21 @@
     font-family: var(--font-mono);
 }
 
+/* System-initiated tool calls (e.g. implicit state update) */
+.tool-call-system .tool-call-header {
+    background: rgba(0, 0, 0, 0.05);
+}
+.tool-call-system .tool-call-name {
+    color: var(--text-muted);
+    font-style: italic;
+    font-weight: 400;
+}
+.tool-call-icon-system {
+    margin-right: 4px;
+    opacity: 0.6;
+    font-style: normal;
+}
+
 .tool-call-details {
     padding: 8px 10px;
     display: flex;

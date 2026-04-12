@@ -241,12 +241,21 @@ function buildToolCallsSection(toolCalls) {
     });
 
     const iterCount = iterations.size;
+    const agentCalls = sorted.filter(c => !c.system);
+    const systemCalls = sorted.filter(c => c.system);
     const summary = document.createElement('summary');
     summary.className = 'tool-calls-toggle';
     const iterLabel = iterCount > 1 ? ` across ${iterCount} iterations` : '';
+    const countParts = [];
+    if (agentCalls.length > 0) {
+        countParts.push(`${agentCalls.length} tool call${agentCalls.length !== 1 ? 's' : ''}`);
+    }
+    if (systemCalls.length > 0) {
+        countParts.push(`${systemCalls.length} context update${systemCalls.length !== 1 ? 's' : ''}`);
+    }
     summary.innerHTML =
         `<span class="tool-calls-icon">🔧</span>` +
-        `<span>${sorted.length} tool call${sorted.length !== 1 ? 's' : ''}${iterLabel}</span>` +
+        `<span>${countParts.join(' + ')}${iterLabel}</span>` +
         `<span class="tool-calls-chevron">▶</span>`;
     details.appendChild(summary);
 
@@ -263,12 +272,15 @@ function buildToolCallsSection(toolCalls) {
         }
 
         calls.forEach(call => {
+            const isSystem = call.system === true;
             const item = document.createElement('div');
-            item.className = 'tool-call-item';
+            item.className = 'tool-call-item' + (isSystem ? ' tool-call-system' : '');
 
             const header = document.createElement('div');
             header.className = 'tool-call-header';
-            header.innerHTML = `<span class="tool-call-name">${escapeHtml(call.tool)}</span>`;
+            header.innerHTML = isSystem
+                ? `<span class="tool-call-icon-system">\u2699</span><span class="tool-call-name">${escapeHtml(call.tool)}</span>`
+                : `<span class="tool-call-name">${escapeHtml(call.tool)}</span>`;
             item.appendChild(header);
 
             const detailsDiv = document.createElement('div');

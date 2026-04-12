@@ -646,6 +646,43 @@ def get_job_settings(job_id: str) -> dict | None:
         return _deserialize_settings(row)
 
 
+def get_browser_descendants_for_chat(chat_id: str) -> list[dict]:
+    """Find browser-sourced jobs whose parent_job_id links to a job from this chat.
+
+    Returns a list of dicts with: id, parent_job_id, lineage_depth, status,
+    positive_prompt, seed.  Only includes direct children (depth 1 from chat job).
+    """
+    with get_db() as conn:
+        # Get all job IDs from this chat
+        chat_jobs = conn.execute(
+            text("SELECT id FROM generation_jobs WHERE chat_id = :chat_id"),
+            {"chat_id": chat_id},
+        ).fetchall()
+
+        if not chat_jobs:
+            return []
+
+        chat_job_ids = {row._mapping["id"] for row in chat_jobs}
+
+        # Find browser jobs whose parent is a chat job
+        placeholders = ",".join([f":p{i}" for i in range(len(chat_job_ids))])
+        params = {f"p{i}": v for i, v in enumerate(chat_job_ids)}
+
+        rows = conn.execute(
+            text(f"""SELECT gj.id, gj.parent_job_id, gj.lineage_depth, gj.status,
+                          gs.positive_prompt, gs.seed
+                   FROM generation_jobs gj
+                   JOIN generation_settings gs ON gs.job_id = gj.id
+                   WHERE gj.source = 'browser'
+                     AND gj.parent_job_id IN ({placeholders})
+                   ORDER BY gj.created_at DESC
+                   LIMIT 50"""),
+            params,
+        ).fetchall()
+
+        return [dict(row._mapping) for row in rows]
+
+
 # ---------------------------------------------------------------------------
 # Chat-level queries
 # ---------------------------------------------------------------------------

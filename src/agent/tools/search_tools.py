@@ -81,89 +81,6 @@ def _check_concept_availability(
     return results
 
 
-def _search_diverse(args: dict) -> dict:
-    query = args.get("query", "")
-    k = args.get("k", 10)
-    source_type = args.get("source_type")
-
-    query_embedding = embedding_service.embed(query)
-    results = vector_store.search_diverse(query_embedding, k=k, source_type=source_type)
-
-    return {
-        "query": query,
-        "count": len(results),
-        "prompts": [
-            {
-                "text": r["document"],
-                "concept": r["metadata"].get("concept", ""),
-                "source": r["metadata"].get("dir_type", ""),
-            }
-            for r in results
-        ],
-    }
-
-
-def _get_random(args: dict) -> dict:
-    k = args.get("k", 10)
-    source_type = args.get("source_type")
-
-    results = vector_store.get_random(k=k, source_type=source_type)
-
-    return {
-        "count": len(results),
-        "prompts": [
-            {
-                "text": r["document"],
-                "concept": r["metadata"].get("concept", ""),
-                "source": r["metadata"].get("dir_type", ""),
-            }
-            for r in results
-        ],
-    }
-
-
-def _get_opposite(args: dict) -> dict:
-    query = args.get("query", "")
-    k = args.get("k", 10)
-    source_type = args.get("source_type")
-
-    query_embedding = embedding_service.embed(query)
-    # Use a large offset to get the most distant prompts
-    results = vector_store.search_diverse(query_embedding, k=k, offset=100, source_type=source_type)
-
-    return {
-        "query": query,
-        "count": len(results),
-        "prompts": [
-            {
-                "text": r["document"],
-                "concept": r["metadata"].get("concept", ""),
-                "source": r["metadata"].get("dir_type", ""),
-            }
-            for r in results
-        ],
-    }
-
-
-def _list_concepts(args: dict) -> dict:
-    source_type = args.get("source_type")
-    concepts = vector_store.list_concepts(source_type=source_type)
-
-    return {
-        "count": len(concepts),
-        "concepts": [
-            {"concept": c["concept"], "source_type": c["source_type"]}
-            for c in concepts
-        ],
-    }
-
-
-def _get_dataset_overview(args: dict) -> dict:
-    """Get the lightweight dataset overview (no intra-folder cluster details)."""
-    from src.services import clustering_service
-    return clustering_service.get_dataset_overview()
-
-
 def _get_folder_themes(args: dict) -> dict:
     """Get intra-folder cluster themes for a specific folder and source type."""
     from src.services import clustering_service
@@ -193,33 +110,6 @@ def _get_folder_themes(args: dict) -> dict:
                 "No themes found. Use the full 'category__display_name' format from the dataset overview. "
                 f"Available {source_type} folders: {', '.join(known_names[:10])}"
             )
-
-    return result
-
-
-def _query_themed_prompts(args: dict) -> dict:
-    """Execute a themed prompt query across multiple sources."""
-    from src.services import clustering_service
-
-    query = args.get("query", "")
-    include_random = args.get("include_random", False)
-    include_opposite = args.get("include_opposite", False)
-    source_type = args.get("source_type")
-
-    # Generate embedding for the query
-    query_embedding = embedding_service.embed(query)
-
-    # Read k-values from settings
-    from src.models.settings import get_setting
-    k_random = int(get_setting("query_k_random") or "3") if include_random else 0
-    k_opposite = int(get_setting("query_k_random") or "3") if include_opposite else 0
-
-    result = clustering_service.get_themed_prompts(
-        query_embedding=query_embedding,
-        k_random=k_random,
-        k_opposite=k_opposite,
-        source_type=source_type,
-    )
 
     return result
 

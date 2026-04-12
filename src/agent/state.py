@@ -1,71 +1,239 @@
-"""Agent state management."""
+"""Agent state management — implicit extraction from conversation turns.
+
+State is built automatically from the agent's tool calls and text response,
+not from explicit update_state tool calls. The state captures:
+- initial_request: First user message (set once, never changes)
+- recent_prompts: Last 5 prompts from agent's ```prompt blocks
+- direction: Brief summary of user's evolving preferences (LLM-generated)
+- search_context: Recent queries and explored concepts
+"""
 
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
-# Maximum number of generated prompts to retain in state.
 MAX_RECENT_PROMPTS = 5
 
 
 def create_initial_state() -> dict:
     """Create a fresh agent state for a new chat."""
     return {
-        "phase": "gathering_info",
-        "prompt_requirements": {},
-        "generated_prompts": [],
-        "context": "",
+        "initial_request": "",
+        "recent_prompts": [],
+        "direction": "",
+        "search_context": {
+            "recent_queries": [],
+            "active_concepts": [],
+        },
     }
 
 
-def state_to_context(state: dict) -> str:
-    """Convert agent state to a context string for inclusion in the system prompt.
+def extract_initial_request(chat_id: str) -> str:
+    """Get the first user message from a chat for the initial_request field."""
+    from src.models import chat as chat_model
 
-    This is read-only context for the model. State modifications happen
-    exclusively through the update_state tool call.
+    messages = chat_model.get_messages(chat_id)
+    for msg in messages:
+        if msg["role"] == "user":
+            return msg["content"][:500]
+    return ""
+
+
+def extract_prompt_blocks(response_text: str) -> list[str]:
+    """Parse ```prompt fenced code blocks from agent response text."""
+    pattern = r'```prompt\s*\n(.*?)```'
+    matches = re.findall(pattern, response_text, re.DOTALL)
+    return [m.strip() for m in matches[-MAX_RECENT_PROMPTS:]]
+
+
+def extract_search_context(tool_call_log: list[dict]) -> dict:
+    """Extract search queries and explored concepts from tool call log."""
+    queries = []
+    concepts = set()
+
+    for call in tool_call_log:
+        tool = call.get("tool", "")
+        args = call.get("args", {})
+        result = call.get("result", {})
+
+        # Capture queries from search tools
+        if tool in ("query_diverse_prompts", "search_similar_prompts", "query_dataset_map"):
+            q = args.get("query", "")
+            if q:
+                queries.append(q)
+
+        # Capture concepts from folder theme exploration
+        if tool == "get_folder_themes":
+            folder = args.get("folder_name", "")
+            if folder:
+                concepts.add(folder)
+
+        # Capture concepts from search results
+        for p in result.get("prompts", [])[:5]:
+            concept = p.get("concept", "")
+            if concept:
+                concepts.add(concept)
+
+        # Capture concepts from dataset map results
+        for f in result.get("folders", [])[:5]:
+            name = f.get("name", "")
+            if name:
+                concepts.add(name)
+
+    return {
+        "recent_queries": queries[-3:],
+        "active_concepts": sorted(concepts)[:10],
+    }
+
+
+def update_direction(
+    previous_direction: str,
+    user_message: str,
+    outcomes_text: str | None,
+    tool_summary: str | None,
+) -> str:
+    """Update the direction field using the configured summary model.
+
+    Makes a single cheap LLM call to produce a 1-2 sentence summary of what
+    the user wants and doesn't want, incorporating deletion feedback and
+    search activity.
     """
-    return (
-        "\n\n## Current Agent State\n\n"
-        "Below is your current working state for this conversation. "
-        "Use the `update_state` tool to modify it as you progress through the workflow.\n\n"
-        f"```json\n{json.dumps(state, indent=2)}\n```"
+    from src.services import llm_service
+    from src.models.settings import get_setting
+    from src.config import DEFAULT_MODEL_SUMMARY
+
+    model = get_setting("model_summary") or DEFAULT_MODEL_SUMMARY
+
+    prompt = (
+        "Update this conversation direction summary in 1-2 sentences.\n\n"
+        f"Previous direction: {previous_direction or '(none yet)'}\n"
+        f"User's latest message: {user_message}\n"
+    )
+    if outcomes_text:
+        prompt += f"Generation feedback: {outcomes_text}\n"
+    if tool_summary:
+        prompt += f"Agent searched for: {tool_summary}\n"
+    prompt += (
+        "\nRules:\n"
+        "- Capture what the user wants and doesn't want\n"
+        "- Note quality/direction feedback from image deletions\n"
+        "- Note specific preferences (lighting, pose, style, etc.)\n"
+        "- Keep under 200 characters\n"
+        "- Output ONLY the summary, nothing else"
     )
 
+    try:
+        messages = [{"role": "user", "content": prompt}]
+        response = llm_service.generate(model=model, messages=messages)
+        text = response.text if response and response.text else ""
+        return text.strip()[:250] if text else previous_direction
+    except Exception as e:
+        logger.warning("Failed to update direction via LLM: %s", e)
+        return previous_direction
 
-def apply_state_update(state: dict, updates: dict) -> dict:
-    """Apply updates from the update_state tool call to the agent state.
 
-    Args:
-        state: The current agent state dict (modified in-place).
-        updates: Dict of field names to new values from the tool call.
+def build_tool_summary(tool_call_log: list[dict]) -> str | None:
+    """Build a brief summary of tool activity for the direction updater."""
+    search_queries = []
+    gen_count = 0
+    for call in tool_call_log:
+        tool = call.get("tool", "")
+        if tool in ("query_diverse_prompts", "search_similar_prompts"):
+            q = call.get("args", {}).get("query", "")
+            if q:
+                search_queries.append(q[:60])
+        elif tool == "generate_image":
+            gen_count += 1
 
-    Returns:
-        The updated state dict.
+    parts = []
+    if search_queries:
+        parts.append(f"Searched: {'; '.join(search_queries[:3])}")
+    if gen_count:
+        parts.append(f"Generated {gen_count} image(s)")
+    return "; ".join(parts) if parts else None
+
+
+def build_outcomes_text(chat_id: str) -> str | None:
+    """Build a brief outcomes summary for the direction updater."""
+    try:
+        from src.agent.tools.generation_tools import _get_generation_outcomes
+        from src.models import chat as chat_model
+
+        db_messages = chat_model.get_messages(chat_id)
+        last_assistant_id = None
+        for msg in reversed(db_messages):
+            if msg["role"] == "assistant":
+                last_assistant_id = msg["id"]
+                break
+
+        if not last_assistant_id:
+            return None
+
+        result = _get_generation_outcomes(
+            {"message_id": last_assistant_id},
+            {"chat_id": chat_id},
+        )
+        if "error" in result or not result.get("outcomes"):
+            return None
+
+        parts = []
+        for o in result["outcomes"]:
+            p = f"{o['kept']} kept, {o['deleted']} deleted"
+            if o.get("deletion_reasons"):
+                reasons = ", ".join(f"{v} {k}" for k, v in o["deletion_reasons"].items())
+                p += f" ({reasons})"
+            parts.append(p)
+        return "; ".join(parts)
+    except Exception:
+        return None
+
+
+def apply_implicit_state_update(
+    state: dict,
+    chat_id: str,
+    user_message: str,
+    full_response: str,
+    tool_call_log: list[dict],
+) -> dict:
+    """Update state implicitly from the completed agent turn.
+
+    Called after the agent loop finishes, before saving the response.
     """
-    if "phase" in updates and updates["phase"]:
-        state["phase"] = updates["phase"]
+    # Set initial_request on first turn
+    if not state.get("initial_request"):
+        state["initial_request"] = extract_initial_request(chat_id)
 
-    if "prompt_requirements" in updates and updates["prompt_requirements"]:
-        try:
-            parsed = json.loads(updates["prompt_requirements"])
-            state.setdefault("prompt_requirements", {}).update(parsed)
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.warning(f"Failed to parse prompt_requirements JSON: {e}")
+    # Extract prompts from agent's response
+    prompts = extract_prompt_blocks(full_response)
+    if prompts:
+        state["recent_prompts"] = prompts
 
-    if "generated_prompts" in updates and updates["generated_prompts"]:
-        try:
-            parsed = json.loads(updates["generated_prompts"])
-            if isinstance(parsed, list):
-                prompts = state.setdefault("generated_prompts", [])
-                prompts.extend(parsed)
-                # Keep only the most recent prompts
-                if len(prompts) > MAX_RECENT_PROMPTS:
-                    state["generated_prompts"] = prompts[-MAX_RECENT_PROMPTS:]
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.warning(f"Failed to parse generated_prompts JSON: {e}")
+    # Extract search context from tool calls
+    if tool_call_log:
+        new_search = extract_search_context(tool_call_log)
+        existing = state.get("search_context", {})
 
-    if "context" in updates and updates["context"] is not None:
-        state["context"] = updates["context"]
+        # Merge queries (keep last 3)
+        all_queries = existing.get("recent_queries", []) + new_search["recent_queries"]
+        merged_concepts = set(existing.get("active_concepts", [])) | set(new_search["active_concepts"])
+
+        state["search_context"] = {
+            "recent_queries": all_queries[-3:],
+            "active_concepts": sorted(merged_concepts)[:10],
+        }
+
+    # Update direction via summary model
+    outcomes_text = build_outcomes_text(chat_id)
+    tool_summary = build_tool_summary(tool_call_log)
+    # Only call LLM if there's something new to incorporate
+    if user_message or outcomes_text or tool_summary:
+        state["direction"] = update_direction(
+            state.get("direction", ""),
+            user_message,
+            outcomes_text,
+            tool_summary,
+        )
 
     return state

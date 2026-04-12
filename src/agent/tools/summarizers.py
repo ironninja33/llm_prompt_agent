@@ -29,40 +29,6 @@ def _summarize_search_similar(args: dict, result: dict) -> dict:
     return summary
 
 
-def _summarize_search_diverse(args: dict, result: dict) -> dict:
-    return {
-        "query": args.get("query", ""),
-        "count": result.get("count", 0),
-        "top_concepts": _unique_values(result.get("prompts", []), "concept"),
-    }
-
-
-def _summarize_get_random(args: dict, result: dict) -> dict:
-    return {
-        "count": result.get("count", 0),
-        "top_concepts": _unique_values(result.get("prompts", []), "concept"),
-    }
-
-
-def _summarize_get_opposite(args: dict, result: dict) -> dict:
-    return {
-        "query": args.get("query", ""),
-        "count": result.get("count", 0),
-        "top_concepts": _unique_values(result.get("prompts", []), "concept"),
-    }
-
-
-def _summarize_list_concepts(args: dict, result: dict) -> dict:
-    return {"count": result.get("count", 0)}
-
-
-def _summarize_dataset_overview(args: dict, result: dict) -> dict:
-    return {
-        "folder_count": len(result.get("folders", [])),
-        "cross_theme_count": len(result.get("cross_folder_themes", [])),
-    }
-
-
 def _summarize_folder_themes(args: dict, result: dict) -> dict:
     themes = result.get("themes", [])
     return {
@@ -78,6 +44,29 @@ def _summarize_query_diverse(args: dict, result: dict) -> dict:
         "query": args.get("query", ""),
         "count": result.get("count", 0),
         "top_concepts": _unique_values(result.get("prompts", []), "concept"),
+    }
+
+
+def _summarize_query_dataset_map(args: dict, result: dict) -> dict:
+    return {
+        "query": args.get("query", ""),
+        "count": result.get("count", 0),
+        "folders": [f.get("name", "") for f in result.get("folders", [])],
+    }
+
+
+def _summarize_deletion_insights(args: dict, result: dict) -> dict:
+    return {
+        "count": result.get("count", 0),
+        "quality": result.get("summary", {}).get("total_quality", 0),
+        "wrong_direction": result.get("summary", {}).get("total_wrong_direction", 0),
+    }
+
+
+def _summarize_successful_patterns(args: dict, result: dict) -> dict:
+    return {
+        "count": result.get("count", 0),
+        "max_depth": max((p.get("max_depth", 0) for p in result.get("patterns", [])), default=0),
     }
 
 
@@ -103,33 +92,17 @@ def _summarize_last_gen_settings(args: dict, result: dict) -> dict:
     return {"found": bool(s), "model": s.get("base_model", "")}
 
 
-def _summarize_update_state(args: dict, result: dict) -> dict:
-    return {"status": result.get("status", "ok")}
-
-
-def _summarize_query_dataset_map(args: dict, result: dict) -> dict:
-    return {
-        "query": args.get("query", ""),
-        "count": result.get("count", 0),
-        "folders": [f.get("name", "") for f in result.get("folders", [])],
-    }
-
-
 TOOL_SUMMARIES = {
     "search_similar_prompts": _summarize_search_similar,
-    "search_diverse_prompts": _summarize_search_diverse,
-    "get_random_prompts": _summarize_get_random,
-    "get_opposite_prompts": _summarize_get_opposite,
-    "list_concepts": _summarize_list_concepts,
-    "get_dataset_overview": _summarize_dataset_overview,
     "get_folder_themes": _summarize_folder_themes,
     "query_diverse_prompts": _summarize_query_diverse,
+    "query_dataset_map": _summarize_query_dataset_map,
+    "get_deletion_insights": _summarize_deletion_insights,
+    "get_successful_patterns": _summarize_successful_patterns,
     "generate_image": _summarize_generate_image,
     "get_available_loras": _summarize_get_loras,
     "get_output_directories": _summarize_get_output_dirs,
     "get_last_generation_settings": _summarize_last_gen_settings,
-    "update_state": _summarize_update_state,
-    "query_dataset_map": _summarize_query_dataset_map,
 }
 
 

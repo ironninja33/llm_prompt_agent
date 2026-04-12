@@ -4,12 +4,14 @@ from google.genai import types
 
 TOOL_DECLARATIONS = [
     types.Tool(function_declarations=[
+        # ── Exploration tools ────────────────────────────────────────
         types.FunctionDeclaration(
             name="search_similar_prompts",
             description=(
                 "Search the prompt database for prompts semantically similar to a query. "
-                "Use this when the user describes what they want or provides a seed phrase. "
-                "Expand concept-level requests into rich semantic queries."
+                "Use this for targeted follow-up searches when you need results from a "
+                "specific concept folder. Expand concept-level requests into rich "
+                "semantic queries."
             ),
             parameters=types.Schema(
                 type="OBJECT",
@@ -33,85 +35,6 @@ TOOL_DECLARATIONS = [
                     ),
                 },
                 required=["query"],
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="search_diverse_prompts",
-            description=(
-                "Search for prompts that are different/distant from the query. "
-                "Use this to find contrasting examples for variety."
-            ),
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "query": types.Schema(type="STRING", description="Query text to find diverse prompts away from"),
-                    "k": types.Schema(type="INTEGER", description="Number of results (default 10)"),
-                    "source_type": types.Schema(
-                        type="STRING",
-                        description="Filter by source: 'training', 'output', or null for both",
-                        nullable=True,
-                    ),
-                },
-                required=["query"],
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="get_random_prompts",
-            description="Get random prompts from the database for inspiration.",
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "k": types.Schema(type="INTEGER", description="Number of random prompts (default 10)"),
-                    "source_type": types.Schema(
-                        type="STRING",
-                        description="Filter by source: 'training', 'output', or null for both",
-                        nullable=True,
-                    ),
-                },
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="get_opposite_prompts",
-            description="Find prompts most dissimilar to the query. Use when the user wants the opposite.",
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "query": types.Schema(type="STRING", description="Query to find opposites of"),
-                    "k": types.Schema(type="INTEGER", description="Number of results (default 10)"),
-                    "source_type": types.Schema(
-                        type="STRING",
-                        description="Filter by source: 'training', 'output', or null for both",
-                        nullable=True,
-                    ),
-                },
-                required=["query"],
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="list_concepts",
-            description="List available concept names and their counts in the database.",
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "source_type": types.Schema(
-                        type="STRING",
-                        description="Filter by source: 'training', 'output', or null for both",
-                        nullable=True,
-                    ),
-                },
-            ),
-        ),
-        types.FunctionDeclaration(
-            name="get_dataset_overview",
-            description=(
-                "Get a high-level overview of the entire dataset. Returns folder names, "
-                "source types, prompt counts, per-folder summary terms, and cross-folder "
-                "themes. This is pre-loaded in your context — only call if data may have "
-                "changed mid-conversation."
-            ),
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={},
             ),
         ),
         types.FunctionDeclaration(
@@ -177,7 +100,8 @@ TOOL_DECLARATIONS = [
                 "Search for dataset folders matching a query. Returns folder names, "
                 "source types, prompt counts, summaries, and top themes. Use this when "
                 "you need to find relevant folders after context has been truncated and "
-                "the full dataset overview is no longer available."
+                "the full dataset overview is no longer available, or to look up exact "
+                "folder names before filtering with search_similar_prompts."
             ),
             parameters=types.Schema(
                 type="OBJECT",
@@ -200,7 +124,65 @@ TOOL_DECLARATIONS = [
                 required=["query"],
             ),
         ),
-        # ── Generation tools ──────────────────────────────────────────
+        # ── Quality signal tools ─────────────────────────────────────
+        types.FunctionDeclaration(
+            name="get_deletion_insights",
+            description=(
+                "Get patterns from deleted prompts to understand what to avoid. "
+                "Returns prompts deleted for quality or wrong_direction issues, "
+                "with common patterns. Use to learn from past failures before "
+                "generating prompts for a concept or output folder."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "output_folder": types.Schema(
+                        type="STRING",
+                        description="Filter to a specific output folder",
+                        nullable=True,
+                    ),
+                    "concept": types.Schema(
+                        type="STRING",
+                        description="Filter by concept/character name (searches graveyard embeddings)",
+                        nullable=True,
+                    ),
+                    "k": types.Schema(
+                        type="INTEGER",
+                        description="Number of deleted prompts to return (default 5)",
+                        nullable=True,
+                    ),
+                },
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="get_successful_patterns",
+            description=(
+                "Get prompts that led to productive regeneration chains "
+                "(multiple iterations where images were kept). Shows what "
+                "works well. Use for inspiration on prompt style and structure."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "output_folder": types.Schema(
+                        type="STRING",
+                        description="Filter to a specific output folder",
+                        nullable=True,
+                    ),
+                    "min_depth": types.Schema(
+                        type="INTEGER",
+                        description="Minimum lineage depth to consider successful (default 3)",
+                        nullable=True,
+                    ),
+                    "k": types.Schema(
+                        type="INTEGER",
+                        description="Number of patterns to return (default 5)",
+                        nullable=True,
+                    ),
+                },
+            ),
+        ),
+        # ── Generation tools ────────────────────────────────────────
         types.FunctionDeclaration(
             name="generate_image",
             description=(
@@ -312,53 +294,6 @@ TOOL_DECLARATIONS = [
                     "current_chat": types.Schema(
                         type="BOOLEAN",
                         description="If true, only search generations from the current chat (default: false)",
-                        nullable=True,
-                    ),
-                },
-            ),
-        ),
-        # ── State management ─────────────────────────────────────────
-        types.FunctionDeclaration(
-            name="update_state",
-            description=(
-                "Update your working state. Batch all changes into one call. "
-                "Never call this twice in a row."
-            ),
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "phase": types.Schema(
-                        type="STRING",
-                        description=(
-                            "Optional phase hint. Common values: gathering_info, searching, "
-                            "generating, refining, complete. You may use other values if "
-                            "the workflow doesn't fit these."
-                        ),
-                        nullable=True,
-                    ),
-                    "prompt_requirements": types.Schema(
-                        type="STRING",
-                        description=(
-                            "JSON string of requirements to merge "
-                            "(e.g. {\"subject\": \"...\", \"lighting\": \"...\"})"
-                        ),
-                        nullable=True,
-                    ),
-                    "generated_prompts": types.Schema(
-                        type="STRING",
-                        description=(
-                            "JSON array of prompt strings to save "
-                            "(e.g. [\"prompt 1\", \"prompt 2\"]). State keeps last 5."
-                        ),
-                        nullable=True,
-                    ),
-                    "context": types.Schema(
-                        type="STRING",
-                        description=(
-                            "Brief note on current progress — what you explored, active "
-                            "feedback, key decisions. Replaces previous context. "
-                            "Keep to 1-2 sentences."
-                        ),
                         nullable=True,
                     ),
                 },

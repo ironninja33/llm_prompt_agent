@@ -459,6 +459,32 @@ def delete_documents_by_directory(dir_path: str, source_type: str) -> int:
         return 0
 
 
+def search_graveyard(
+    query_embedding: list[float],
+    k: int = 5,
+) -> list[dict]:
+    """Search the deleted_prompts graveyard collection for similar prompts."""
+    if _deleted_collection is None or _deleted_collection.count() == 0:
+        return []
+    try:
+        actual_k = min(k, _deleted_collection.count())
+        result = _deleted_collection.query(
+            query_embeddings=[query_embedding],
+            n_results=actual_k,
+            include=["documents", "metadatas"],
+        )
+        return [
+            {
+                "document": result["documents"][0][i],
+                "metadata": result["metadatas"][0][i] if result["metadatas"] else {},
+            }
+            for i in range(len(result["ids"][0]))
+        ]
+    except Exception as e:
+        logger.error(f"Error searching graveyard: {e}")
+        return []
+
+
 def shutdown():
     """Flush ChromaDB HNSW index to disk by stopping the Rust bindings."""
     global _client
